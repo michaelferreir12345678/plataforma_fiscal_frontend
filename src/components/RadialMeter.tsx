@@ -1,0 +1,103 @@
+import { colors, classifyCeiling } from '../theme';
+import { arcPath, pointAt, pct, fmt } from '../utils/format';
+import { riskColor } from '../theme';
+
+interface RadialMeterProps {
+  atualPct: number;
+  alerta: number;
+  prud: number;
+  max: number;
+  gaugeMax: number;
+  size?: number;
+}
+
+/**
+ * Medidor de faixa LRF (componente-assinatura).
+ * Trilho com bandas folga/alerta/prudencial/máximo + ponteiro e leitura central.
+ */
+export function RadialMeter({ atualPct, alerta, prud, max, gaugeMax, size = 240 }: RadialMeterProps) {
+  const cx = 120;
+  const cy = 120;
+  const r = 88;
+  const start = -135;
+  const end = 135;
+  const sweep = 270;
+  const pctToDeg = (p: number) => start + sweep * (p / gaugeMax);
+
+  const level = classifyCeiling(atualPct, alerta, prud, max);
+  const color = riskColor[level].color;
+  const statusLabel =
+    level === 'maximo'
+      ? 'Acima do teto'
+      : level === 'prudencial'
+        ? 'Faixa Prudencial'
+        : level === 'atencao'
+          ? 'Faixa de Alerta'
+          : 'Folga';
+
+  const folgaEnd = pctToDeg(alerta);
+  const alertaEnd = pctToDeg(prud);
+  const prudEnd = pctToDeg(max);
+  const valEnd = pctToDeg(Math.min(atualPct, gaugeMax));
+
+  const tickInner = r - 10;
+  const tickOuter = r + 8;
+  const tickLabelR = r + 22;
+  const mkTick = (deg: number) => ({
+    a: pointAt(cx, cy, tickInner, deg),
+    b: pointAt(cx, cy, tickOuter, deg),
+    lab: pointAt(cx, cy, tickLabelR, deg),
+  });
+  const tAlerta = mkTick(folgaEnd);
+  const tPrud = mkTick(alertaEnd);
+  const tMax = mkTick(prudEnd);
+  const needle = pointAt(cx, cy, r + 4, valEnd);
+
+  const fmtTick = (v: number) => (v % 1 === 0 ? fmt(v, 0) : fmt(v, 1)) + '%';
+
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg viewBox="0 0 240 240" style={{ width: '100%', height: '100%' }}>
+        <path d={arcPath(cx, cy, r, start, end)} stroke={colors.borderSoft} strokeWidth={14} fill="none" strokeLinecap="round" />
+        <path d={arcPath(cx, cy, r, start, folgaEnd)} stroke={colors.greenSoft} strokeWidth={14} fill="none" />
+        <path d={arcPath(cx, cy, r, folgaEnd, alertaEnd)} stroke={colors.yellowSoft} strokeWidth={14} fill="none" />
+        <path d={arcPath(cx, cy, r, alertaEnd, prudEnd)} stroke={colors.orangeSoft} strokeWidth={14} fill="none" />
+        <path d={arcPath(cx, cy, r, prudEnd, end)} stroke={colors.redSoft} strokeWidth={14} fill="none" />
+        <path d={arcPath(cx, cy, r, start, valEnd)} stroke={color} strokeWidth={16} fill="none" strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={78} fill="none" stroke={colors.borderSoft} strokeWidth={1} />
+        {[tAlerta, tPrud, tMax].map((t, i) => (
+          <line key={i} x1={t.a.x} y1={t.a.y} x2={t.b.x} y2={t.b.y} stroke={colors.ink} strokeWidth={1.5} />
+        ))}
+        <text x={tAlerta.lab.x} y={tAlerta.lab.y} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize={9} fontWeight={600} fill={colors.muted}>
+          {fmtTick(alerta)}
+        </text>
+        <text x={tPrud.lab.x} y={tPrud.lab.y} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize={9} fontWeight={600} fill={colors.muted}>
+          {fmtTick(prud)}
+        </text>
+        <text x={tMax.lab.x} y={tMax.lab.y} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize={9} fontWeight={600} fill={colors.muted}>
+          {fmtTick(max)}
+        </text>
+        <line x1={cx} y1={cy} x2={needle.x} y2={needle.y} stroke={colors.ink} strokeWidth={2} strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={5} fill={colors.ink} />
+        <circle cx={cx} cy={cy} r={2} fill={colors.bg} />
+      </svg>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 28, textAlign: 'center' }}>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 36, fontWeight: 600, letterSpacing: '-0.03em', color }}>
+          {pct(atualPct)}
+        </div>
+        <div
+          style={{
+            fontSize: 10,
+            color: colors.faint,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+            marginTop: -2,
+          }}
+        >
+          {statusLabel}
+        </div>
+      </div>
+    </div>
+  );
+}

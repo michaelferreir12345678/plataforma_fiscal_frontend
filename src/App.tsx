@@ -1,0 +1,49 @@
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { AppShell } from './layouts/AppShell';
+import { DashboardPage } from './pages/DashboardPage';
+import { CarteiraPage } from './pages/CarteiraPage';
+import { LimitesPage } from './pages/LimitesPage';
+import { ReceitaPage } from './pages/ReceitaPage';
+import { DespesaPage } from './pages/DespesaPage';
+import { DividaPage } from './pages/DividaPage';
+import { ResultadoPage } from './pages/ResultadoPage';
+import { CaixaPage } from './pages/CaixaPage';
+import { SaudeEducacaoPage } from './pages/SaudeEducacaoPage';
+import { PrevisoesPage } from './pages/PrevisoesPage';
+import { BenchmarkingPage } from './pages/BenchmarkingPage';
+import { AlertasPage } from './pages/AlertasPage';
+import { AssistentePage } from './pages/AssistentePage';
+import { RelatoriosPage } from './pages/RelatoriosPage';
+import { AdminPage } from './pages/AdminPage';
+import { OnboardingPage } from './pages/OnboardingPage';
+
+export default function App() {
+  return (
+    <Routes>
+      {/* Fluxo de onboarding — tela cheia, fora do shell */}
+      <Route path="/onboarding" element={<OnboardingPage />} />
+
+      {/* Aplicação — dentro do shell (sidebar + topbar + footer) */}
+      <Route element={<AppShell />}>
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/carteira" element={<CarteiraPage />} />
+        <Route path="/limites" element={<LimitesPage />} />
+        <Route path="/receita" element={<ReceitaPage />} />
+        <Route path="/despesa" element={<DespesaPage />} />
+        <Route path="/divida" element={<DividaPage />} />
+        <Route path="/resultado" element={<ResultadoPage />} />
+        <Route path="/caixa" element={<CaixaPage />} />
+        <Route path="/saude-educacao" element={<SaudeEducacaoPage />} />
+        <Route path="/previsoes" element={<PrevisoesPage />} />
+        <Route path="/benchmarking" element={<BenchmarkingPage />} />
+        <Route path="/alertas" element={<AlertasPage />} />
+        <Route path="/assistente" element={<AssistentePage />} />
+        <Route path="/relatorios" element={<RelatoriosPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+      </Route>
+
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}

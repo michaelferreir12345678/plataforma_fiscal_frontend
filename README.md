@@ -5,9 +5,8 @@ inteligência fiscal que transforma dados do SICONFI (RREO, RGF, DCA, MSC) em
 painéis, alertas e previsões para o gestor público.
 
 > Projeto-fonte completo e editável — sem HTML único, sem runtime proprietário.
-> Todo layout, cards, gráficos, tabelas e filtros estão implementados em
-> componentes React. Os dados são mockados em `src/services/` para você trocar
-> por chamadas de API depois.
+> As telas fiscais usam o backend FastAPI autenticado; valores, fontes e memórias
+> de cálculo vêm dos dados reais SICONFI/IBGE materializados na camada gold.
 
 ## Stack
 
@@ -66,11 +65,9 @@ erario-plataforma-fiscal/
     ├── layouts/
     │   ├── AppShell.tsx        # topbar + sidebar + footer + <Outlet/>
     │   └── navConfig.tsx       # configuração da navegação
-    ├── services/               # dados mockados (trocar por API)
-    │   ├── dashboardData.ts
-    │   ├── limitesData.ts
-    │   ├── carteiraData.ts
-    │   └── alertasData.ts
+    ├── services/               # cliente HTTP tipado e contratos do backend
+    │   ├── api.ts              # fetch, JWT e erros RFC 7807
+    │   └── backend.ts          # endpoints e tipos por módulo
     └── pages/                  # uma página por tela/rota
         ├── DashboardPage.tsx
         ├── CarteiraPage.tsx
@@ -106,12 +103,17 @@ erario-plataforma-fiscal/
 | `/admin` | Administração (multi-tenant, RBAC, faturamento…) |
 | `/onboarding` | Onboarding (wizard de 4 passos, fora do shell) |
 
-## Trocar mock por API real
+## Backend e dados reais
 
-Os arquivos em `src/services/` exportam os dados consumidos pelas páginas.
-Para integrar o backend, substitua os arrays por chamadas (`fetch`/axios/react-query)
-mantendo as mesmas interfaces de `src/types/index.ts`. O `.env.example` traz
-`VITE_API_BASE_URL` como ponto de partida — copie para `.env` e ajuste.
+Copie `.env.example` para `.env` e ajuste `VITE_API_BASE_URL`. O cliente compartilhado
+em `src/services/api.ts` faz login, envia o JWT e converte erros RFC 7807; os contratos
+tipados ficam em `src/services/backend.ts`. `AppContext`, `useResource` e `AsyncState`
+centralizam ente, período, carregamento, vazio e erro.
+
+A tela `/benchmarking` chama `GET /benchmark` e `GET /benchmark/ranking`: permite trocar
+indicador e coorte (porte/região/PIB), exibe distribuição e cobertura real, mantém o ente
+ancorado no ranking e mostra `source_ref`, `as_of` e memória de cálculo nos drills. Não
+existe chave de ativação ou fallback para dados mockados em produção.
 
 ## Tokens de marca
 

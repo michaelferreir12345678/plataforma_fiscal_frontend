@@ -1,6 +1,7 @@
-/** Formata número no padrão pt-BR (vírgula decimal). */
+/** Formata número no padrão pt-BR (vírgula decimal).
+ * Coage a entrada com Number(): o backend serializa Decimal como string JSON (Pydantic v2). */
 export function fmt(n: number, decimals = 1): string {
-  return n.toLocaleString('pt-BR', {
+  return Number(n).toLocaleString('pt-BR', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });

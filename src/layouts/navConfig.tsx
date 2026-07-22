@@ -134,6 +134,16 @@ export const navSections: NavSection[] = [
           </Icon>
         ),
       },
+      {
+        to: '/patrimonio',
+        label: 'Patrimônio & MSC',
+        icon: (
+          <Icon>
+            <rect x="2.5" y="6" width="11" height="8" rx="1" />
+            <path d="M8 6V3M5 3h6M4.5 9.5h1.5M4.5 11.5h1.5" />
+          </Icon>
+        ),
+      },
     ],
   },
   {

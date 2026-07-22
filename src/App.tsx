@@ -8,6 +8,7 @@ import { DespesaPage } from './pages/DespesaPage';
 import { DividaPage } from './pages/DividaPage';
 import { ResultadoPage } from './pages/ResultadoPage';
 import { CaixaPage } from './pages/CaixaPage';
+import { PatrimonioPage } from './pages/PatrimonioPage';
 import { SaudeEducacaoPage } from './pages/SaudeEducacaoPage';
 import { PrevisoesPage } from './pages/PrevisoesPage';
 import { BenchmarkingPage } from './pages/BenchmarkingPage';
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/divida" element={<DividaPage />} />
         <Route path="/resultado" element={<ResultadoPage />} />
         <Route path="/caixa" element={<CaixaPage />} />
+        <Route path="/patrimonio" element={<PatrimonioPage />} />
         <Route path="/saude-educacao" element={<SaudeEducacaoPage />} />
         <Route path="/previsoes" element={<PrevisoesPage />} />
         <Route path="/benchmarking" element={<BenchmarkingPage />} />

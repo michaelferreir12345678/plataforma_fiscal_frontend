@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { colors } from '../theme';
 import { Icon } from '../components/Icon';
 import { navSections } from './navConfig';
+import { useApp } from '../context/AppContext';
 
 function Badge({ text, tone }: { text: string; tone: 'count' | 'new' | 'dot' }) {
   if (tone === 'new') {
@@ -43,6 +44,8 @@ function Badge({ text, tone }: { text: string; tone: 'count' | 'new' | 'dot' }) 
 export function AppShell() {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
+  const { ente, periodo, periodoRgf, logout } = useApp();
+  const periodoAtivo = location.pathname.startsWith('/divida') ? periodoRgf : periodo;
 
   return (
     <div
@@ -108,7 +111,7 @@ export function AppShell() {
           </div>
           <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
             <div style={{ fontSize: 9, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Ente</div>
-            <div style={{ fontSize: 12.5, fontWeight: 500 }}>Município de Fortaleza · CE</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500 }}>{ente.nome}</div>
           </div>
           <Icon size={12} viewBox="0 0 12 12" stroke={colors.muted}>
             <path d="M3 5l3 3 3-3" />
@@ -132,7 +135,7 @@ export function AppShell() {
           </Icon>
           <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
             <div style={{ fontSize: 9, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Período</div>
-            <div style={{ fontSize: 12.5, fontWeight: 500, fontFamily: "'JetBrains Mono', monospace" }}>2025 · 2º quadrimestre</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, fontFamily: "'JetBrains Mono', monospace" }}>{periodoAtivo}</div>
           </div>
           <Icon size={12} viewBox="0 0 12 12" stroke={colors.muted}>
             <path d="M3 5l3 3 3-3" />
@@ -179,6 +182,13 @@ export function AppShell() {
             <div style={{ fontSize: 12, fontWeight: 500 }}>Marina Vasconcelos</div>
             <div style={{ fontSize: 10, color: colors.faint }}>Secretaria de Finanças</div>
           </div>
+          <button
+            onClick={logout}
+            title="Sair"
+            style={{ marginLeft: 4, padding: '5px 8px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.bg, color: colors.muted, fontSize: 11 }}
+          >
+            Sair
+          </button>
         </div>
       </header>
 

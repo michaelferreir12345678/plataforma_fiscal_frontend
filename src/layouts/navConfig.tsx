@@ -5,7 +5,11 @@ export interface NavItem {
   to: string;
   label: string;
   icon: ReactNode;
-  badge?: { text: string; tone: 'count' | 'new' | 'dot' };
+  /**
+   * Rótulo **estático** de UI (ex.: "NOVO"). Contagens NÃO moram aqui: o AppShell as
+   * injeta a partir do backend, para que nenhum número do menu seja fixo no código.
+   */
+  badge?: { text: string; tone: 'count' | 'new' | 'alerta' };
 }
 
 export interface NavSection {
@@ -43,7 +47,6 @@ export const navSections: NavSection[] = [
             <circle cx="11.5" cy="11.5" r="0.9" fill="currentColor" />
           </Icon>
         ),
-        badge: { text: '184', tone: 'count' },
       },
     ],
   },
@@ -69,7 +72,6 @@ export const navSections: NavSection[] = [
             <path d="M3.5 11.5V8a4.5 4.5 0 019 0v3.5l1 1.5h-11l1-1.5zM6.5 14a1.5 1.5 0 003 0" />
           </Icon>
         ),
-        badge: { text: '3', tone: 'count' },
       },
     ],
   },

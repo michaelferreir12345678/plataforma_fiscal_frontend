@@ -75,6 +75,45 @@ export async function apiPost<TResponse, TBody = unknown>(
   return handle<TResponse>(res);
 }
 
+/** PATCH JSON autenticado (mesmo tratamento de erro Problem Details). */
+export async function apiPatch<TResponse, TBody = unknown>(
+  path: string,
+  body: TBody,
+  params?: Record<string, string | number | undefined | null>,
+): Promise<TResponse> {
+  const url = new URL(BASE + path);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    }
+  }
+  const res = await fetch(url.toString(), {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handle<TResponse>(res);
+}
+
+/** Download autenticado de artefatos binários sem expor o JWT na URL. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const res = await fetch(BASE + path, { headers: authHeaders() });
+  if (!res.ok) {
+    if (res.status === 401) setToken(null);
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.title || `Erro ${res.status}`, body.detail);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function login(email: string, senha: string): Promise<string> {
   const form = new URLSearchParams({ username: email, password: senha });
   const res = await fetch(BASE + '/auth/login', {

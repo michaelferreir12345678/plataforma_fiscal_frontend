@@ -1,0 +1,766 @@
+/**
+ * Central de Dados (Sprint 24) — operação da ingestão pela interface.
+ *
+ * Reúne o catálogo de fontes, a matriz de cobertura, a fila de **jobs assíncronos**
+ * (execução/backfill/replay com progresso, retry e cancelamento) e as retificações. A
+ * execução é sempre um job na fila (Redis/RQ) — o request volta na hora (202) e a barra de
+ * progresso anda por polling. Ações custosas (acima do limiar) exigem **confirmação explícita**.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { colors } from '../theme';
+import { Card } from '../components/Card';
+import { Async } from '../components/AsyncState';
+import { useResource } from '../context/AppContext';
+import {
+  cancelarIngestJob,
+  criarIngestJob,
+  fetchCobertura,
+  fetchFontes,
+  fetchIngestJob,
+  fetchIngestJobs,
+  fetchRetificacoes,
+  retryIngestJob,
+} from '../services/backend';
+import type {
+  CoberturaItem,
+  FonteCatalogo,
+  IngestJob,
+  IngestJobCreateInput,
+  IngestJobCreateResult,
+} from '../services/backend';
+
+type Aba = 'catalogo' | 'cobertura' | 'jobs' | 'retificacoes';
+
+const STATUS_COR: Record<string, string> = {
+  na_fila: colors.neutral,
+  executando: colors.yellowText,
+  concluido: colors.green,
+  falhou: colors.red,
+  cancelado: colors.faint,
+};
+const STATUS_ROTULO: Record<string, string> = {
+  na_fila: 'Na fila',
+  executando: 'Executando',
+  concluido: 'Concluído',
+  falhou: 'Falhou',
+  cancelado: 'Cancelado',
+};
+
+const hora = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+
+export function CentralDadosPage() {
+  const [aba, setAba] = useState<Aba>('jobs');
+  const abas: { id: Aba; label: string }[] = [
+    { id: 'jobs', label: 'Jobs de ingestão' },
+    { id: 'catalogo', label: 'Catálogo de fontes' },
+    { id: 'cobertura', label: 'Cobertura' },
+    { id: 'retificacoes', label: 'Retificações' },
+  ];
+  return (
+    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Central de Dados">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>Central de Dados</div>
+        <span style={{ fontSize: 11, color: colors.faint }}>operação da ingestão · sob RBAC e auditoria</span>
+        <div style={{ flex: 1 }} />
+        <div role="tablist" style={{ display: 'flex', gap: 2, background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 6, padding: 2 }}>
+          {abas.map((a) => (
+            <button key={a.id} role="tab" aria-selected={aba === a.id} onClick={() => setAba(a.id)}
+              style={{ fontSize: 12, fontWeight: 500, padding: '5px 12px', borderRadius: 4,
+                background: aba === a.id ? colors.surface : 'transparent',
+                color: aba === a.id ? colors.primary : colors.muted,
+                border: aba === a.id ? `1px solid ${colors.border}` : '1px solid transparent' }}>
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {aba === 'jobs' && <JobsTab />}
+      {aba === 'catalogo' && <CatalogoTab />}
+      {aba === 'cobertura' && <CoberturaTab />}
+      {aba === 'retificacoes' && <RetificacoesTab />}
+    </div>
+  );
+}
+
+// ============================ Jobs ============================
+function JobsTab() {
+  const fontes = useResource(fetchFontes, []);
+  const [jobs, setJobs] = useState<IngestJob[]>([]);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [statusFiltro, setStatusFiltro] = useState('');
+  const [fonteFiltro, setFonteFiltro] = useState('');
+  const requisicaoAtual = useRef(0);
+
+  const carregar = useCallback(async () => {
+    const requisicao = ++requisicaoAtual.current;
+    setCarregando(true);
+    try {
+      const itens = await fetchIngestJobs({
+        status: statusFiltro || undefined,
+        fonte: fonteFiltro || undefined,
+      });
+      if (requisicao !== requisicaoAtual.current) return;
+      setJobs(itens);
+      setErro(null);
+    } catch (e) {
+      if (requisicao !== requisicaoAtual.current) return;
+      setErro(
+        (e as { detail?: string; message?: string })?.detail ||
+          (e as { message?: string })?.message ||
+          'Falha ao listar jobs',
+      );
+    } finally {
+      if (requisicao === requisicaoAtual.current) setCarregando(false);
+    }
+  }, [fonteFiltro, statusFiltro]);
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  // Polling enquanto houver job em andamento (a barra de progresso anda).
+  const emAndamento = jobs.some((j) => j.status === 'na_fila' || j.status === 'executando');
+  useEffect(() => {
+    if (!emAndamento) return undefined;
+    let cancelado = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const consultar = async () => {
+      await carregar();
+      if (!cancelado) timer = setTimeout(() => void consultar(), 2000);
+    };
+    timer = setTimeout(() => void consultar(), 2000);
+    return () => {
+      cancelado = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [emAndamento, carregar]);
+
+  const acao = async (fn: () => Promise<unknown>) => {
+    try {
+      setErro(null);
+      await fn();
+      await carregar();
+    } catch (e) {
+      setErro((e as { detail?: string; message?: string })?.detail || (e as Error)?.message || 'Falha na ação');
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 12 }}>
+      <Async res={fontes}>{(fs) => <JobForm fontes={fs} onCriado={() => void carregar()} />}</Async>
+      <Card pad={0} style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 16px 8px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            Jobs {emAndamento && <span style={{ fontSize: 10, color: colors.yellowText }}>· polling ativo</span>}
+          </div>
+          <div style={{ flex: 1 }} />
+          <select aria-label="Filtrar jobs por status" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)} style={filtroJob}>
+            <option value="">todos os status</option>
+            {Object.entries(STATUS_ROTULO).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+          </select>
+          <select aria-label="Filtrar jobs por fonte" value={fonteFiltro} onChange={(e) => setFonteFiltro(e.target.value)} style={filtroJob}>
+            <option value="">todas as fontes</option>
+            {(fontes.data ?? []).map((f) => <option key={f.fonte} value={f.fonte}>{f.fonte}</option>)}
+          </select>
+          <button onClick={() => void carregar()} style={{ fontSize: 11, color: colors.primary }}>atualizar</button>
+        </div>
+        {erro && <div role="alert" style={{ padding: '6px 16px', fontSize: 11.5, color: colors.red }}>{erro}</div>}
+        <div style={{ maxHeight: 560, overflowY: 'auto' }}>
+          {carregando && jobs.length === 0 ? (
+            <div style={{ padding: 16, fontSize: 12, color: colors.muted }}>Carregando jobs…</div>
+          ) : jobs.length === 0 ? (
+            <div style={{ padding: 16, fontSize: 12, color: colors.muted }}>Nenhum job ainda. Dispare um pela esquerda.</div>
+          ) : (
+            jobs.map((j) => <JobRow key={j.id} job={j} onCancelar={() => acao(() => cancelarIngestJob(j.id))} onRetry={() => acao(() => retryIngestJob(j.id))} />)
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+const filtroJob: React.CSSProperties = {
+  padding: '5px 7px',
+  border: `1px solid ${colors.border}`,
+  borderRadius: 4,
+  background: colors.bg,
+  color: colors.ink,
+  fontSize: 10.5,
+};
+
+function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () => void }) {
+  const [fonte, setFonte] = useState(fontes[0]?.fonte ?? '');
+  const [tipo, setTipo] = useState<'backfill' | 'run' | 'replay'>('backfill');
+  const [entesTexto, setEntesTexto] = useState('');
+  const [anosTexto, setAnosTexto] = useState('2024');
+  const [periodosTexto, setPeriodosTexto] = useState('2024-B6');
+  const [confirmacao, setConfirmacao] = useState<{
+    resposta: IngestJobCreateResult;
+    payload: IngestJobCreateInput;
+  } | null>(null);
+  const [msg, setMsg] = useState<{ texto: string; erro: boolean } | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const envioEmCurso = useRef(false);
+
+  const entes = useMemo(() => entesTexto.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean), [entesTexto]);
+  const anos = useMemo(() => anosTexto.split(/[\s,;]+/).map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n)), [anosTexto]);
+  const periodos = useMemo(() => periodosTexto.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean), [periodosTexto]);
+  const fonteSelecionada = useMemo(
+    () => fontes.find((item) => item.fonte === fonte),
+    [fonte, fontes],
+  );
+  const fonteNacional = fonteSelecionada?.escopo === 'nacional';
+  const estimativa = useMemo(() => {
+    const quantidadeEntes = fonteNacional ? 1 : entes.length;
+    if (tipo === 'replay') return quantidadeEntes * periodos.length;
+    if (fonte === 'bcb') return 3;
+    const multiplicadorCadencia: Record<string, number> = {
+      mensal: 12,
+      bimestral: 6,
+      quadrimestral: 3,
+      anual: 1,
+      diaria: 1,
+      continua: 1,
+      eventual: 1,
+    };
+    const multiplicador = multiplicadorCadencia[fonteSelecionada?.cadencia ?? ''] ?? 1;
+    return quantidadeEntes * Math.max(anos.length, 1) * multiplicador;
+  }, [anos.length, entes.length, fonte, fonteNacional, fonteSelecionada?.cadencia, periodos.length, tipo]);
+  const podeEnviar = Boolean(
+    fonte
+    && (fonteNacional || entes.length > 0)
+    && (tipo === 'replay' ? periodos.length > 0 : (fonteNacional || anos.length > 0))
+    && estimativa > 0,
+  );
+
+  const payloadAtual = (): IngestJobCreateInput => ({
+    fonte,
+    tipo,
+    entes: fonteNacional ? [] : [...entes],
+    anos: tipo === 'replay' ? undefined : [...anos],
+    periodos: tipo === 'replay' ? [...periodos] : undefined,
+  });
+
+  const enviar = async (confirmar: boolean, payloadConfirmado?: IngestJobCreateInput) => {
+    if (envioEmCurso.current) return;
+    envioEmCurso.current = true;
+    setEnviando(true);
+    setMsg(null);
+    const payload = payloadConfirmado ?? payloadAtual();
+    try {
+      const res = await criarIngestJob({ ...payload, confirmar });
+      if (res.precisa_confirmacao) {
+        // Guarda uma cópia imutável do pedido estimado: a confirmação nunca pode autorizar
+        // silenciosamente um payload diferente daquele que o servidor avaliou.
+        setConfirmacao({ resposta: res, payload });
+      } else {
+        setConfirmacao(null);
+        setMsg({
+          texto: res.job
+            ? `Job enfileirado (${res.job.itens_total} unidade(s)).`
+            : 'Solicitação aceita pelo servidor.',
+          erro: false,
+        });
+        onCriado();
+      }
+    } catch (e) {
+      setMsg({
+        texto:
+          (e as { detail?: string; message?: string })?.detail ||
+          (e as { message?: string })?.message ||
+          'Falha ao criar o job.',
+        erro: true,
+      });
+    } finally {
+      envioEmCurso.current = false;
+      setEnviando(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '7px 9px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12.5, background: colors.bg };
+  const label: React.CSSProperties = { fontSize: 10, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 3, display: 'block' };
+  const bloqueado = enviando || Boolean(confirmacao);
+
+  return (
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>Nova execução</div>
+      <div>
+        <label style={label}>Fonte</label>
+        <select value={fonte} onChange={(e) => setFonte(e.target.value)} style={inputStyle} aria-label="Fonte" disabled={bloqueado}>
+          {fontes.map((f) => <option key={f.fonte} value={f.fonte}>{f.fonte} — {f.relatorio}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={label}>Tipo</label>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['backfill', 'run', 'replay'] as const).map((t) => (
+            <button key={t} onClick={() => setTipo(t)} disabled={bloqueado} style={{ flex: 1, fontSize: 11.5, padding: '5px', borderRadius: 4, border: `1px solid ${tipo === t ? colors.primary : colors.border}`, background: tipo === t ? colors.accentSoft : colors.surface, color: tipo === t ? colors.primary : colors.muted, opacity: bloqueado ? 0.6 : 1 }}>{t}</button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label style={label}>
+          {fonteNacional ? 'Entes (não se aplica à fonte nacional)' : 'Entes (códigos IBGE, separados por vírgula)'}
+        </label>
+        <input
+          value={fonteNacional ? '' : entesTexto}
+          onChange={(e) => setEntesTexto(e.target.value)}
+          placeholder={fonteNacional ? 'Escopo nacional (BR)' : '2304400, 2307650'}
+          style={inputStyle}
+          aria-label="Entes"
+          disabled={bloqueado || fonteNacional}
+        />
+      </div>
+      {tipo === 'replay' ? (
+        <div>
+          <label style={label}>Períodos (ex.: 2024-B6)</label>
+          <input value={periodosTexto} onChange={(e) => setPeriodosTexto(e.target.value)} style={inputStyle} aria-label="Períodos" disabled={bloqueado} />
+        </div>
+      ) : (
+        <div>
+          <label style={label}>Exercícios (anos)</label>
+          <input value={anosTexto} onChange={(e) => setAnosTexto(e.target.value)} placeholder="2022, 2023, 2024" style={inputStyle} aria-label="Anos" disabled={bloqueado} />
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+        estimativa local pela cadência: <b style={{ color: colors.ink }}>{estimativa}</b> unidade(s)
+      </div>
+      <button
+        disabled={bloqueado || !podeEnviar}
+        onClick={() => void enviar(false)}
+        style={{ padding: '9px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12.5, fontWeight: 500, opacity: bloqueado || !podeEnviar ? 0.5 : 1 }}
+      >
+        {enviando ? 'enviando…' : 'Disparar job'}
+      </button>
+      {msg && <div role={msg.erro ? 'alert' : 'status'} style={{ fontSize: 11.5, color: msg.erro ? colors.red : colors.muted }}>{msg.texto}</div>}
+
+      {/* Confirmação explícita de ação custosa */}
+      {confirmacao && (
+        <div role="alertdialog" aria-label="Confirmar ação custosa" style={{ border: `1px solid ${colors.orangeSoft}`, background: colors.orangeBg, borderRadius: 6, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: colors.orange }}>Ação custosa</div>
+          <div style={{ fontSize: 12, color: colors.ink }}>
+            Vai processar <b>{confirmacao.resposta.estimativa_itens}</b> unidades (acima do limiar de {confirmacao.resposta.limiar}). Confirma?
+          </div>
+          <div style={{ fontSize: 10.5, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+            {confirmacao.payload.fonte} · {confirmacao.payload.tipo} ·{' '}
+            {confirmacao.payload.entes.length > 0
+              ? `${confirmacao.payload.entes.length} ente(s)`
+              : 'escopo nacional'} ·{' '}
+            {(confirmacao.payload.periodos ?? confirmacao.payload.anos ?? []).join(', ')}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button disabled={enviando} onClick={() => void enviar(true, confirmacao.payload)} style={{ flex: 1, padding: '7px', background: colors.orange, color: '#fff', borderRadius: 4, fontSize: 12, fontWeight: 500, opacity: enviando ? 0.6 : 1 }}>{enviando ? 'enfileirando…' : 'Confirmar e executar'}</button>
+            <button disabled={enviando} onClick={() => setConfirmacao(null)} style={{ flex: 1, padding: '7px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12, background: colors.surface }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function JobRow({
+  job,
+  onCancelar,
+  onRetry,
+}: {
+  job: IngestJob;
+  onCancelar: () => Promise<void>;
+  onRetry: () => Promise<void>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [detalhe, setDetalhe] = useState(job);
+  const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
+  const [erroDetalhe, setErroDetalhe] = useState<string | null>(null);
+  const [acaoEmCurso, setAcaoEmCurso] = useState(false);
+
+  useEffect(() => {
+    if (!aberto) {
+      setDetalhe(job);
+      return undefined;
+    }
+    let ativo = true;
+    setCarregandoDetalhe(true);
+    setErroDetalhe(null);
+    void fetchIngestJob(job.id)
+      .then((resposta) => {
+        if (ativo) setDetalhe(resposta);
+      })
+      .catch((e) => {
+        if (!ativo) return;
+        setErroDetalhe(
+          (e as { detail?: string; message?: string })?.detail ||
+            (e as { message?: string })?.message ||
+            'Falha ao carregar detalhes.',
+        );
+      })
+      .finally(() => {
+        if (ativo) setCarregandoDetalhe(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [aberto, job]);
+
+  const alternarDetalhe = () => setAberto((atual) => !atual);
+
+  const executarAcao = async (acao: () => Promise<void>) => {
+    if (acaoEmCurso) return;
+    setAcaoEmCurso(true);
+    try {
+      await acao();
+    } finally {
+      setAcaoEmCurso(false);
+    }
+  };
+
+  const cor = STATUS_COR[detalhe.status] ?? colors.neutral;
+  const erros = detalhe.resultado?.itens.filter((i) => !i.ok) ?? [];
+  return (
+    <div style={{ borderBottom: `1px solid ${colors.rowBorder}`, padding: '10px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', background: cor, borderRadius: 3, padding: '2px 6px', minWidth: 74, textAlign: 'center' }}>
+          {STATUS_ROTULO[detalhe.status] ?? detalhe.status}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 500 }}>
+            {detalhe.fonte} · {detalhe.tipo} · {detalhe.entes.length} ente(s) · {detalhe.periodos.join(', ')}
+          </div>
+          <div style={{ fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>
+            {detalhe.itens_ok}/{detalhe.itens_total} ok · {detalhe.itens_erro} erro · tentativa {detalhe.tentativas} · {hora(detalhe.criado_em)}
+          </div>
+          {detalhe.erro_resumo && <div style={{ marginTop: 2, fontSize: 10.5, color: colors.red }}>{detalhe.erro_resumo}</div>}
+        </div>
+        {detalhe.status === 'na_fila' && <button disabled={acaoEmCurso} onClick={() => void executarAcao(onCancelar)} style={btnMini}>{acaoEmCurso ? 'cancelando…' : 'cancelar'}</button>}
+        {detalhe.status === 'falhou' && <button disabled={acaoEmCurso} onClick={() => void executarAcao(onRetry)} style={{ ...btnMini, color: colors.orange, borderColor: colors.orangeSoft }}>{acaoEmCurso ? 'enfileirando…' : 'retry'}</button>}
+        <button onClick={alternarDetalhe} style={btnMini}>{aberto ? 'menos' : 'detalhes'}</button>
+      </div>
+      {/* Barra de progresso */}
+      <div style={{ height: 5, background: colors.bg, borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
+        <div
+          role="progressbar"
+          aria-label={`Progresso do job ${detalhe.id}`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={detalhe.progresso_pct}
+          style={{ height: '100%', width: `${detalhe.progresso_pct}%`, background: cor, transition: 'width 0.3s' }}
+          data-testid={`progresso-${detalhe.id}`}
+        />
+      </div>
+      {aberto && (
+        <div style={{ marginTop: 8, fontSize: 11, color: colors.muted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {carregandoDetalhe && <div>Carregando detalhes…</div>}
+          {erroDetalhe && <div role="alert" style={{ color: colors.red }}>{erroDetalhe}</div>}
+          {detalhe.log_ref && (
+            <div>
+              log: <span style={{ fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>{detalhe.log_ref}</span>
+            </div>
+          )}
+          {(detalhe.logs?.length ?? 0) > 0 && (
+            <div aria-label={`Logs do job ${detalhe.id}`} style={{ border: `1px solid ${colors.border}`, borderRadius: 4, overflow: 'hidden' }}>
+              {detalhe.logs?.map((entrada) => (
+                <div
+                  key={entrada.id}
+                  style={{ display: 'grid', gridTemplateColumns: '130px 110px minmax(0, 1fr)', gap: 8, padding: '5px 7px', borderTop: `1px solid ${colors.rowBorder}`, fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}
+                >
+                  <span style={{ color: colors.faint }}>{hora(entrada.ts)}</span>
+                  <span style={{ color: entrada.status === 'erro' ? colors.red : colors.muted }}>{entrada.status}</span>
+                  <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {[entrada.cod_ibge, entrada.periodo].filter(Boolean).join(' / ')}
+                    {entrada.mensagem ? `${entrada.cod_ibge || entrada.periodo ? ' · ' : ''}${entrada.mensagem}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {detalhe.resultado && (
+            <div>
+              recalculados:{' '}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {detalhe.resultado.indicadores_recalculados.join(', ') || 'nenhum'}
+              </span>
+              {detalhe.resultado.cobertura_antes !== null && detalhe.resultado.cobertura_depois !== null && (
+                <> · cobertura {detalhe.resultado.cobertura_antes} → {detalhe.resultado.cobertura_depois}</>
+              )}
+              {detalhe.resultado.delta_cobertura !== null && <> · Δ {detalhe.resultado.delta_cobertura}</>}
+            </div>
+          )}
+          {detalhe.resultado?.erro_sistema?.erro && (
+            <div style={{ color: colors.red }}>
+              falha de sistema
+              {detalhe.resultado.erro_sistema.fase ? ` (${detalhe.resultado.erro_sistema.fase})` : ''}: {' '}
+              {detalhe.resultado.erro_sistema.erro}
+            </div>
+          )}
+          {erros.map((e, i) => (
+            <div key={i} style={{ color: colors.red }}>✗ {e.ente} / {e.chave}: {e.erro}</div>
+          ))}
+          {!carregandoDetalhe && !erroDetalhe && !detalhe.log_ref && !detalhe.erro_resumo && !detalhe.resultado && !detalhe.logs?.length && (
+            <div>Nenhum log ou resultado detalhado disponível.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const btnMini: React.CSSProperties = { fontSize: 10.5, padding: '3px 8px', border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.surface, color: colors.muted };
+
+// ============================ Catálogo ============================
+function CatalogoTab() {
+  const res = useResource(fetchFontes, []);
+  return (
+    <Card pad={0}>
+      <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>Catálogo de fontes</div>
+      <div style={{ overflowX: 'auto' }}>
+        <Async res={res}>
+          {(fs) => (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 1480 }}>
+              <thead>
+                <tr style={{ background: colors.bg, color: colors.muted, textAlign: 'left' }}>
+                  {['Fonte', 'Status', 'Descrição', 'Família', 'Relatório', 'Cadência', 'Última execução', 'Última OK', 'Período recente', 'Defasagem', 'Entes', 'Registros', 'Parser', 'Dependências', 'Páginas'].map((h) => (
+                    <th key={h} style={{ padding: '7px 10px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fs.map((f) => (
+                  <tr key={f.fonte} style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
+                    <td style={{ padding: '6px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{f.fonte}</td>
+                    <td style={{ padding: '6px 10px', color: f.ativo ? colors.green : colors.faint }}>{f.ativo ? 'ativa' : 'pausada'}</td>
+                    <td style={{ padding: '6px 10px', color: colors.muted, maxWidth: 240 }}>{f.descricao ?? '—'}</td>
+                    <td style={{ padding: '6px 10px' }}>{f.familia}</td>
+                    <td style={{ padding: '6px 10px' }}>{f.relatorio}</td>
+                    <td style={{ padding: '6px 10px' }}>{f.cadencia}</td>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{hora(f.ultima_execucao)}</td>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap', color: f.ultima_execucao_ok ? colors.green : colors.faint }}>{hora(f.ultima_execucao_ok)}</td>
+                    <td style={{ padding: '6px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{f.periodo_mais_recente ?? '—'}</td>
+                    <td style={{ padding: '6px 10px', color: (f.defasagem_periodos ?? 0) > 2 ? colors.orange : colors.muted }}>{f.defasagem_periodos ?? '—'}</td>
+                    <td style={{ padding: '6px 10px' }}>{f.entes_cobertos}</td>
+                    <td style={{ padding: '6px 10px' }} title={f.registros_cobertos == null ? 'Campo ainda não exposto pelo backend' : undefined}>{f.registros_cobertos ?? '—'}</td>
+                    <td style={{ padding: '6px 10px', color: colors.faint }}>{f.parser_versao ?? '—'}</td>
+                    <td style={{ padding: '6px 10px', color: colors.faint, fontSize: 10 }}>{f.dependencias.join(', ') || '—'}</td>
+                    <td style={{ padding: '6px 10px', color: colors.faint, fontSize: 10 }}>{f.paginas_impactadas.join(', ') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Async>
+      </div>
+    </Card>
+  );
+}
+
+// ============================ Cobertura ============================
+interface CoberturaGrupo {
+  chave: string;
+  fonte: string;
+  cod_ibge: string;
+  uf: string | null;
+  ano: number;
+  periodos: string[];
+  ausentes: string[] | null;
+  registros: number;
+  versao: string | null;
+  defasagem: number | null;
+}
+
+function normalizarPeriodo(periodo: string): string {
+  return periodo.replace(/-([MBQS])0+(\d+)$/i, '-$1$2');
+}
+
+/** Períodos já encerrados no exercício, de acordo com a cadência declarada no catálogo. */
+function periodosEsperados(
+  ano: number,
+  cadencia: string | undefined,
+  periodosObservados: string[],
+): string[] | null {
+  const frequencia: Record<string, { total: number; marca: string; pad: boolean }> = {
+    mensal: { total: 12, marca: 'M', pad: true },
+    bimestral: { total: 6, marca: 'B', pad: false },
+    quadrimestral: { total: 3, marca: 'Q', pad: false },
+    anual: { total: 1, marca: '', pad: false },
+  };
+  // O RGF pode ser quadrimestral ou semestral conforme o regime do ente. Quando a própria
+  // fonte entrega S1/S2, o dado observado prevalece sobre a cadência geral do catálogo.
+  const temMarcadorSemestral = periodosObservados.some((periodo) => /-S0?\d+$/i.test(periodo));
+  const regra = temMarcadorSemestral
+    ? { total: 2, marca: 'S', pad: false }
+    : cadencia ? frequencia[cadencia] : undefined;
+  if (!regra) return null;
+
+  const hoje = new Date();
+  let encerrados = regra.total;
+  if (ano > hoje.getFullYear()) encerrados = 0;
+  if (ano === hoje.getFullYear()) {
+    encerrados = regra.total === 1 ? 0 : Math.floor((hoje.getMonth() + 1 - 1) / (12 / regra.total));
+  }
+  return Array.from({ length: encerrados }, (_, indice) => {
+    if (!regra.marca) return String(ano);
+    const numero = regra.pad ? String(indice + 1).padStart(2, '0') : String(indice + 1);
+    return `${ano}-${regra.marca}${numero}`;
+  });
+}
+
+function agruparCobertura(
+  linhas: CoberturaItem[],
+  catalogo: Map<string, FonteCatalogo>,
+): CoberturaGrupo[] {
+  const grupos = new Map<string, Omit<CoberturaGrupo, 'ausentes'>>();
+  for (const linha of linhas) {
+    const chave = `${linha.fonte}|${linha.cod_ibge}|${linha.ano}`;
+    const atual = grupos.get(chave) ?? {
+      chave,
+      fonte: linha.fonte,
+      cod_ibge: linha.cod_ibge,
+      uf: linha.uf,
+      ano: linha.ano,
+      periodos: [],
+      registros: 0,
+      versao: null,
+      defasagem: null,
+    };
+    atual.periodos.push(linha.periodo);
+    atual.registros += linha.n_registros;
+    atual.versao = linha.versao_entrega_vigente ?? atual.versao;
+    if (linha.defasagem_periodos !== null) {
+      atual.defasagem = Math.max(atual.defasagem ?? 0, linha.defasagem_periodos);
+    }
+    grupos.set(chave, atual);
+  }
+  return [...grupos.values()].map((grupo) => {
+    grupo.periodos.sort();
+    const esperados = periodosEsperados(
+      grupo.ano,
+      catalogo.get(grupo.fonte)?.cadencia,
+      grupo.periodos,
+    );
+    const observados = new Set(grupo.periodos.map(normalizarPeriodo));
+    return {
+      ...grupo,
+      ausentes: esperados?.filter((periodo) => !observados.has(normalizarPeriodo(periodo))) ?? null,
+    };
+  });
+}
+
+function CoberturaTab() {
+  const [fonte, setFonte] = useState<string>('');
+  const [uf, setUf] = useState<string>('');
+  const [ano, setAno] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const pageSize = 200;
+  const fontes = useResource(fetchFontes, []);
+  const res = useResource(
+    () => fetchCobertura({
+      fonte: fonte || undefined,
+      uf: uf || undefined,
+      ano: ano ? Number(ano) : undefined,
+      page,
+      page_size: pageSize,
+    }),
+    [fonte, uf, ano, page],
+  );
+  const catalogo = useMemo(
+    () => new Map((fontes.data ?? []).map((item) => [item.fonte, item])),
+    [fontes.data],
+  );
+  const campo: React.CSSProperties = { padding: '6px 9px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12, background: colors.bg };
+  return (
+    <Card pad={0}>
+      <div style={{ padding: '12px 16px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Matriz de cobertura</div>
+        <div style={{ flex: 1 }} />
+        <input placeholder="fonte" value={fonte} onChange={(e) => { setFonte(e.target.value); setPage(1); }} style={campo} aria-label="Filtro fonte" />
+        <input placeholder="UF (23)" value={uf} onChange={(e) => { setUf(e.target.value); setPage(1); }} style={{ ...campo, width: 80 }} aria-label="Filtro UF" />
+        <input placeholder="ano" value={ano} onChange={(e) => { setAno(e.target.value); setPage(1); }} style={{ ...campo, width: 80 }} aria-label="Filtro ano" />
+      </div>
+      <Async res={res}>
+        {(c) => {
+          const grupos = agruparCobertura(c.data, catalogo);
+          const totalPaginas = Math.max(1, Math.ceil(c.total / c.page_size));
+          return (
+            <>
+            <div style={{ padding: '6px 16px', fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace", borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
+              {c.resumo.total_linhas} linhas · {c.resumo.entes} entes · {c.resumo.periodos} períodos · fontes: {c.resumo.fontes.join(', ') || '—'}
+            </div>
+            <div style={{ padding: '6px 16px', fontSize: 10.5, color: colors.faint, borderBottom: `1px solid ${colors.border}` }}>
+              Lacunas são inferidas pela cadência do catálogo sobre os grupos visíveis nesta página; fontes contínuas/eventuais ficam sem inferência.
+            </div>
+            <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 960 }}>
+                <thead><tr style={{ color: colors.muted, textAlign: 'left' }}>
+                  {['Fonte', 'Ente', 'UF', 'Ano', 'Períodos observados', 'Períodos ausentes', 'Registros', 'Versão', 'Defasagem'].map((h) => (
+                    <th key={h} style={{ padding: '6px 10px', fontSize: 9.5, textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {grupos.map((r) => (
+                    <tr key={r.chave} style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
+                      <td style={{ padding: '5px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{r.fonte}</td>
+                      <td style={{ padding: '5px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{r.cod_ibge}</td>
+                      <td style={{ padding: '5px 10px' }}>{r.uf ?? '—'}</td>
+                      <td style={{ padding: '5px 10px' }}>{r.ano}</td>
+                      <td style={{ padding: '5px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{r.periodos.join(', ') || '—'}</td>
+                      <td style={{ padding: '5px 10px', fontFamily: "'JetBrains Mono', monospace", color: r.ausentes?.length ? colors.red : colors.green }}>
+                        {r.ausentes === null ? 'não inferível' : r.ausentes.join(', ') || 'nenhum'}
+                      </td>
+                      <td style={{ padding: '5px 10px' }}>{r.registros}</td>
+                      <td style={{ padding: '5px 10px', color: colors.faint }}>{r.versao ?? '—'}</td>
+                      <td style={{ padding: '5px 10px', color: (r.defasagem ?? 0) > 2 ? colors.orange : colors.muted }}>{r.defasagem ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '8px 16px', borderTop: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, fontSize: 11, color: colors.muted }}>
+              <button disabled={c.page <= 1} onClick={() => setPage((atual) => Math.max(1, atual - 1))} style={btnMini}>anterior</button>
+              <span>página {c.page} de {totalPaginas}</span>
+              <button disabled={c.page >= totalPaginas} onClick={() => setPage((atual) => Math.min(totalPaginas, atual + 1))} style={btnMini}>próxima</button>
+            </div>
+          </>
+          );
+        }}
+      </Async>
+    </Card>
+  );
+}
+
+// ============================ Retificações ============================
+function RetificacoesTab() {
+  const res = useResource(() => fetchRetificacoes(), []);
+  return (
+    <Card pad={0}>
+      <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>
+        Retificações <span style={{ fontSize: 10.5, color: colors.muted, fontWeight: 400 }}>· entregas que superaram uma versão anterior (§6.5)</span>
+      </div>
+      <Async res={res}>
+        {(itens) => itens.length === 0 ? (
+          <div style={{ padding: 16, fontSize: 12, color: colors.muted }}>Nenhuma retificação registrada.</div>
+        ) : (
+          <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+              <thead><tr style={{ color: colors.muted, textAlign: 'left' }}>
+                {['Ente', 'Relatório', 'Período', 'Versão vigente', 'Homologada', 'Versões anteriores'].map((h) => (
+                  <th key={h} style={{ padding: '6px 10px', fontSize: 9.5, textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {itens.map((r, i) => (
+                  <tr key={i} style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
+                    <td style={{ padding: '5px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{r.cod_ibge}</td>
+                    <td style={{ padding: '5px 10px' }}>{r.relatorio}</td>
+                    <td style={{ padding: '5px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{r.periodo}</td>
+                    <td style={{ padding: '5px 10px', color: colors.faint }}>{r.versao_entrega}</td>
+                    <td style={{ padding: '5px 10px' }}>{hora(r.homologada_em)}</td>
+                    <td style={{ padding: '5px 10px' }}>{r.versoes_anteriores}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Async>
+    </Card>
+  );
+}

@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './layouts/AppShell';
-import { DashboardPage } from './pages/DashboardPage';
+import { CockpitPage } from './pages/CockpitPage';
 import { CarteiraPage } from './pages/CarteiraPage';
 import { LimitesPage } from './pages/LimitesPage';
 import { ReceitaPage } from './pages/ReceitaPage';
@@ -16,17 +16,16 @@ import { AlertasPage } from './pages/AlertasPage';
 import { AssistentePage } from './pages/AssistentePage';
 import { RelatoriosPage } from './pages/RelatoriosPage';
 import { AdminPage } from './pages/AdminPage';
-import { OnboardingPage } from './pages/OnboardingPage';
+import { CentralDadosPage } from './pages/CentralDadosPage';
+import { RequireAdministrar } from './components/RequireAdministrar';
 
 export default function App() {
   return (
     <Routes>
-      {/* Fluxo de onboarding — tela cheia, fora do shell */}
-      <Route path="/onboarding" element={<OnboardingPage />} />
-
       {/* Aplicação — dentro do shell (sidebar + topbar + footer) */}
       <Route element={<AppShell />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
+        {/* Mesma rota: o Dashboard virou o Cockpit executivo (Sprint 22). */}
+        <Route path="/dashboard" element={<CockpitPage />} />
         <Route path="/carteira" element={<CarteiraPage />} />
         <Route path="/limites" element={<LimitesPage />} />
         <Route path="/receita" element={<ReceitaPage />} />
@@ -41,7 +40,22 @@ export default function App() {
         <Route path="/alertas" element={<AlertasPage />} />
         <Route path="/assistente" element={<AssistentePage />} />
         <Route path="/relatorios" element={<RelatoriosPage />} />
-        <Route path="/admin" element={<AdminPage />} />
+        <Route
+          path="/admin"
+          element={
+            <RequireAdministrar>
+              <AdminPage />
+            </RequireAdministrar>
+          }
+        />
+        <Route
+          path="/central-dados"
+          element={
+            <RequireAdministrar>
+              <CentralDadosPage />
+            </RequireAdministrar>
+          }
+        />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

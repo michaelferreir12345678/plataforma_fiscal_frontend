@@ -1,10 +1,17 @@
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { colors } from '../theme';
 import { Icon } from '../components/Icon';
 import { navSections } from './navConfig';
-import { useApp } from '../context/AppContext';
+import { SeletorEnte, SeletorPeriodo, SeletorVisao } from './ContextSelectors';
+import { useApp, useResource } from '../context/AppContext';
+import { fetchAlertas, fetchCarteiraResumo, fetchFontes, fetchMe } from '../services/backend';
+import type { FonteCatalogo } from '../services/backend';
 
-function Badge({ text, tone }: { text: string; tone: 'count' | 'new' | 'dot' }) {
+/** Versão do app vem do build (Vite), nunca de um literal na UI. */
+const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string) || import.meta.env.MODE;
+
+function Badge({ text, tone }: { text: string; tone: 'count' | 'new' | 'alerta' }) {
   if (tone === 'new') {
     return (
       <span
@@ -23,16 +30,17 @@ function Badge({ text, tone }: { text: string; tone: 'count' | 'new' | 'dot' }) 
       </span>
     );
   }
+  const critico = tone === 'alerta';
   return (
     <span
       style={{
         marginLeft: 'auto',
         fontSize: 9.5,
         fontFamily: "'JetBrains Mono', monospace",
-        background: text === '3' ? colors.red : colors.border,
-        color: text === '3' ? '#fff' : colors.muted,
+        background: critico ? colors.red : colors.border,
+        color: critico ? '#fff' : colors.muted,
         padding: '1px 6px',
-        borderRadius: text === '3' ? 8 : 2,
+        borderRadius: critico ? 8 : 2,
         fontWeight: 600,
       }}
     >
@@ -41,11 +49,94 @@ function Badge({ text, tone }: { text: string; tone: 'count' | 'new' | 'dot' }) 
   );
 }
 
+/** Iniciais do nome real do usuário (sem inventar avatar). */
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '—';
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+function horaCurta(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+/** Resumo factual das fontes — sem veredito inventado ("Conforme"). */
+function resumoFontes(fontes: FonteCatalogo[]) {
+  const ativas = fontes.filter((f) => f.ativo);
+  const comDado = ativas.filter((f) => f.periodo_mais_recente);
+  const execucoes = comDado
+    .map((f) => f.ultima_execucao_ok)
+    .filter((t): t is string => Boolean(t))
+    .sort();
+  const ultima = execucoes.length ? execucoes[execucoes.length - 1] : null;
+  const siconfi = fontes.filter((f) => f.familia === 'siconfi' && f.periodo_mais_recente);
+  const defasagem = siconfi
+    .map((f) => f.defasagem_periodos)
+    .filter((d): d is number => d !== null);
+  return {
+    totalAtivas: ativas.length,
+    comDado: comDado.length,
+    ultima,
+    defasagemMax: defasagem.length ? Math.max(...defasagem) : null,
+    porRelatorio: siconfi
+      .slice()
+      .sort((a, b) => a.relatorio.localeCompare(b.relatorio))
+      .map((f) => `${f.relatorio} ${f.periodo_mais_recente}`),
+  };
+}
+
+/**
+ * Rotas cujo período é governado pelo **RGF** (quadrimestral), e não pelo RREO.
+ * Fica declarado aqui, num lugar só, em vez de espalhado como condicional por página.
+ */
+const ROTAS_RGF = ['/divida', '/caixa'];
+
 export function AppShell() {
   const location = useLocation();
-  const isAdmin = location.pathname.startsWith('/admin');
-  const { ente, periodo, periodoRgf, logout } = useApp();
-  const periodoAtivo = location.pathname.startsWith('/divida') ? periodoRgf : periodo;
+  const { ente, periodo, logout } = useApp();
+  const usaRgf = ROTAS_RGF.some((r) => location.pathname.startsWith(r));
+  const [buscaAberta, setBuscaAberta] = useState(false);
+
+  // ⌘K / Ctrl+K abre a busca de ente.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setBuscaAberta(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Contrato do shell: quem está logado, em qual organização e com quais capacidades.
+  const me = useResource(() => fetchMe(), []);
+  const capacidades = me.data?.org_ativa?.capacidades ?? [];
+  const podeAdministrar = capacidades.includes('administrar');
+
+  // Status das fontes só é buscado por quem pode administrar; sem permissão, some.
+  const fontes = useResource(
+    () => (podeAdministrar ? fetchFontes() : Promise.resolve(null)),
+    [podeAdministrar],
+  );
+  const status = fontes.data ? resumoFontes(fontes.data) : null;
+
+  // Badges do menu a partir de contagem real (nunca número fixo).
+  const alertas = useResource(() => fetchAlertas(ente.cod_ibge, 'ente'), [ente.cod_ibge]);
+  const carteira = useResource(() => fetchCarteiraResumo(periodo), [periodo]);
+  const badges: Record<string, { text: string; tone: 'count' | 'new' | 'alerta' }> = {};
+  const totalAlertas = alertas.data?.contadores.total ?? 0;
+  if (totalAlertas > 0) {
+    const criticos = alertas.data?.contadores.critico ?? 0;
+    badges['/alertas'] = { text: String(totalAlertas), tone: criticos > 0 ? 'alerta' : 'count' };
+  }
+  if (carteira.data) {
+    badges['/carteira'] = { text: String(carteira.data.total_entes), tone: 'count' };
+  }
 
   return (
     <div
@@ -95,56 +186,15 @@ export function AppShell() {
           </div>
         </Link>
 
-        <button
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '6px 10px',
-            border: `1px solid ${colors.border}`,
-            borderRadius: 4,
-            background: colors.bg,
-          }}
-        >
-          <div style={{ width: 22, height: 22, borderRadius: 3, background: colors.primary, color: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600 }}>
-            CE
-          </div>
-          <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
-            <div style={{ fontSize: 9, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Ente</div>
-            <div style={{ fontSize: 12.5, fontWeight: 500 }}>{ente.nome}</div>
-          </div>
-          <Icon size={12} viewBox="0 0 12 12" stroke={colors.muted}>
-            <path d="M3 5l3 3 3-3" />
-          </Icon>
-        </button>
-
-        <button
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 10px',
-            border: `1px solid ${colors.border}`,
-            borderRadius: 4,
-            background: colors.bg,
-          }}
-        >
-          <Icon size={13} stroke={colors.muted}>
-            <rect x="2.5" y="3.5" width="11" height="10" rx="1" />
-            <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
-          </Icon>
-          <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
-            <div style={{ fontSize: 9, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Período</div>
-            <div style={{ fontSize: 12.5, fontWeight: 500, fontFamily: "'JetBrains Mono', monospace" }}>{periodoAtivo}</div>
-          </div>
-          <Icon size={12} viewBox="0 0 12 12" stroke={colors.muted}>
-            <path d="M3 5l3 3 3-3" />
-          </Icon>
-        </button>
+        <SeletorEnte aberto={buscaAberta} setAberto={setBuscaAberta} />
+        <SeletorPeriodo usaRgf={usaRgf} />
+        <SeletorVisao />
 
         <div style={{ flex: 1 }} />
 
         <button
+          onClick={() => setBuscaAberta(true)}
+          aria-label="Buscar ente (Ctrl+K)"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -160,27 +210,26 @@ export function AppShell() {
             <circle cx="7" cy="7" r="4.5" />
             <path d="M10.5 10.5L14 14" />
           </Icon>
-          <span style={{ fontSize: 12 }}>Buscar ente, limite, conta…</span>
+          <span style={{ fontSize: 12 }}>Buscar ente…</span>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, background: colors.surface, border: `1px solid ${colors.border}`, padding: '1px 5px', borderRadius: 3 }}>
             ⌘K
           </span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', border: '1px solid #C7E5D5', background: colors.greenBg, borderRadius: 4 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: colors.green, animation: 'pulse-soft 2s ease-in-out infinite' }} />
-          <div style={{ lineHeight: 1.15 }}>
-            <div style={{ fontSize: 9, color: colors.green, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}>SICONFI</div>
-            <div style={{ fontSize: 11.5, fontWeight: 500, color: colors.ink }}>Conforme · sync 12 min</div>
-          </div>
-        </div>
+        {/* Status da ingestão: some sem permissão; erro é mostrado como erro. */}
+        {podeAdministrar && <StatusChip carregando={fontes.loading} erro={fontes.error} status={status} />}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 8, borderLeft: `1px solid ${colors.border}` }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: colors.primaryGrad, color: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
-            MV
+            {me.data ? iniciais(me.data.nome) : '·'}
           </div>
           <div style={{ lineHeight: 1.15 }}>
-            <div style={{ fontSize: 12, fontWeight: 500 }}>Marina Vasconcelos</div>
-            <div style={{ fontSize: 10, color: colors.faint }}>Secretaria de Finanças</div>
+            <div style={{ fontSize: 12, fontWeight: 500 }}>
+              {me.data?.nome ?? (me.error ? 'Sessão indisponível' : 'Carregando…')}
+            </div>
+            <div style={{ fontSize: 10, color: colors.faint }}>
+              {me.data?.org_ativa?.org_nome ?? (me.error ? me.error : '—')}
+            </div>
           </div>
           <button
             onClick={logout}
@@ -210,13 +259,16 @@ export function AppShell() {
               {section.title}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {section.items.map((item) => (
-                <NavLink key={item.to} to={item.to} style={({ isActive }) => navLinkStyle(isActive)}>
-                  {item.icon}
-                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>{item.label}</span>
-                  {item.badge && <Badge text={item.badge.text} tone={item.badge.tone} />}
-                </NavLink>
-              ))}
+              {section.items.map((item) => {
+                const badge = item.badge ?? badges[item.to];
+                return (
+                  <NavLink key={item.to} to={item.to} style={({ isActive }) => navLinkStyle(isActive)}>
+                    {item.icon}
+                    <span style={{ fontSize: 12.5, fontWeight: 500 }}>{item.label}</span>
+                    {badge && <Badge text={badge.text} tone={badge.tone} />}
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -224,21 +276,26 @@ export function AppShell() {
         <div style={{ flex: 1 }} />
 
         <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <NavLink to="/admin" style={({ isActive }) => navLinkStyle(isActive)}>
-            <Icon>
-              <path d="M8 2l5 2.5v3.5c0 3-2 5-5 6-3-1-5-3-5-6V4.5z" />
-              <circle cx="8" cy="7" r="1.6" />
-              <path d="M5.5 11c0-1.4 1.1-2.2 2.5-2.2s2.5.8 2.5 2.2" />
-            </Icon>
-            <span style={{ fontSize: 12.5, fontWeight: 500 }}>Administração</span>
-          </NavLink>
-          <Link to="/onboarding" style={navLinkStyle(false)}>
-            <Icon>
-              <circle cx="8" cy="8" r="2" />
-              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" />
-            </Icon>
-            <span style={{ fontSize: 12 }}>Conta &amp; contexto fiscal</span>
-          </Link>
+          {podeAdministrar && (
+            <>
+              <NavLink to="/central-dados" style={({ isActive }) => navLinkStyle(isActive)}>
+                <Icon>
+                  <rect x="2.5" y="3" width="11" height="3" rx="0.5" />
+                  <rect x="2.5" y="6.5" width="11" height="3" rx="0.5" />
+                  <rect x="2.5" y="10" width="11" height="3" rx="0.5" />
+                </Icon>
+                <span style={{ fontSize: 12.5, fontWeight: 500 }}>Central de Dados</span>
+              </NavLink>
+              <NavLink to="/admin" style={({ isActive }) => navLinkStyle(isActive)}>
+                <Icon>
+                  <path d="M8 2l5 2.5v3.5c0 3-2 5-5 6-3-1-5-3-5-6V4.5z" />
+                  <circle cx="8" cy="7" r="1.6" />
+                  <path d="M5.5 11c0-1.4 1.1-2.2 2.5-2.2s2.5.8 2.5 2.2" />
+                </Icon>
+                <span style={{ fontSize: 12.5, fontWeight: 500 }}>Administração</span>
+              </NavLink>
+            </>
+          )}
         </div>
       </aside>
 
@@ -263,19 +320,117 @@ export function AppShell() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: colors.green }} />
-            <span>SICONFI online</span>
-          </div>
-          <span style={{ color: '#3A4540' }}>·</span>
-          <span>RREO 2025/2 OK · RGF 2025/1 OK · DCA 2024 OK · MSC Mai/2025 OK</span>
+          {podeAdministrar ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: fontes.error ? colors.red : status ? colors.green : '#5B6B7B',
+                  }}
+                />
+                <span>
+                  {fontes.error
+                    ? 'ingestão indisponível'
+                    : status
+                      ? `${status.comDado}/${status.totalAtivas} fontes com dado`
+                      : 'consultando fontes…'}
+                </span>
+              </div>
+              {status && status.porRelatorio.length > 0 && (
+                <>
+                  <span style={{ color: '#3A4540' }}>·</span>
+                  <span>{status.porRelatorio.join(' · ')}</span>
+                </>
+              )}
+            </>
+          ) : (
+            <span style={{ color: '#7C8A82' }}>{ente.nome}</span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span>última carga 14/06/2025 03:12</span>
-          <span style={{ color: '#3A4540' }}>·</span>
-          <span>v2.4.1 · ambiente {isAdmin ? 'admin' : 'prod'}</span>
+          {podeAdministrar && (
+            <>
+              <span>
+                {fontes.error
+                  ? 'última carga indisponível'
+                  : status?.ultima
+                    ? `última carga ${horaCurta(status.ultima)}`
+                    : 'sem carga registrada'}
+              </span>
+              <span style={{ color: '#3A4540' }}>·</span>
+            </>
+          )}
+          <span>
+            {APP_VERSION} · ambiente {import.meta.env.MODE}
+          </span>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/**
+ * Chip de status da ingestão. Três estados **honestos**: carregando, erro (com a causa)
+ * e o resumo factual — nunca um veredito de conformidade inventado.
+ */
+function StatusChip({
+  carregando,
+  erro,
+  status,
+}: {
+  carregando: boolean;
+  erro: string | null;
+  status: ReturnType<typeof resumoFontes> | null;
+}) {
+  const tom = erro
+    ? { borda: '#E8C0C0', fundo: colors.redBg, ponto: colors.red, rotulo: colors.red }
+    : status
+      ? { borda: '#C7E5D5', fundo: colors.greenBg, ponto: colors.green, rotulo: colors.green }
+      : { borda: colors.border, fundo: colors.bg, ponto: colors.neutral, rotulo: colors.muted };
+
+  const detalhe = erro
+    ? erro
+    : carregando || !status
+      ? 'consultando…'
+      : status.ultima
+        ? `última carga ${horaCurta(status.ultima)}`
+        : 'sem carga registrada';
+
+  return (
+    <div
+      title={erro ? `Falha ao consultar /admin/ingestion/fontes: ${erro}` : undefined}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '5px 10px',
+        border: `1px solid ${tom.borda}`,
+        background: tom.fundo,
+        borderRadius: 4,
+        maxWidth: 260,
+      }}
+    >
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: tom.ponto, flexShrink: 0 }} />
+      <div style={{ lineHeight: 1.15, minWidth: 0 }}>
+        <div style={{ fontSize: 9, color: tom.rotulo, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}>
+          Ingestão
+        </div>
+        <div
+          style={{
+            fontSize: 11.5,
+            fontWeight: 500,
+            color: colors.ink,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {detalhe}
+        </div>
+      </div>
     </div>
   );
 }

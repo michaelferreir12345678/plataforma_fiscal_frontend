@@ -1,7 +1,40 @@
-import { useState } from 'react';
-import { colors } from '../theme';
+/**
+ * Administração, Carteira avançada & Billing (Módulo 17) — Sprint 18.
+ * As abas Carteira, Faturamento, Integrações e Auditoria consomem o backend REAL:
+ * - cobrança reflete a metrica_cobranca (com memória + source_ref auditáveis);
+ * - faturas expõem empenho/contrato (compra pública);
+ * - integrações mostram o estado global; mutações ficam restritas ao control plane;
+ * - trilha de auditoria filtrável.
+ */
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
+import { useResource } from '../context/AppContext';
+import { Async } from '../components/AsyncState';
+import { Link } from 'react-router-dom';
+import {
+  atualizarPapelCapacidades,
+  CAPACIDADES,
+  carteiraLote,
+  criarPapel,
+  criarUsuario,
+  emitirFatura,
+  fetchAuditoria,
+  fetchBilling,
+  fetchCarteiraEntes,
+  fetchIntegracoes,
+  fetchMe,
+  fetchOrgs,
+  fetchPapeis,
+  fetchUsuarios,
+  type BillingOverview,
+  type Capacidade,
+  type FiscalDecimal,
+  type MetricaCobranca,
+  type OrgOut,
+  type PapelOut,
+} from '../services/backend';
 
 type Tab = 'organizacao' | 'usuarios' | 'permissoes' | 'carteira' | 'faturamento' | 'integracoes' | 'auditoria';
 
@@ -15,55 +48,28 @@ const tabs: { key: Tab; label: string; icon: string }[] = [
   { key: 'auditoria', label: 'Auditoria & segurança', icon: 'M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4zM6 8l1.5 1.5L10 7' },
 ];
 
-const usuarios = [
-  { nome: 'Marina Vasconcelos', email: 'marina.v@sefin.fortaleza', papel: 'Secretária de Finanças', escopo: 'Toda a organização', status: 'Ativo', ultimo: 'agora', ini: 'MV', sc: colors.green, sbg: colors.greenBg },
-  { nome: 'Carlos Tavares', email: 'carlos.t@sefin.fortaleza', papel: 'Contador', escopo: 'Pessoal · Dívida · Resultado', status: 'Ativo', ultimo: 'há 12 min', ini: 'CT', sc: colors.green, sbg: colors.greenBg },
-  { nome: 'Beatriz Lima', email: 'beatriz.l@sefin.fortaleza', papel: 'Controladora', escopo: 'Conformidade · Auditoria', status: 'Ativo', ultimo: 'há 2 h', ini: 'BL', sc: colors.green, sbg: colors.greenBg },
-  { nome: 'Rafael Nunes', email: 'rafael.n@sefin.fortaleza', papel: 'Técnico de Planejamento', escopo: 'Previsões · Receita · Despesa', status: 'Ativo', ultimo: 'ontem', ini: 'RN', sc: colors.green, sbg: colors.greenBg },
-  { nome: 'Gabinete do Prefeito', email: 'gabinete@fortaleza.ce.gov', papel: 'Leitura / Gabinete', escopo: 'Dashboard · leitura', status: 'Ativo', ultimo: 'há 3 dias', ini: 'GP', sc: colors.green, sbg: colors.greenBg },
-  { nome: 'portal.transparencia@…', email: 'convite enviado em 14/06', papel: 'Leitura / Transparência', escopo: '—', status: 'Convite pendente', ultimo: '—', ini: 'PT', sc: colors.yellowText, sbg: colors.yellowBg },
-];
+/** Iniciais do nome real (o backend não guarda avatar). */
+function iniciaisDe(nome: string): string {
+  const p = nome.trim().split(/\s+/).filter(Boolean);
+  if (p.length === 0) return '—';
+  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
+  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+}
 
-const roles = ['Secretário', 'Contador', 'Controlador', 'Técnico', 'Gabinete', 'Leitura'];
-const caps: { cap: string; vals: ('full' | 'view' | 'none')[] }[] = [
-  { cap: 'Visualizar painéis', vals: ['full', 'full', 'full', 'full', 'view', 'view'] },
-  { cap: 'Exportar relatórios', vals: ['full', 'full', 'full', 'full', 'view', 'none'] },
-  { cap: 'Configurar alertas', vals: ['full', 'full', 'full', 'view', 'none', 'none'] },
-  { cap: 'Usar Assistente de IA', vals: ['full', 'full', 'full', 'full', 'view', 'none'] },
-  { cap: 'Gerir carteira', vals: ['full', 'none', 'view', 'none', 'none', 'none'] },
-  { cap: 'Administrar usuários', vals: ['full', 'none', 'none', 'none', 'none', 'none'] },
-  { cap: 'Faturamento & contrato', vals: ['full', 'none', 'view', 'none', 'none', 'none'] },
-];
+const METRICA_LABEL: Record<MetricaCobranca, string> = {
+  por_ente: 'por ente monitorado',
+  por_populacao: 'por habitante (população IBGE)',
+  por_consulta_ia: 'por consulta de IA',
+  fixo: 'valor fixo por ciclo',
+};
 
-const carteira = [
-  { name: 'Fortaleza', grupo: 'RMF', tags: ['capital'], resp: 'Marina V.', ass: 'Ativa', sigla: 'FOR' },
-  { name: 'Caucaia', grupo: 'RMF', tags: ['metropolitana'], resp: 'Rafael N.', ass: 'Ativa', sigla: 'CAU' },
-  { name: 'Maracanaú', grupo: 'RMF', tags: ['metropolitana'], resp: 'Rafael N.', ass: 'Ativa', sigla: 'MAR' },
-  { name: 'Juazeiro do Norte', grupo: 'Cariri', tags: ['interior'], resp: 'Carlos T.', ass: 'Ativa', sigla: 'JUA' },
-  { name: 'Crato', grupo: 'Cariri', tags: ['interior'], resp: 'Carlos T.', ass: 'Renovar', sigla: 'CRA' },
-  { name: 'Sobral', grupo: 'Norte', tags: ['interior', 'polo'], resp: 'Beatriz L.', ass: 'Ativa', sigla: 'SOB' },
-];
-
-const integracoes = [
-  { fonte: 'SICONFI (STN)', desc: 'RREO · RGF · DCA · MSC — fonte primária', status: 'Sincronizado', sc: colors.green, ultimo: 'há 12 min', on: true, core: true },
-  { fonte: 'SADIPEM', desc: 'Dívida e operações de crédito', status: 'Sincronizado', sc: colors.green, ultimo: 'há 1 dia', on: true, core: false },
-  { fonte: 'SIOPE / SIOPS', desc: 'Mínimos de Educação e Saúde', status: 'Sincronizado', sc: colors.green, ultimo: 'há 6 h', on: true, core: false },
-  { fonte: 'Transferências constitucionais', desc: 'FPM · FUNDEB · cota-parte ICMS', status: 'Sincronizado', sc: colors.green, ultimo: 'há 2 h', on: true, core: false },
-  { fonte: 'Índices econômicos', desc: 'IPCA · Selic · projeções (BCB)', status: 'Atualização semanal', sc: colors.neutral, ultimo: 'há 3 dias', on: true, core: false },
-  { fonte: 'CAPAG (Tesouro)', desc: 'Capacidade de pagamento — anual', status: 'Desativado', sc: colors.faint, ultimo: '—', on: false, core: false },
-];
-
-const audit = [
-  { ts: '19/06 09:42', user: 'Marina V.', acao: 'Concedeu papel Contador a Carlos Tavares', tipo: 'Permissão', c: colors.orange, bg: colors.orangeBg },
-  { ts: '19/06 09:15', user: 'Rafael N.', acao: 'Exportou relatório "Resultado Fiscal 2º bim" (PDF)', tipo: 'Exportação', c: colors.neutral, bg: colors.neutralBg },
-  { ts: '18/06 17:30', user: 'Beatriz L.', acao: 'Alterou limiar do alerta de Pessoal para 95%', tipo: 'Config. alerta', c: colors.neutral, bg: colors.neutralBg },
-  { ts: '18/06 14:02', user: 'Marina V.', acao: 'Adicionou Sobral à carteira (grupo Norte)', tipo: 'Carteira', c: colors.primary, bg: colors.accentSoft },
-  { ts: '17/06 11:48', user: 'sistema', acao: 'Sincronização SICONFI concluída · 184 entes', tipo: 'Dados', c: colors.neutral, bg: colors.neutralBg },
-  { ts: '17/06 08:30', user: 'Carlos T.', acao: 'Login · 2FA verificado (TOTP)', tipo: 'Acesso', c: colors.green, bg: colors.greenBg },
-];
+const brl = (v: FiscalDecimal | null | undefined): string =>
+  v == null ? '—' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v));
+const num = (v: FiscalDecimal | null | undefined): string =>
+  v == null ? '—' : new Intl.NumberFormat('pt-BR').format(Number(v));
 
 export function AdminPage() {
-  const [tab, setTab] = useState<Tab>('organizacao');
+  const [tab, setTab] = useState<Tab>('faturamento');
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Administração">
@@ -73,20 +79,19 @@ export function AdminPage() {
         </div>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600 }}>Administração &amp; Configurações</div>
-          <div style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>governança multi-tenant · quem vê o quê é segurança, não conveniência</div>
+          <div style={{ fontSize: 11, color: colors.muted, fontFamily: font.mono }}>governança multi-tenant · cobrança, integrações e auditoria reais</div>
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', border: '1px solid #C7E5D5', background: colors.greenBg, borderRadius: 4 }}>
           <Icon size={14} stroke={colors.green}><path d="M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4z" /><path d="M5.5 8l1.7 1.7L10.5 6.5" /></Icon>
           <div style={{ lineHeight: 1.15 }}>
             <div style={{ fontSize: 11, fontWeight: 600 }}>Tenant isolado</div>
-            <div style={{ fontSize: 9.5, color: colors.green, fontFamily: "'JetBrains Mono', monospace" }}>escopo não vaza entre orgs</div>
+            <div style={{ fontSize: 9.5, color: colors.green, fontFamily: font.mono }}>RLS: escopo não vaza entre orgs</div>
           </div>
         </div>
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 12, alignItems: 'start' }}>
-        {/* sub-tabs */}
         <Card pad={8} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {tabs.map((t) => {
             const a = t.key === tab;
@@ -99,7 +104,6 @@ export function AdminPage() {
           })}
         </Card>
 
-        {/* conteúdo */}
         <div style={{ minWidth: 0 }}>
           {tab === 'organizacao' && <Organizacao />}
           {tab === 'usuarios' && <Usuarios />}
@@ -114,210 +118,168 @@ export function AdminPage() {
   );
 }
 
-function Organizacao() {
-  return (
-    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Card style={{ padding: 18 }} pad={0}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 8, background: colors.primaryGrad, color: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600 }}>FOR</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 17, fontWeight: 600 }}>Prefeitura de Fortaleza</div>
-              <span style={{ fontSize: 10, padding: '3px 9px', background: colors.accentSoft, color: colors.primary, borderRadius: 3, fontWeight: 600, letterSpacing: '0.04em' }}>CONTA · PREFEITURA</span>
-            </div>
-            <div style={{ fontSize: 11.5, color: colors.muted, fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>CNPJ 07.954.605/0001-60 · esfera Municipal · porte ≥ 50 mil · com RPPS</div>
-            <div style={{ fontSize: 11, color: colors.faint, marginTop: 8, lineHeight: 1.45 }}>O tipo de conta determina as funcionalidades disponíveis e a lógica de cobrança. Esfera e porte regem o cálculo de todos os limites.</div>
-          </div>
-          <button style={{ padding: '8px 14px', border: `1px solid ${colors.border}`, borderRadius: 5, fontSize: 12, fontWeight: 500, color: colors.primary }}>Editar contexto fiscal</button>
-        </div>
-      </Card>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        {[
-          ['Plano vigente', 'Ente · Pro', 'vigência por exercício 2025', colors.primary],
-          ['Assentos', '5 / 8', '3 disponíveis', undefined],
-          ['Relatórios · mês', '42', 'ilimitado no plano', undefined],
-          ['Consultas IA · mês', '318 / 500', '64% da cota', undefined],
-        ].map(([l, v, s, accent]) => (
-          <Card key={l as string} pad={14} accent={accent as string | undefined}>
-            <div style={{ fontSize: 9.5, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}>{l}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 600, marginTop: 4 }}>{v}</div>
-            <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>{s}</div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Usuarios() {
-  return (
-    <Card pad={0} className="fade-in">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Usuários &amp; perfis</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>papel + escopo · todo acesso é auditável</div>
-        </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12, fontWeight: 500 }}>
-          <Icon size={13} stroke={colors.bg} sw={1.6}><path d="M8 3v10M3 8h10" /></Icon>
-          Convidar usuário
-        </button>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.3fr 1.4fr 0.9fr 0.7fr', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-        <div>Usuário</div><div>Papel</div><div>Escopo</div><div>Status</div><div style={{ textAlign: 'right' }}>Último acesso</div>
-      </div>
-      {usuarios.map((u) => (
-        <div key={u.nome} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.3fr 1.4fr 0.9fr 0.7fr', padding: '10px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: colors.accentSoft, color: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>{u.ini}</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.nome}</div>
-              <div style={{ fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
-            </div>
-          </div>
-          <div style={{ fontWeight: 500 }}>{u.papel}</div>
-          <div style={{ fontSize: 11, color: colors.muted }}>{u.escopo}</div>
-          <div><span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: u.sbg, color: u.sc, letterSpacing: '0.04em' }}>{u.status}</span></div>
-          <div style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: colors.muted }}>{u.ultimo}</div>
-        </div>
-      ))}
-    </Card>
-  );
-}
-
-function Permissoes() {
-  const cell = (v: 'full' | 'view' | 'none') =>
-    v === 'full'
-      ? { bg: colors.accentSoft, c: colors.primary, d: 'M4 8l2.5 2.5L12 5' }
-      : v === 'view'
-        ? { bg: colors.yellowBg, c: colors.yellowText, d: 'M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z' }
-        : { bg: colors.bg, c: '#C5C0B4', d: 'M4 4l8 8M12 4l-8 8' };
-  return (
-    <Card className="fade-in">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Matriz de permissões · papel × capacidade</div>
-        <span style={{ fontSize: 8.5, padding: '1px 6px', background: colors.accentSoft, color: colors.primary, borderRadius: 2, fontWeight: 600 }}>RBAC</span>
-      </div>
-      <div style={{ fontSize: 10.5, color: colors.muted, marginBottom: 16 }}>granular e auditável · coerente com tipo de conta e nível de visão</div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 640 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 9.5, color: colors.faint, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>Capacidade</th>
-              {roles.map((r) => (
-                <th key={r} style={{ textAlign: 'center', padding: '8px 6px', fontSize: 9.5, color: colors.muted, letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>{r}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {caps.map((c) => (
-              <tr key={c.cap} style={{ borderBottom: `1px solid ${colors.rowBorder}` }}>
-                <td style={{ padding: '8px 10px', fontWeight: 500 }}>{c.cap}</td>
-                {c.vals.map((v, i) => {
-                  const cl = cell(v);
-                  return (
-                    <td key={i} style={{ padding: 6, textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 5, background: cl.bg }}>
-                        <Icon size={13} stroke={cl.c} sw={1.7}><path d={cl.d} /></Icon>
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
+// ------------------------- Carteira (real) ------------------------- //
 function Carteira() {
+  const res = useResource(fetchCarteiraEntes, []);
+  const [cod, setCod] = useState('');
+  const [grupo, setGrupo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const add = useCallback(async () => {
+    if (!cod.trim()) return;
+    setBusy(true); setErr(null);
+    try {
+      await carteiraLote({ adicionar: [{ cod_ibge: cod.trim(), grupo: grupo.trim() || null }], remover: [] });
+      setCod(''); setGrupo(''); res.reload();
+    } catch (e) { setErr((e as { detail?: string; message?: string }).detail || (e as Error).message); }
+    finally { setBusy(false); }
+  }, [cod, grupo, res]);
+
+  const remove = useCallback(async (c: string) => {
+    setBusy(true); setErr(null);
+    try { await carteiraLote({ adicionar: [], remover: [c] }); res.reload(); }
+    catch (e) { setErr((e as { detail?: string; message?: string }).detail || (e as Error).message); }
+    finally { setBusy(false); }
+  }, [res]);
+
   return (
     <Card pad={0} className="fade-in">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}`, flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Gestão de carteira</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>entes acompanhados · grupos, tags, responsáveis e ações em lote</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Gestão de carteira · em lote</div>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>entes acompanhados (referência por código IBGE — nunca copia o dado)</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ padding: '8px 12px', border: `1px solid ${colors.border}`, borderRadius: 5, fontSize: 12, fontWeight: 500, color: colors.muted }}>Ações em lote</button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12, fontWeight: 500 }}>
-            <Icon size={13} stroke={colors.bg} sw={1.6}><path d="M8 3v10M3 8h10" /></Icon>
-            Adicionar ente
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input value={cod} onChange={(e) => setCod(e.target.value)} placeholder="cód. IBGE" style={inp(96)} />
+          <input value={grupo} onChange={(e) => setGrupo(e.target.value)} placeholder="grupo (opcional)" style={inp(130)} />
+          <button onClick={add} disabled={busy || !cod.trim()} style={btnPrimary(busy || !cod.trim())}>
+            <Icon size={13} stroke={colors.bg} sw={1.6}><path d="M8 3v10M3 8h10" /></Icon> Adicionar
           </button>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 1.2fr 1.1fr 0.9fr', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-        <div>Ente</div><div>Grupo</div><div>Tags</div><div>Responsável</div><div style={{ textAlign: 'center' }}>Assinatura</div>
-      </div>
-      {carteira.map((e) => (
-        <div key={e.name} style={{ display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 1.2fr 1.1fr 0.9fr', padding: '9px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 5, background: colors.accentSoft, color: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 600 }}>{e.sigla}</div>
-            <span style={{ fontWeight: 500 }}>{e.name}</span>
-          </div>
-          <div><span style={{ fontSize: 10, padding: '2px 8px', background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 3, color: colors.muted, fontWeight: 500 }}>{e.grupo}</span></div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {e.tags.map((t) => (
-              <span key={t} style={{ fontSize: 9.5, padding: '2px 7px', background: colors.accentSoft, color: '#2D5A47', borderRadius: 3 }}>{t}</span>
+      {err && <div style={{ padding: '8px 18px', color: colors.red, fontSize: 11 }}>⚠ {err}</div>}
+      <Async res={res}>
+        {(entes) => (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <div>Código IBGE</div><div>Grupo</div><div>Tag</div><div style={{ textAlign: 'right' }}>Ação</div>
+            </div>
+            {entes.length === 0 && <div style={{ padding: '18px', fontSize: 12, color: colors.faint }}>Carteira vazia — adicione um ente pelo código IBGE.</div>}
+            {entes.map((e) => (
+              <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', padding: '9px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
+                <div style={{ fontFamily: font.mono, fontWeight: 500 }}>{e.cod_ibge}</div>
+                <div style={{ color: colors.muted }}>{e.grupo || '—'}</div>
+                <div style={{ color: colors.muted }}>{e.tag || '—'}</div>
+                <div style={{ textAlign: 'right' }}>
+                  <button onClick={() => remove(e.cod_ibge)} disabled={busy} style={{ fontSize: 10.5, color: colors.red, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '3px 8px' }}>Remover</button>
+                </div>
+              </div>
             ))}
-          </div>
-          <div style={{ fontSize: 11.5, color: colors.muted }}>{e.resp}</div>
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: e.ass === 'Ativa' ? colors.greenBg : colors.yellowBg, color: e.ass === 'Ativa' ? colors.green : colors.yellowText, letterSpacing: '0.04em' }}>{e.ass}</span>
-          </div>
-        </div>
-      ))}
+            <div style={{ padding: '8px 18px', fontSize: 10.5, color: colors.faint }}>{entes.length} ente(s) na carteira.</div>
+          </>
+        )}
+      </Async>
     </Card>
   );
 }
 
+// ------------------------- Faturamento (real) ------------------------- //
 function Faturamento() {
+  const res = useResource(fetchBilling, []);
+  return (
+    <Async res={res}>
+      {(b) => <FaturamentoBody b={b} reload={res.reload} />}
+    </Async>
+  );
+}
+
+function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void }) {
+  const [empenho, setEmpenho] = useState('');
+  const [contrato, setContrato] = useState('');
+  const [competencia, setCompetencia] = useState(b.preview.competencia);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const errMsg = (e: unknown) => (e as { detail?: string; message?: string }).detail || (e as Error).message;
+
+  const emitir = useCallback(async () => {
+    setBusy(true); setErr(null);
+    try {
+      await emitirFatura({ competencia, empenho_ref: empenho || null, contrato_ref: contrato || null });
+      setEmpenho(''); setContrato(''); reload();
+    } catch (e) { setErr(errMsg(e)); } finally { setBusy(false); }
+  }, [competencia, empenho, contrato, reload]);
+
+  const pv = b.preview;
+  const memoEntes = (pv.memoria?.n_entes ?? (Array.isArray(pv.memoria?.entes) ? (pv.memoria.entes as unknown[]).length : undefined));
+
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {err && <div style={{ padding: '10px 14px', background: colors.redBg, border: `1px solid ${colors.redSoft}`, borderRadius: 6, color: colors.red, fontSize: 12 }}>⚠ {err}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {/* Plano & métrica */}
         <Card>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Plano &amp; métrica de cobrança</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600 }}>R$ 4.800</span>
-            <span style={{ fontSize: 11, color: colors.muted }}>/ exercício · por ente</span>
+            <span style={{ fontFamily: font.mono, fontSize: 24, fontWeight: 600 }}>{brl(pv.valor_total)}</span>
+            <span style={{ fontSize: 11, color: colors.muted }}>/ {b.assinatura?.ciclo || 'mensal'}</span>
           </div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 4 }}>métrica de cobrança: <b style={{ color: colors.primary }}>por ente monitorado</b></div>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 4 }}>
+            métrica: <b style={{ color: colors.primary }}>{METRICA_LABEL[pv.metrica_cobranca]}</b> · {num(pv.quantidade)} × {brl(pv.preco_unitario)}
+          </div>
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${colors.borderSoft}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[['Plano Ente · Pro (anual)', 'R$ 4.800,00'], ['Assentos adicionais (0)', 'R$ 0,00']].map(([l, v]) => (
-              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
-                <span style={{ color: colors.muted }}>{l}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{v}</span>
-              </div>
-            ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, paddingTop: 8, borderTop: `1px solid ${colors.borderSoft}` }}>
-              <span>Total · exercício 2025</span><span style={{ fontFamily: "'JetBrains Mono', monospace" }}>R$ 4.800,00</span>
+            <div style={{ fontSize: 11, color: colors.muted }}>
+              Plano: <b style={{ color: colors.ink }}>{b.assinatura?.plano ?? 'legado'}</b>
+              {' · '}status: <b style={{ color: b.assinatura?.status === 'ativa' ? colors.green : colors.orange }}>{b.assinatura?.status ?? 'sem assinatura'}</b>
+            </div>
+            <div style={{ padding: '8px 10px', borderRadius: 4, background: colors.bg, color: colors.faint, fontSize: 10.5 }}>
+              Licença, métrica e preço são definidos pelo control plane da plataforma e ficam em modo somente leitura para o tenant.
             </div>
           </div>
         </Card>
+
+        {/* Prévia auditável + compra pública */}
         <Card style={{ border: '1px solid #E8B53A' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Icon size={14} stroke={colors.yellowText}><path d="M3 6l5-3 5 3v7H3zM6 13V9h4v4" /></Icon>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Compra pública</div>
-            <span style={{ fontSize: 8.5, padding: '1px 6px', background: colors.yellowBg, color: colors.yellowText, borderRadius: 2, fontWeight: 600, letterSpacing: '0.04em' }}>SETOR PÚBLICO</span>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Emitir fatura · compra pública</div>
           </div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginBottom: 14 }}>empenho, contrato e vigência por exercício</div>
-          {[['Nota de empenho', '2025NE000842'], ['Contrato / processo', 'CT-118/2025 · Pregão 44/2025'], ['Vigência', '01/01 — 31/12/2025']].map(([l, v]) => (
-            <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: colors.bg, borderRadius: 4, marginBottom: 8 }}>
-              <span style={{ fontSize: 11.5, color: colors.muted }}>{l}</span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 500 }}>{v}</span>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginBottom: 12 }}>
+            competência {pv.competencia} · {pv.ja_emitida ? 'já emitida' : 'em aberto'} — {typeof memoEntes === 'number' ? `${memoEntes} ente(s)` : (pv.memoria?.base as string) || ''}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={lbl}>Competência (YYYY-MM)</label>
+            <input value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={inp('100%')} />
+            <label style={lbl}>Nota de empenho</label>
+            <input value={empenho} onChange={(e) => setEmpenho(e.target.value)} placeholder="2026NE000842" style={inp('100%')} />
+            <label style={lbl}>Contrato / processo</label>
+            <input value={contrato} onChange={(e) => setContrato(e.target.value)} placeholder="CT-118/2026" style={inp('100%')} />
+            <button onClick={emitir} disabled={busy} style={btnPrimary(busy)}>Emitir fatura de {brl(pv.valor_total)}</button>
+          </div>
+          {pv.source_refs.length > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${colors.borderSoft}`, fontSize: 9.5, color: colors.faint }}>
+              proveniência: {pv.source_refs.map((s) => `${s.relatorio}${s.periodo ? ' ' + s.periodo : ''}`).join(' · ')}
             </div>
-          ))}
+          )}
         </Card>
       </div>
+
+      {/* Faturas */}
       <Card pad={0}>
-        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${colors.border}`, fontSize: 13, fontWeight: 600 }}>Faturas</div>
-        {[['NF-e 1842 · empenho ago', '15/08/2025', 'R$ 2.400,00', 'PAGA', colors.green, colors.greenBg], ['NF-e 2103 · empenho fev', '15/02/2026', 'R$ 2.400,00', 'AGENDADA', colors.yellowText, colors.yellowBg]].map((r) => (
-          <div key={r[0]} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 0.8fr', padding: '10px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace" }}>{r[0]}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", color: colors.muted }}>{r[1]}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace" }}>{r[2]}</div>
-            <div style={{ display: 'flex', justifyContent: 'center' }}><span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: r[5] as string, color: r[4] as string }}>{r[3]}</span></div>
+        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${colors.border}`, fontSize: 13, fontWeight: 600 }}>Faturas emitidas</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1fr 1fr 1fr 0.7fr', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          <div>Competência</div><div>Empenho</div><div>Contrato</div><div style={{ textAlign: 'right' }}>Valor</div><div style={{ textAlign: 'center' }}>Status</div>
+        </div>
+        {b.faturas.length === 0 && <div style={{ padding: 18, fontSize: 12, color: colors.faint }}>Nenhuma fatura emitida ainda.</div>}
+        {b.faturas.map((f) => (
+          <div key={f.id} style={{ display: 'grid', gridTemplateColumns: '0.8fr 1fr 1fr 1fr 0.7fr', padding: '10px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
+            <div style={{ fontFamily: font.mono }}>{f.competencia}</div>
+            <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.empenho_ref || '—'}</div>
+            <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.contrato_ref || '—'}</div>
+            <div style={{ fontFamily: font.mono, textAlign: 'right' }}>{brl(f.valor_total)}</div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: f.status === 'paga' ? colors.greenBg : colors.yellowBg, color: f.status === 'paga' ? colors.green : colors.yellowText }}>{f.status.toUpperCase()}</span>
+            </div>
           </div>
         ))}
       </Card>
@@ -325,89 +287,389 @@ function Faturamento() {
   );
 }
 
+// ------------------------- Integrações (real) ------------------------- //
 function Integracoes() {
+  const res = useResource(fetchIntegracoes, []);
+
   return (
     <Card pad={0} className="fade-in">
-      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Integrações &amp; dados</div>
-        <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>fontes e política de sincronização · SICONFI é a fonte primária</div>
-      </div>
-      {integracoes.map((i) => (
-        <div key={i.fonte} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', borderBottom: `1px solid ${colors.rowBorder}` }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{i.fonte}</span>
-              {i.core && <span style={{ fontSize: 8.5, padding: '1px 6px', background: colors.accentSoft, color: colors.primary, borderRadius: 2, fontWeight: 600, letterSpacing: '0.04em' }}>PRIMÁRIA</span>}
-            </div>
-            <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>{i.desc}</div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11.5, fontWeight: 500, color: i.sc }}>{i.status}</div>
-            <div style={{ fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>{i.ultimo}</div>
-          </div>
-          <div style={{ position: 'relative', width: 34, height: 19, borderRadius: 10, background: i.on ? colors.primary : '#DAD6CA', flexShrink: 0, opacity: i.core ? 0.5 : 1 }}>
-            <div style={{ position: 'absolute', top: 2, left: i.on ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transition: 'left 0.2s' }} />
-          </div>
+      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Integrações &amp; dados</div>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>estado global dos conectores · alteração exclusiva do control plane</div>
         </div>
-      ))}
-      <div style={{ padding: '12px 18px', background: colors.bg, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Icon size={14} stroke={colors.muted}><circle cx="8" cy="8" r="6" /><path d="M8 5v3.5M8 11v0.1" /></Icon>
-        <span style={{ fontSize: 11, color: colors.muted }}>Retificações no SICONFI reprocessam automaticamente os indicadores afetados; mudanças ficam na trilha de auditoria.</span>
+        <div style={{ flex: 1 }} />
+        <Link
+          to="/central-dados"
+          style={{ padding: '7px 10px', border: `1px solid ${colors.primary}`, borderRadius: 4, color: colors.primary, fontSize: 11.5, fontWeight: 600 }}
+        >
+          Abrir Central de Dados →
+        </Link>
       </div>
+      <Async res={res}>
+        {(itens) => (
+          <>
+            {itens.map((i) => (
+              <div key={i.codigo} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', borderBottom: `1px solid ${colors.rowBorder}` }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{i.nome}</span>
+                    <span style={{ fontSize: 8.5, padding: '1px 6px', background: i.categoria === 'nacional' ? colors.accentSoft : colors.neutralBg, color: i.categoria === 'nacional' ? colors.primary : colors.neutral, borderRadius: 2, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{i.codigo}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>{i.descricao}</div>
+                  <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{i.fontes.length} conector(es): {i.fontes.join(', ')}</div>
+                </div>
+                <div style={{ textAlign: 'right', minWidth: 74 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: i.ativo ? colors.green : colors.faint }}>{i.ativo ? 'Ativa' : 'Pausada'}</div>
+                </div>
+                <span aria-label={`Integração ${i.codigo} em modo somente leitura`} title="Somente o control plane pode alterar uma integração global" style={{ fontSize: 9, padding: '3px 7px', borderRadius: 3, background: colors.bg, color: colors.faint, border: `1px solid ${colors.border}` }}>
+                  somente leitura
+                </span>
+              </div>
+            ))}
+            <div style={{ padding: '12px 18px', background: colors.bg, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Icon size={14} stroke={colors.muted}><circle cx="8" cy="8" r="6" /><path d="M8 5v3.5M8 11v0.1" /></Icon>
+              <span style={{ fontSize: 11, color: colors.muted }}>Retificações no SICONFI reprocessam automaticamente os indicadores; mudanças globais exigem operador da plataforma.</span>
+            </div>
+          </>
+        )}
+      </Async>
     </Card>
   );
 }
 
+// ------------------------- Auditoria (real) ------------------------- //
 function Auditoria() {
+  const [q, setQ] = useState('');
+  const [acao, setAcao] = useState('');
+  const res = useResource(() => fetchAuditoria({ q: q || undefined, acao: acao || undefined, limit: 100 }), [q, acao]);
+
   return (
-    <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 12, alignItems: 'start' }}>
-      <Card pad={0}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Trilha de auditoria</div>
-            <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>toda ação sensível é registrada e atribuível a um usuário</div>
-          </div>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', border: `1px solid ${colors.border}`, borderRadius: 5, fontSize: 11, fontWeight: 500, color: colors.muted }}>
-            <Icon size={12} sw={1.6}><path d="M2 3h12l-4.5 5v5l-3 2V8z" /></Icon>
-            Filtrar
-          </button>
+    <Card pad={0} className="fade-in">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}`, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Trilha de auditoria</div>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>toda ação sensível é registrada e atribuível — filtrável</div>
         </div>
-        {audit.map((a, i) => (
-          <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'flex-start' }}>
-            <div style={{ width: 30, height: 30, borderRadius: 6, background: a.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Icon size={15} stroke={a.c}><path d="M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4z" /></Icon>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12 }}>{a.acao}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                <span style={{ fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>{a.ts}</span>
-                <span style={{ fontSize: 10, color: colors.muted }}>· {a.user}</span>
-              </div>
-            </div>
-            <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, fontWeight: 600, background: a.bg, color: a.c, letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{a.tipo}</span>
-          </div>
-        ))}
-      </Card>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Card>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Segurança</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${colors.rowBorder}` }}>
-            <div><div style={{ fontSize: 12, fontWeight: 500 }}>2FA obrigatório</div><div style={{ fontSize: 10, color: colors.faint }}>TOTP p/ todos os papéis</div></div>
-            <div style={{ position: 'relative', width: 34, height: 19, borderRadius: 10, background: colors.primary }}><div style={{ position: 'absolute', top: 2, left: 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
-            <div><div style={{ fontSize: 12, fontWeight: 500 }}>Retenção de logs</div><div style={{ fontSize: 10, color: colors.faint }}>trilha mantida</div></div>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600 }}>5 anos</span>
-          </div>
-        </Card>
-        <div style={{ background: colors.accentSoft, border: '1px solid #C7DBCF', borderRadius: 6, padding: '14px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <Icon size={14} stroke={colors.primary}><path d="M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4z" /><path d="M5.5 8l1.7 1.7L10.5 6.5" /></Icon>
-            <div style={{ fontSize: 12, fontWeight: 600, color: colors.primary }}>LGPD · privacidade por padrão</div>
-          </div>
-          <div style={{ fontSize: 10.5, color: '#2D5A47', lineHeight: 1.5 }}>Dados fiscais são majoritariamente públicos, mas contas de usuário, trilhas de acesso e dados de servidores na despesa de pessoal são tratados como dados pessoais.</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input value={acao} onChange={(e) => setAcao(e.target.value)} placeholder="ação (ex.: EMITIR_FATURA)" style={inp(190)} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="busca livre" style={inp(140)} />
         </div>
       </div>
+      <Async res={res}>
+        {(page) => (
+          <>
+            <div style={{ padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 10, color: colors.muted }}>{page.total} evento(s)</div>
+            {page.itens.length === 0 && <div style={{ padding: 18, fontSize: 12, color: colors.faint }}>Nenhum evento para o filtro.</div>}
+            {page.itens.map((a) => (
+              <div key={a.id} style={{ display: 'flex', gap: 12, padding: '11px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'flex-start' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, background: colors.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon size={14} stroke={colors.primary}><path d="M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4z" /></Icon>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontFamily: font.mono, wordBreak: 'break-word' }}>{a.recurso}</div>
+                  <div style={{ fontSize: 10, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{new Date(a.ts).toLocaleString('pt-BR')}</div>
+                </div>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, fontWeight: 600, background: colors.accentSoft, color: colors.primary, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{a.acao}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </Async>
+    </Card>
+  );
+}
+
+// ------------------------- Organização (real: /orgs + /me) ------------------------- //
+function Organizacao() {
+  const me = useResource(fetchMe, []);
+  const orgs = useResource(fetchOrgs, []);
+
+  return (
+    <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 330px', gap: 12, alignItems: 'start' }}>
+      <Card pad={0}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Organizações reais</div>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>dados de GET /orgs; a organização ativa vem de /me</div>
+        </div>
+        <Async res={orgs}>
+          {(itens) => itens.length === 0 ? (
+            <div style={{ padding: 18, fontSize: 12, color: colors.muted }}>Nenhuma organização cadastrada.</div>
+          ) : (
+            itens.map((org: OrgOut) => {
+              const ativa = me.data?.org_ativa?.org_id === org.id;
+              return (
+                <div key={org.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'center', padding: '11px 18px', borderBottom: `1px solid ${colors.rowBorder}`, fontSize: 11.5 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{org.nome}</div>
+                    <div style={{ fontFamily: font.mono, color: colors.faint, fontSize: 9.5 }}>{org.id}</div>
+                  </div>
+                  <span>{org.tipo_conta}</span>
+                  <span style={{ color: colors.muted }}>{org.metrica_cobranca ?? 'sem métrica'}</span>
+                  <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: ativa ? colors.greenBg : colors.bg, color: ativa ? colors.green : colors.faint }}>{ativa ? 'ATIVA' : new Date(org.criada_em).toLocaleDateString('pt-BR')}</span>
+                </div>
+              );
+            })
+          )}
+        </Async>
+      </Card>
+
+      <Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Provisionamento controlado</div>
+          <div style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.55 }}>
+            A criação de organizações é exclusiva do control plane da plataforma. Nesta área,
+            administradores da organização gerenciam usuários, papéis e permissões sem ampliar
+            o próprio escopo de tenant.
+          </div>
+          <div style={{ padding: '9px 10px', borderRadius: 4, background: colors.bg, color: colors.faint, fontSize: 10.5 }}>
+            Para provisionar outra organização, solicite a ação a um superadministrador da plataforma.
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
+
+/** Usuários reais (`GET/POST /users`) — nenhum perfil é inventado no frontend. */
+function Usuarios() {
+  const res = useResource(() => fetchUsuarios(), []);
+  const papeis = useResource(() => fetchPapeis(), []);
+  const [nome, setNome] = useState('');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [mfa, setMfa] = useState(false);
+  const [papelId, setPapelId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const criar = async (evento: FormEvent) => {
+    evento.preventDefault();
+    if (!nome.trim() || !email.trim() || senha.length < 8 || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await criarUsuario({
+        nome: nome.trim(),
+        email: email.trim(),
+        senha,
+        mfa_ativo: mfa,
+        papel_id: papelId || undefined,
+      });
+      setNome('');
+      setEmail('');
+      setSenha('');
+      setMfa(false);
+      setPapelId('');
+      res.reload();
+    } catch (e) {
+      setErro(
+        (e as { detail?: string; message?: string })?.detail ||
+          (e as { message?: string })?.message ||
+          'Falha ao criar usuário.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 330px', gap: 12, alignItems: 'start' }}>
+      <Card pad={0}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Usuários</div>
+          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>cadastros devolvidos pelo contrato real de GET /users</div>
+        </div>
+        <Async res={res}>
+          {(usuarios) =>
+            usuarios.length === 0 ? (
+              <div style={{ padding: '16px 18px', fontSize: 12, color: colors.muted }}>Nenhum usuário cadastrado.</div>
+            ) : (
+              <>
+                {usuarios.map((u) => (
+                  <div key={u.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 0.8fr', padding: '10px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: colors.accentSoft, color: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>{iniciaisDe(u.nome)}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 500 }}>{u.nome}</div>
+                        <div style={{ fontSize: 10, color: colors.faint, fontFamily: font.mono }}>{u.email}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: colors.muted }}>
+                      {u.papel_nome ?? 'papel não informado'} · MFA {u.mfa_ativo ? 'ativo' : 'inativo'}
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: u.mfa_ativo ? colors.greenBg : colors.bg, color: u.mfa_ativo ? colors.green : colors.muted }}>
+                        {u.mfa_ativo ? 'MFA' : 'sem MFA'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )
+          }
+        </Async>
+      </Card>
+
+      <Card>
+        <form onSubmit={(e) => void criar(e)} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Novo usuário</div>
+          <label style={lbl}>Nome</label>
+          <input aria-label="Nome do usuário" value={nome} onChange={(e) => setNome(e.target.value)} style={inp('100%')} />
+          <label style={lbl}>E-mail</label>
+          <input aria-label="E-mail do usuário" type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp('100%')} />
+          <label style={lbl}>Senha inicial (mín. 8)</label>
+          <input aria-label="Senha inicial" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} style={inp('100%')} />
+          <label style={lbl}>Papel na organização</label>
+          <select aria-label="Papel do usuário" value={papelId} onChange={(e) => setPapelId(e.target.value)} style={inp('100%')}>
+            <option value="">menor privilégio disponível</option>
+            {(papeis.data ?? []).map((papel) => (
+              <option key={papel.id} value={papel.id}>{papel.nome}</option>
+            ))}
+          </select>
+          <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 11.5, color: colors.muted }}>
+            <input type="checkbox" checked={mfa} onChange={(e) => setMfa(e.target.checked)} />
+            MFA já configurado
+          </label>
+          {erro && <div role="alert" style={{ fontSize: 11, color: colors.red }}>{erro}</div>}
+          <button type="submit" disabled={busy || !nome.trim() || !email.trim() || senha.length < 8} style={btnPrimary(busy || !nome.trim() || !email.trim() || senha.length < 8)}>{busy ? 'Criando…' : 'Criar usuário'}</button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+/** Matriz RBAC real e **editável**: clicar numa célula concede/retira a capacidade (PATCH). */
+function Permissoes() {
+  const [papeis, setPapeis] = useState<PapelOut[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState<string | null>(null);
+  const salvamentoEmCurso = useRef(false);
+  const [novoNome, setNovoNome] = useState('');
+  const [novasCapacidades, setNovasCapacidades] = useState<Capacidade[]>(['ver']);
+
+  useEffect(() => {
+    fetchPapeis().then(setPapeis).catch((e) => setErro(e?.detail || e?.message || 'Falha ao carregar papéis'));
+  }, []);
+
+  const alternar = async (papel: PapelOut, cap: Capacidade) => {
+    if (salvamentoEmCurso.current) return;
+    salvamentoEmCurso.current = true;
+    const tem = papel.capacidades.includes(cap);
+    const novas = tem ? papel.capacidades.filter((c) => c !== cap) : [...papel.capacidades, cap];
+    setSalvando(`${papel.id}:${cap}`);
+    setErro(null);
+    try {
+      const atualizado = await atualizarPapelCapacidades(papel.id, novas);
+      setPapeis((atuais) => (atuais ?? []).map((p) => (p.id === papel.id ? atualizado : p)));
+    } catch (e) {
+      setErro((e as { detail?: string })?.detail ?? 'Falha ao salvar a permissão.');
+    } finally {
+      salvamentoEmCurso.current = false;
+      setSalvando(null);
+    }
+  };
+
+  const criarNovo = async (evento: FormEvent) => {
+    evento.preventDefault();
+    if (!novoNome.trim() || salvando || salvamentoEmCurso.current) return;
+    salvamentoEmCurso.current = true;
+    setSalvando('novo');
+    setErro(null);
+    try {
+      const criado = await criarPapel({
+        nome: novoNome.trim(),
+        capacidades: novasCapacidades,
+      });
+      setPapeis((atuais) => [...(atuais ?? []), criado].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setNovoNome('');
+      setNovasCapacidades(['ver']);
+    } catch (e) {
+      setErro(
+        (e as { detail?: string; message?: string })?.detail ||
+          (e as { message?: string })?.message ||
+          'Falha ao criar papel.',
+      );
+    } finally {
+      salvamentoEmCurso.current = false;
+      setSalvando(null);
+    }
+  };
+
+  const cell = (concedida: boolean) =>
+    concedida
+      ? { bg: colors.accentSoft, c: colors.primary, d: 'M4 8l2.5 2.5L12 5' }
+      : { bg: colors.bg, c: '#C5C0B4', d: 'M4 4l8 8M12 4l-8 8' };
+
+  return (
+    <Card className="fade-in">
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Matriz de permissões · papel × capacidade (RBAC)</div>
+      <div style={{ fontSize: 10.5, color: colors.muted, marginBottom: 12 }}>clique numa célula para conceder/retirar a capacidade</div>
+      <form onSubmit={(e) => void criarNovo(e)} style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: 10, marginBottom: 12, border: `1px solid ${colors.border}`, borderRadius: 6, background: colors.bg, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 180 }}>
+          <label style={lbl}>Novo papel</label>
+          <input aria-label="Nome do novo papel" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} style={inp('100%')} />
+        </div>
+        <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
+          {CAPACIDADES.map(({ cap, label }) => (
+            <label key={cap} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: colors.muted }}>
+              <input
+                type="checkbox"
+                checked={novasCapacidades.includes(cap)}
+                onChange={(e) => setNovasCapacidades((atuais) =>
+                  e.target.checked ? [...atuais, cap] : atuais.filter((item) => item !== cap)
+                )}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <button type="submit" disabled={!novoNome.trim() || salvando === 'novo'} style={btnPrimary(!novoNome.trim() || salvando === 'novo')}>
+          {salvando === 'novo' ? 'Criando…' : 'Criar papel'}
+        </button>
+      </form>
+      {erro && <div style={{ fontSize: 11.5, color: colors.red, marginBottom: 8 }}>{erro}</div>}
+      {papeis === null ? (
+        <div style={{ fontSize: 12, color: colors.muted }}>Carregando…</div>
+      ) : papeis.length === 0 ? (
+        <div style={{ fontSize: 12, color: colors.muted }}>Nenhum papel cadastrado nesta organização.</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 640 }}>
+            <thead><tr>
+              <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 9.5, color: colors.faint, textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>Capacidade</th>
+              {papeis.map((p) => <th key={p.id} style={{ textAlign: 'center', padding: '8px 6px', fontSize: 9.5, color: colors.muted, textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>{p.nome}</th>)}
+            </tr></thead>
+            <tbody>
+              {CAPACIDADES.map(({ cap, label }) => (
+                <tr key={cap} style={{ borderBottom: `1px solid ${colors.rowBorder}` }}>
+                  <td style={{ padding: '8px 10px', fontWeight: 500 }}>{label}</td>
+                  {papeis.map((p) => {
+                    const cl = cell(p.capacidades.includes(cap));
+                    return (
+                      <td key={p.id} style={{ padding: 6, textAlign: 'center' }}>
+                        <button
+                          onClick={() => alternar(p, cap)}
+                          disabled={Boolean(salvando)}
+                          aria-label={`${p.capacidades.includes(cap) ? 'Retirar' : 'Conceder'} ${label} de ${p.nome}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 5, background: cl.bg, opacity: salvando ? 0.4 : 1, border: 'none', cursor: salvando ? 'default' : 'pointer' }}
+                        >
+                          <Icon size={13} stroke={cl.c} sw={1.7}><path d={cl.d} /></Icon>
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ------------------------- estilos ------------------------- //
+const inp = (w: number | string) => ({ width: w, fontSize: 12, padding: '7px 10px', border: `1px solid ${colors.border}`, borderRadius: 5, background: colors.bg, color: colors.ink } as const);
+const lbl = { fontSize: 9.5, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 } as const;
+const btnPrimary = (disabled: boolean) => ({ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 14px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12, fontWeight: 500, opacity: disabled ? 0.5 : 1, border: 'none', cursor: disabled ? 'default' : 'pointer' } as const);

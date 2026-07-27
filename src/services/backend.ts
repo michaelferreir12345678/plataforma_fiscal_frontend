@@ -2,7 +2,7 @@
  * Tipos e fetchers tipados das respostas do backend (schemas Pydantic espelhados).
  * Valores monetários vêm em **reais**; a UI divide por 1e6 para exibir em R$ milhões.
  */
-import { apiGet, apiPost } from './api';
+import { apiDownload, apiGet, apiPatch, apiPost } from './api';
 
 export type Measures = Record<string, number | null>;
 
@@ -1106,3 +1106,1182 @@ export const fetchBenchmarkRanking = (params: BenchmarkRankingParams) =>
     pagina: params.pagina,
     por_pagina: params.porPagina,
   });
+
+// --- Previsões & Cenários (Sprint 14) ---
+export type ForecastIndicador = 'rcl' | 'receita' | 'pessoal' | 'divida';
+export type ForecastModelo = 'fechamento' | 'holt_winters' | 'regressao_exogenas';
+
+export interface PontoHistorico {
+  periodo: string;
+  valor: FiscalDecimal;
+  versao_entrega: string;
+  as_of: string | null;
+  source_ref: SourceRef;
+}
+export interface PontoProjecao {
+  periodo_alvo: string;
+  passo: number;
+  valor_previsto: FiscalDecimal;
+  ic_inferior: FiscalDecimal;
+  ic_superior: FiscalDecimal;
+  teto_pct: FiscalDecimal | null;
+  faixa: string | null;
+  cruza_limite: boolean;
+}
+export interface CruzamentoLimite {
+  aplicavel: boolean;
+  cruza: boolean;
+  periodo_cruzamento: string | null;
+  passo_cruzamento: number | null;
+  valor_no_cruzamento: FiscalDecimal | null;
+  teto_pct: FiscalDecimal | null;
+  indicador_limite: string | null;
+  esfera: string | null;
+}
+export interface ProjecaoResponse {
+  cod_ibge: string;
+  indicador: string;
+  descricao: string;
+  unidade: string; // BRL | PCT_RCL
+  modelo: string;
+  esfera: string | null;
+  nivel_confianca: FiscalDecimal;
+  horizonte: number;
+  as_of: string | null;
+  gerado_em: string | null;
+  historico: PontoHistorico[];
+  projecao: PontoProjecao[];
+  cruzamento: CruzamentoLimite;
+  memoria: Record<string, unknown>;
+  source_ref: SourceRef;
+}
+
+export interface CenarioSimularInput {
+  nome?: string;
+  horizonte?: number;
+  modelo?: string | null;
+  ipca_aa_pct?: number | null;
+  selic_aa_pct?: number | null;
+  fpm_variacao_pct?: number | null;
+  crescimento_indicador_pct?: number | null;
+  crescimento_rcl_pct?: number | null;
+  salvar?: boolean;
+}
+export interface LimiteImpacto {
+  indicador: string;
+  descricao: string | null;
+  sentido: string; // teto | piso
+  limite_pct: FiscalDecimal;
+  valor_limite_rs: FiscalDecimal | null;
+  pct_projetado: FiscalDecimal | null;
+  faixa: string | null;
+  cruza: boolean;
+}
+export interface CenarioSimularResponse {
+  persistido: boolean;
+  cenario_id: string | null;
+  cod_ibge: string;
+  indicador: string;
+  horizonte: number;
+  base: ProjecaoResponse;
+  cenario: ProjecaoResponse;
+  impacto_limites: LimiteImpacto[];
+  impacto_minimos: LimiteImpacto[];
+  memoria: Record<string, unknown>;
+  source_refs: SourceRef[];
+}
+export interface CenarioSalvo {
+  id: string;
+  ente: string;
+  indicador: string;
+  nome: string;
+  parametros: Record<string, unknown>;
+  criado_em: string;
+}
+
+export const fetchProjecao = (
+  ibge: string,
+  params: { indicador: ForecastIndicador; horizonte?: number; modelo?: string | null; asOf?: string | null },
+) =>
+  apiGet<ProjecaoResponse>(`/entes/${ibge}/projecao`, {
+    indicador: params.indicador,
+    horizonte: params.horizonte,
+    modelo: params.modelo ?? undefined,
+    as_of: params.asOf,
+  });
+
+export const simularCenario = (
+  ibge: string,
+  indicador: ForecastIndicador,
+  body: CenarioSimularInput,
+) =>
+  apiPost<CenarioSimularResponse, CenarioSimularInput>(
+    `/entes/${ibge}/cenario/simular`,
+    body,
+    { indicador },
+  );
+
+export const fetchCenarios = (ibge: string) =>
+  apiGet<CenarioSalvo[]>(`/entes/${ibge}/cenarios`);
+
+// --- Alertas & Conformidade (Sprint 15) ---
+export type AlertaSeveridade = 'critico' | 'atencao' | 'informativo';
+export type AlertaStatus = 'nova' | 'reconhecida' | 'resolvida' | 'descartada';
+
+export interface AlertaOut {
+  id: string;
+  cod_ibge: string;
+  categoria: string;
+  severidade: AlertaSeveridade;
+  prioridade: number;
+  titulo: string;
+  motivo_legal: string;
+  acao_sugerida: string;
+  prazo: string | null;
+  link: string | null;
+  status: AlertaStatus;
+  indicador: string | null;
+  periodo: string | null;
+  source_ref: SourceRef | null;
+  memoria: Record<string, unknown> | null;
+  criado_em: string;
+  atualizado_em: string;
+}
+export interface Contadores {
+  critico: number;
+  atencao: number;
+  informativo: number;
+  total: number;
+}
+export interface FilaAlertasResponse {
+  escopo: string;
+  cod_ibge: string | null;
+  gerado_em: string;
+  contadores: Contadores;
+  alertas: AlertaOut[];
+}
+export interface CalendarioItem {
+  relatorio: string;
+  periodo: string;
+  periodicidade: string;
+  prazo: string | null;
+  status: string; // entregue | pendente | atrasado
+  entregue_em: string | null;
+  versao_entrega: string | null;
+  base_legal: string | null;
+  source_ref: SourceRef | null;
+}
+export interface CalendarioResponse {
+  cod_ibge: string;
+  esfera: string | null;
+  populacao: number | null;
+  periodicidade_rgf: string;
+  gerado_em: string;
+  itens: CalendarioItem[];
+}
+export interface CarteiraEnteAlertas {
+  cod_ibge: string;
+  nome: string | null;
+  contadores: Contadores;
+  pior_severidade: string | null;
+}
+export interface CarteiraCategoriaAgg {
+  categoria: string;
+  total: number;
+}
+export interface CarteiraAlertasResponse {
+  n_entes: number;
+  gerado_em: string;
+  contadores: Contadores;
+  por_categoria: CarteiraCategoriaAgg[];
+  por_ente: CarteiraEnteAlertas[];
+  top_alertas: AlertaOut[];
+}
+
+export const fetchAlertas = (ente: string, escopo: 'ente' | 'carteira' = 'ente') =>
+  apiGet<FilaAlertasResponse>('/alertas', { escopo, ente: escopo === 'ente' ? ente : undefined });
+
+export const fetchCalendario = (ente: string) =>
+  apiGet<CalendarioResponse>(`/entes/${ente}/calendario`);
+
+export const fetchCarteiraAlertas = () =>
+  apiGet<CarteiraAlertasResponse>('/carteira/alertas');
+
+export const patchAlerta = (id: string, status: AlertaStatus) =>
+  apiPatch<AlertaOut, { status: AlertaStatus }>(`/alertas/${id}`, { status });
+
+// --- Contexto: busca de entes e períodos com dado (Sprint 22) ---
+export interface EnteBusca {
+  cod_ibge: string;
+  nome: string | null;
+  uf: string | null;
+  esfera: string | null;
+  populacao: number | null;
+  tem_dado: boolean;
+  periodo_mais_recente: string | null;
+}
+export interface EntesBuscaResponse {
+  data: EnteBusca[];
+  total: number;
+  escopo_total: number;
+}
+/** Busca de entes **dentro do escopo** (seletor de ente e ⌘K). */
+export const fetchEntes = (params?: { q?: string; uf?: string; limit?: number }) =>
+  apiGet<EntesBuscaResponse>('/entes', params);
+
+export interface PeriodoDisponivel {
+  periodo: string;
+  relatorio: string;
+  versao_entrega: string | null;
+  vigente: boolean;
+}
+export interface PeriodosResponse {
+  cod_ibge: string;
+  relatorio: string | null;
+  default: string | null;
+  periodos: PeriodoDisponivel[];
+}
+/** Períodos com dado do ente; `default` = o mais recente (nunca período fixo por env). */
+export const fetchPeriodos = (ibge: string, relatorio?: string) =>
+  apiGet<PeriodosResponse>(`/entes/${ibge}/periodos`, { relatorio });
+
+// --- Cockpit executivo em 7 camadas (Sprint 22) ---
+export interface MudancaRelevante {
+  indicador: string;
+  rotulo: string;
+  valor_atual: number | null;
+  valor_anterior: number | null;
+  delta_pp: number | null;
+  faixa_atual: string | null;
+  faixa_anterior: string | null;
+  mudou_de_faixa: boolean;
+  periodo_anterior: string | null;
+}
+export interface CockpitResumo {
+  farol: string;
+  cor: string;
+  indicadores_avaliados: number;
+  n_alertas: number;
+  n_alertas_criticos: number;
+  mudancas_relevantes: MudancaRelevante[];
+  source_ref: SourceRef;
+}
+export interface CriticoItem {
+  indicador: string;
+  rotulo: string;
+  sentido: string;
+  valor_pct: number | null;
+  valor_rs: number | null;
+  limite_pct: number;
+  faixa: string | null;
+  cor: string;
+  distancia_pp: number | null;
+  source_ref: SourceRef;
+}
+export interface PontoSerie {
+  periodo: string;
+  valor: number | null;
+}
+export interface PontoProjetado {
+  periodo: string;
+  previsto: number;
+  ic_inferior: number;
+  ic_superior: number;
+}
+export interface TendenciaItem {
+  indicador: string;
+  rotulo: string;
+  unidade: string;
+  modelo: string | null;
+  historico: PontoSerie[];
+  projecao: PontoProjetado[];
+  limite_pct: number | null;
+  cruzamento_periodo: string | null;
+  disponivel: boolean;
+  motivo_indisponivel: string | null;
+  source_ref: SourceRef | null;
+}
+export interface ComponenteVariacao {
+  codigo: string;
+  descricao: string;
+  atual: number | null;
+  anterior: number | null;
+  delta_abs: number | null;
+  delta_pct: number | null;
+}
+export interface ExplicadorItem {
+  dimensao: string;
+  rotulo: string;
+  medida: string;
+  periodo_atual: string;
+  periodo_anterior: string | null;
+  componentes: ComponenteVariacao[];
+  disponivel: boolean;
+  motivo_indisponivel: string | null;
+  source_ref: SourceRef | null;
+}
+export interface ComparacaoItem {
+  base: string;
+  rotulo: string;
+  indicador: string;
+  disponivel: boolean;
+  motivo_indisponivel: string | null;
+  valor_atual: number | null;
+  valor_base: number | null;
+  delta_abs: number | null;
+  delta_pct: number | null;
+  referencia: string | null;
+  source_ref: SourceRef | null;
+}
+export interface RiscoItem {
+  id: string;
+  severidade: string;
+  categoria: string;
+  titulo: string;
+  motivo_legal: string;
+  acao_sugerida: string;
+  prazo: string | null;
+  link: string | null;
+  indicador: string | null;
+  periodo: string | null;
+  source_ref: SourceRef | null;
+}
+export interface QualidadeFonte {
+  fonte: string;
+  relatorio: string;
+  cadencia: string;
+  periodo_mais_recente: string | null;
+  defasagem_periodos: number | null;
+  ultima_carga: string | null;
+  n_registros: number;
+  versao_entrega_vigente: string | null;
+  retificacoes: number;
+}
+export interface CockpitQualidade {
+  fontes: QualidadeFonte[];
+  defasagem_maxima: number | null;
+  confiavel: boolean;
+  observacao: string | null;
+}
+export interface CockpitResponse {
+  cod_ibge: string;
+  nome: string | null;
+  esfera: string | null;
+  periodo: string;
+  as_of: string | null;
+  resumo: CockpitResumo;
+  criticos: CriticoItem[];
+  tendencias: TendenciaItem[];
+  explicadores: ExplicadorItem[];
+  comparacoes: ComparacaoItem[];
+  riscos: RiscoItem[];
+  qualidade: CockpitQualidade;
+  source_ref: SourceRef;
+}
+export const fetchCockpit = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<CockpitResponse>(`/entes/${ibge}/cockpit`, { periodo, as_of: asOf });
+
+// --- Sessão, saúde e catálogo de fontes (Sprint 20) ---
+export type Capacidade =
+  | 'ver'
+  | 'exportar'
+  | 'config_alerta'
+  | 'gerar_relatorio'
+  | 'usar_ia'
+  | 'administrar';
+export type TipoConta = 'prefeitura' | 'estado' | 'consultoria';
+
+export interface MembershipInfo {
+  org_id: string;
+  org_nome: string;
+  tipo_conta: TipoConta;
+  papel: string;
+  capacidades: Capacidade[];
+  escopo_ibges: string[] | null;
+}
+export interface MeResponse {
+  usuario_id: string;
+  email: string;
+  nome: string;
+  org_ativa: MembershipInfo | null;
+  memberships: MembershipInfo[];
+}
+/** Contrato do shell: quem está logado e em qual organização. */
+export const fetchMe = () => apiGet<MeResponse>('/me');
+
+export interface OrgOut {
+  id: string;
+  nome: string;
+  tipo_conta: TipoConta;
+  metrica_cobranca: string | null;
+  criada_em: string;
+}
+export interface OrgCreate {
+  nome: string;
+  tipo_conta: TipoConta;
+  metrica_cobranca?: string | null;
+}
+/** Organizações reais do plano de controle. */
+export const fetchOrgs = () => apiGet<OrgOut[]>('/orgs');
+export const criarOrg = (body: OrgCreate) => apiPost<OrgOut, OrgCreate>('/orgs', body);
+
+export interface UserOut {
+  id: string;
+  email: string;
+  nome: string;
+  mfa_ativo: boolean;
+  papel_id?: string | null;
+  papel_nome?: string | null;
+}
+export interface UserCreate {
+  email: string;
+  nome: string;
+  senha: string;
+  mfa_ativo?: boolean;
+  papel_id?: string | null;
+}
+/** Usuários reais expostos pelo plano de controle. */
+export const fetchUsuarios = () => apiGet<UserOut[]>('/users');
+export const criarUsuario = (body: UserCreate) => apiPost<UserOut, UserCreate>('/users', body);
+
+export interface PapelOut {
+  id: string;
+  org_id: string;
+  nome: string;
+  capacidades: Capacidade[];
+}
+export interface PapelCreate {
+  nome: string;
+  capacidades: Capacidade[];
+}
+/** Papéis reais da organização com suas capacidades (matriz RBAC). */
+export const fetchPapeis = () => apiGet<PapelOut[]>('/papeis');
+export const criarPapel = (body: PapelCreate) => apiPost<PapelOut, PapelCreate>('/papeis', body);
+
+/** Capacidades do domínio (op.papel_capacidade) e seus rótulos de UI. */
+export const CAPACIDADES: { cap: Capacidade; label: string }[] = [
+  { cap: 'ver', label: 'Visualizar painéis' },
+  { cap: 'exportar', label: 'Exportar dados' },
+  { cap: 'gerar_relatorio', label: 'Gerar relatórios' },
+  { cap: 'config_alerta', label: 'Configurar alertas' },
+  { cap: 'usar_ia', label: 'Usar Assistente de IA' },
+  { cap: 'administrar', label: 'Administrar' },
+];
+
+export interface HealthResponse {
+  status: string;
+  app_env: string;
+  version: string;
+}
+/** Saúde + ambiente (não autenticado) — usado antes do login. */
+export const fetchHealth = () => apiGet<HealthResponse>('/health');
+
+export interface FonteCatalogo {
+  fonte: string;
+  familia: string;
+  relatorio: string;
+  descricao: string | null;
+  cadencia: string;
+  orgao: string | null;
+  url_origem: string | null;
+  escopo: string | null;
+  parser_versao: string | null;
+  paginas_impactadas: string[];
+  dependencias: string[];
+  ativo: boolean;
+  ultima_execucao: string | null;
+  ultima_execucao_ok: string | null;
+  periodo_mais_recente: string | null;
+  defasagem_periodos: number | null;
+  entes_cobertos: number;
+  registros_cobertos: number;
+}
+/** Catálogo + observabilidade por fonte. Alimenta o chip/rodapé de status do shell. */
+export const fetchFontes = () => apiGet<FonteCatalogo[]>('/admin/ingestion/fontes');
+
+export interface CoberturaItem {
+  fonte: string;
+  cod_ibge: string;
+  uf: string | null;
+  ano: number;
+  periodo: string;
+  n_registros: number;
+  versao_entrega_vigente: string | null;
+  ingerido_em: string | null;
+  defasagem_periodos: number | null;
+}
+export interface CoberturaResumo {
+  total_linhas: number;
+  entes: number;
+  periodos: number;
+  fontes: string[];
+}
+export interface CoberturaResponse {
+  data: CoberturaItem[];
+  page: number;
+  page_size: number;
+  total: number;
+  resumo: CoberturaResumo;
+}
+export const fetchCobertura = (params?: {
+  fonte?: string;
+  uf?: string;
+  ano?: number;
+  page?: number;
+  page_size?: number;
+}) => apiGet<CoberturaResponse>('/admin/ingestion/cobertura', params);
+
+// --- Carteira / visão estadual consolidada (Sprint 4, religada na Sprint 20) ---
+export interface IndicadorFaixa {
+  indicador: string;
+  faixa: string | null;
+  cor: string;
+  valor_pct: number | null;
+  conformidade_status: string;
+}
+export interface CarteiraEnteRow {
+  cod_ibge: string;
+  nome: string | null;
+  uf: string | null;
+  regiao: string | null;
+  porte: string | null;
+  populacao: number | null;
+  grupo: string | null;
+  tag: string | null;
+  conformidade: string;
+  cor: string;
+  risco_score: number;
+  indicadores: IndicadorFaixa[];
+}
+export interface ResumoIndicador {
+  indicador: string;
+  total: number;
+  por_faixa: Record<string, number>;
+  por_conformidade: Record<string, number>;
+}
+export interface CarteiraResumoResponse {
+  periodo: string;
+  total_entes: number;
+  entes_com_dados: number;
+  por_conformidade: Record<string, number>;
+  por_indicador: ResumoIndicador[];
+  source_ref: SourceRef;
+}
+export interface MapaEnte {
+  cod_ibge: string;
+  uf: string | null;
+  faixa: string | null;
+  cor: string;
+  valor_pct: number | null;
+  conformidade_status: string;
+}
+export interface CarteiraMapaResponse {
+  periodo: string;
+  indicador: string | null;
+  legenda: Record<string, string>;
+  entes: MapaEnte[];
+  source_ref: SourceRef;
+}
+export interface ListEnvelope<T> {
+  data: T[];
+  page: number;
+  page_size: number;
+  total: number;
+  source_ref?: SourceRef | null;
+}
+
+export const fetchCarteiraResumo = (periodo: string) =>
+  apiGet<CarteiraResumoResponse>('/carteira/resumo', { periodo });
+
+/**
+ * Grade consolidada do escopo (`/carteira/entes`) — com faixas por indicador.
+ * Não confundir com `fetchCarteiraEntes` (`/carteira`), que é a **gestão** da carteira.
+ */
+export const fetchCarteiraGrade = (
+  periodo: string,
+  params?: { ordenar?: string; porte?: string; regiao?: string; tag?: string; page?: number; page_size?: number },
+) => apiGet<ListEnvelope<CarteiraEnteRow>>('/carteira/entes', { periodo, ...params });
+
+export const fetchCarteiraMapa = (periodo: string, indicador?: string) =>
+  apiGet<CarteiraMapaResponse>('/carteira/mapa', { periodo, indicador });
+
+// --- Relatórios & Exportação (Sprint 16) ---
+export type RelatorioFormato = 'pdf' | 'xlsx' | 'pptx';
+export type RelatorioEscopo = 'ente' | 'lote' | 'estadual';
+export type RelatorioStatus = 'enfileirado' | 'processando' | 'gerado' | 'parcial' | 'falhou';
+
+export interface RelatorioModelo {
+  codigo: string;
+  nome: string;
+  publico: string;
+  descricao: string;
+  secoes: string[];
+  formatos: RelatorioFormato[];
+  formalidade: string;
+  modelo_versao: string;
+}
+export interface RelatorioModelosResponse {
+  modelos: RelatorioModelo[];
+  gerado_em: string;
+}
+export interface DadoIncompletoRelatorio {
+  tipo: 'ausente' | 'defasado' | string;
+  codigo: string;
+  mensagem: string;
+  periodo_esperado: string | null;
+  periodo_encontrado: string | null;
+}
+export interface RelatorioItem {
+  id: string;
+  lote_id: string;
+  modelo: string;
+  modelo_versao: string;
+  formato: RelatorioFormato;
+  escopo: RelatorioEscopo;
+  cod_ibge: string;
+  periodo: string;
+  as_of: string;
+  status: RelatorioStatus;
+  progresso: number;
+  cabecalho: Record<string, unknown>;
+  source_refs: SourceRef[];
+  memoria: Record<string, unknown>;
+  dados_incompletos: DadoIncompletoRelatorio[];
+  arquivo_nome: string | null;
+  arquivo_url: string | null;
+  mime_type: string | null;
+  tamanho_bytes: number | null;
+  conteudo_hash: string | null;
+  gerado_em: string | null;
+  erro: string | null;
+  criado_em: string;
+  atualizado_em: string;
+}
+export interface RelatorioSolicitacao {
+  lote_id: string;
+  total_entes: number;
+  status: RelatorioStatus;
+  relatorios: RelatorioItem[];
+}
+export interface RelatorioDetalhe extends RelatorioItem {
+  lote_itens: RelatorioItem[];
+}
+export interface RelatorioLista {
+  itens: RelatorioItem[];
+  total: number;
+  gerado_em: string;
+}
+export interface RelatorioCreateInput {
+  modelo: string;
+  formato: RelatorioFormato;
+  escopo: RelatorioEscopo;
+  ente?: string;
+  entes?: string[];
+  periodo: string;
+  secoes?: string[];
+  as_of?: string;
+  parametros?: Record<string, unknown>;
+}
+export interface AgendamentoCreateInput extends Omit<RelatorioCreateInput, 'as_of'> {
+  periodicidade: 'diario' | 'semanal' | 'mensal' | 'bimestral';
+  proxima_execucao: string;
+}
+export interface RelatorioAgendamento {
+  id: string;
+  modelo: string;
+  formato: RelatorioFormato;
+  escopo: RelatorioEscopo;
+  entes: string[];
+  periodo: string;
+  periodicidade: string;
+  parametros: Record<string, unknown>;
+  proxima_execucao: string;
+  ultima_execucao: string | null;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+}
+
+export const fetchRelatorioModelos = () =>
+  apiGet<RelatorioModelosResponse>('/relatorios/modelos');
+
+export const fetchRelatorios = (limit = 50) =>
+  apiGet<RelatorioLista>('/relatorios', { limit });
+
+export const fetchRelatorio = (id: string) =>
+  apiGet<RelatorioDetalhe>(`/relatorios/${id}`);
+
+export const criarRelatorio = (body: RelatorioCreateInput) =>
+  apiPost<RelatorioSolicitacao, RelatorioCreateInput>('/relatorios', body);
+
+export const criarAgendamentoRelatorio = (body: AgendamentoCreateInput) =>
+  apiPost<RelatorioAgendamento, AgendamentoCreateInput>('/relatorios/agendamentos', body);
+
+export const baixarRelatorio = (item: RelatorioItem) => {
+  if (!item.arquivo_url || !item.arquivo_nome) {
+    return Promise.reject(new Error('Arquivo ainda não disponível.'));
+  }
+  return apiDownload(item.arquivo_url, item.arquivo_nome);
+};
+
+// --- Assistente de IA (Sprint 17) ---
+export interface AssistFato {
+  codigo: string;
+  rotulo: string;
+  valor_formatado: string;
+  valor: string | null;
+  unidade: string;
+  status: string;
+  faixa: string | null;
+  disponivel: boolean;
+  periodo: string;
+  as_of: string | null;
+  source_ref: SourceRef | null;
+  memoria: Record<string, unknown>;
+}
+export interface AssistNorma {
+  fonte: string; // LRF | CF | MDF
+  dispositivo: string;
+  titulo: string | null;
+  trecho: string;
+  score: number;
+}
+export interface AssistFonteChip {
+  tipo: 'indicador' | 'norma';
+  rotulo: string;
+  detalhe: string | null;
+  source_ref: SourceRef | null;
+}
+export interface AssistDadoIncompleto {
+  tipo: string;
+  codigo: string;
+  mensagem: string;
+  periodo_esperado: string | null;
+  periodo_encontrado: string | null;
+}
+export interface AssistUsoInfo {
+  modelo: string;
+  tokens_entrada: number;
+  tokens_saida: number;
+  latencia_ms: number;
+}
+export interface AssistResposta {
+  conversa_id: string;
+  tipo: 'pergunta' | 'resumo_executivo';
+  ente: string;
+  ente_nome: string | null;
+  periodo: string | null;
+  as_of: string | null;
+  titulo: string | null;
+  pergunta: string;
+  resposta: string;
+  recusa: boolean;
+  dado_disponivel: boolean;
+  fatos: AssistFato[];
+  normas: AssistNorma[];
+  fontes: AssistFonteChip[];
+  dados_incompletos: AssistDadoIncompleto[];
+  uso: AssistUsoInfo;
+  source_refs: SourceRef[];
+  gerado_em: string;
+}
+export interface AssistUsoResumo {
+  mes: string;
+  consultas: number;
+  tokens_entrada: number;
+  tokens_saida: number;
+  gerado_em: string;
+}
+
+export const perguntarAssistente = (body: {
+  ente: string;
+  pergunta: string;
+  periodo?: string | null;
+  as_of?: string | null;
+}) => apiPost<AssistResposta, typeof body>('/assistant/perguntar', body);
+
+export const gerarResumoExecutivo = (body: {
+  ente: string;
+  periodo?: string | null;
+  as_of?: string | null;
+  foco?: string | null;
+}) => apiPost<AssistResposta, typeof body>('/assistant/resumo-executivo', body);
+
+export const fetchAssistenteUso = () => apiGet<AssistUsoResumo>('/assistant/uso');
+
+// --- Administração, Carteira & Billing (Sprint 18) ---
+export type MetricaCobranca = 'por_ente' | 'por_populacao' | 'por_consulta_ia' | 'fixo';
+
+export interface AssinaturaOut {
+  id: string;
+  org_id: string;
+  plano: string;
+  metrica_cobranca: MetricaCobranca;
+  preco_unitario: FiscalDecimal;
+  moeda: string;
+  ciclo: string;
+  status: string;
+  inicio_vigencia: string | null;
+  fim_vigencia: string | null;
+  atualizada_em: string;
+}
+export interface FaturaOut {
+  id: string;
+  org_id: string;
+  competencia: string;
+  metrica_cobranca: MetricaCobranca;
+  quantidade: FiscalDecimal;
+  preco_unitario: FiscalDecimal;
+  valor_total: FiscalDecimal;
+  moeda: string;
+  status: string;
+  empenho_ref: string | null;
+  contrato_ref: string | null;
+  vencimento: string | null;
+  memoria: Record<string, unknown>;
+  source_refs: SourceRef[];
+  emitida_em: string;
+}
+export interface FaturaPreview {
+  competencia: string;
+  metrica_cobranca: MetricaCobranca;
+  quantidade: FiscalDecimal;
+  preco_unitario: FiscalDecimal;
+  valor_total: FiscalDecimal;
+  moeda: string;
+  ja_emitida: boolean;
+  memoria: Record<string, unknown>;
+  source_refs: SourceRef[];
+}
+export interface BillingOverview {
+  org_id: string;
+  metrica_cobranca: MetricaCobranca;
+  assinatura: AssinaturaOut | null;
+  preview: FaturaPreview;
+  faturas: FaturaOut[];
+}
+export interface FaturaEmitInput {
+  competencia?: string | null;
+  empenho_ref?: string | null;
+  contrato_ref?: string | null;
+  vencimento?: string | null;
+}
+
+export interface IntegracaoOut {
+  id: string;
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  categoria: string;
+  ativo: boolean;
+  fontes: string[];
+  atualizado_em: string;
+}
+export interface AuditoriaItem {
+  id: string;
+  usuario_id: string | null;
+  acao: string;
+  recurso: string;
+  ts: string;
+}
+export interface AuditoriaPage {
+  itens: AuditoriaItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+export interface CarteiraEnteOut {
+  id: string;
+  org_id: string;
+  cod_ibge: string;
+  grupo: string | null;
+  tag: string | null;
+}
+export interface CarteiraLoteResult {
+  adicionados: string[];
+  removidos: string[];
+  ignorados: string[];
+  total_carteira: number;
+}
+
+export const fetchBilling = () => apiGet<BillingOverview>('/billing');
+export const emitirFatura = (body: FaturaEmitInput) =>
+  apiPost<FaturaOut, FaturaEmitInput>('/billing/faturas', body);
+
+export const fetchIntegracoes = () => apiGet<IntegracaoOut[]>('/admin/integracoes');
+
+export const fetchAuditoria = (params?: {
+  acao?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) => apiGet<AuditoriaPage>('/admin/auditoria', params);
+
+export const fetchCarteiraEntes = () => apiGet<CarteiraEnteOut[]>('/carteira');
+export const carteiraLote = (body: {
+  adicionar: { cod_ibge: string; grupo?: string | null; tag?: string | null }[];
+  remover: string[];
+}) => apiPost<CarteiraLoteResult, typeof body>('/carteira/lote', body);
+
+// --- Visão Estadual & Consolidação Territorial da UF (Sprint 23) ---
+export interface EnteRef {
+  cod_ibge: string;
+  nome: string | null;
+}
+export interface IndicadorConsolidado {
+  indicador: string;
+  rotulo: string;
+  tipo: 'ratio' | 'absoluto';
+  unidade: string; // PCT_RCL | BRL
+  numerador: FiscalDecimal | null;
+  denominador: FiscalDecimal | null;
+  valor_pct: FiscalDecimal | null;
+  teto_pct: FiscalDecimal | null;
+  sentido: string | null;
+  faixa: string | null;
+  cor: string;
+  n_entes_total: number;
+  n_entes_com_dado: number;
+  cobertura_pct: FiscalDecimal | null;
+  entes_ausentes: string[];
+  periodos_mistos: boolean;
+  versao_calculo: string;
+  source_ref: SourceRef;
+}
+export interface ConsolidadoUfResponse {
+  uf: string;
+  uf_nome: string | null;
+  periodo: string;
+  escopo: string;
+  ente_estadual: EnteRef | null;
+  n_municipios: number;
+  n_municipios_com_dado: number;
+  cobertura_pct: FiscalDecimal | null;
+  indicadores: IndicadorConsolidado[];
+  observacao: string;
+  source_ref: SourceRef;
+}
+export interface RankingItem {
+  cod_ibge: string;
+  nome: string | null;
+  regiao: string | null;
+  porte: string | null;
+  populacao: number | null;
+  valor_pct: FiscalDecimal | null;
+  valor_rs: FiscalDecimal | null;
+  faixa: string | null;
+  cor: string;
+  posicao: number;
+  percentil: FiscalDecimal | null;
+  destaque: boolean;
+  no_escopo: boolean;
+}
+export interface RankingUfResponse {
+  uf: string;
+  periodo: string;
+  indicador: string;
+  rotulo: string;
+  sentido: string;
+  unidade: string;
+  ordenar: string;
+  n_total: number;
+  n_com_valor: number;
+  itens: RankingItem[];
+  source_ref: SourceRef;
+}
+export interface HistogramaBin {
+  faixa_inferior: FiscalDecimal;
+  faixa_superior: FiscalDecimal;
+  contagem: number;
+}
+export interface DistribuicaoUfResponse {
+  uf: string;
+  periodo: string;
+  indicador: string;
+  rotulo: string;
+  unidade: string;
+  n_com_valor: number;
+  minimo: FiscalDecimal | null;
+  p10: FiscalDecimal | null;
+  p25: FiscalDecimal | null;
+  mediana: FiscalDecimal | null;
+  p75: FiscalDecimal | null;
+  p90: FiscalDecimal | null;
+  maximo: FiscalDecimal | null;
+  histograma: HistogramaBin[];
+  concentracao_top5_pct: FiscalDecimal | null;
+  concentracao_top10_pct: FiscalDecimal | null;
+  total: FiscalDecimal | null;
+  source_ref: SourceRef;
+}
+export interface MapaUfEnte {
+  cod_ibge: string;
+  valor_pct: FiscalDecimal | null;
+  faixa: string | null;
+  cor: string;
+  no_escopo: boolean;
+}
+export interface MapaUfResponse {
+  uf: string;
+  periodo: string;
+  indicador: string;
+  rotulo: string;
+  legenda: Record<string, string>;
+  malha_ref: string;
+  entes: MapaUfEnte[];
+  source_ref: SourceRef;
+}
+/** GeoJSON cru do IBGE (FeatureCollection de polígonos municipais). */
+export interface GeoFeature {
+  type: string;
+  properties: { codarea: string; [k: string]: unknown };
+  geometry: { type: string; coordinates: unknown };
+}
+export interface MalhaResponse {
+  uf: string;
+  formato: string;
+  fonte: string | null;
+  ano: number | null;
+  n_areas: number | null;
+  simplificacao: string | null;
+  malha: { type: string; features: GeoFeature[] };
+}
+export interface ArvoreUfResponse extends DrillEnvelope {
+  uf: string;
+  indicador: string;
+  agrupar: string;
+}
+
+export const fetchConsolidadoUf = (uf: string, periodo: string) =>
+  apiGet<ConsolidadoUfResponse>(`/uf/${uf}/consolidado`, { periodo });
+
+export const fetchUfRanking = (
+  uf: string,
+  params: { indicador: string; periodo: string; regiao?: string; porte?: string; ordenar?: string },
+) => apiGet<RankingUfResponse>(`/uf/${uf}/ranking`, params);
+
+export const fetchUfDistribuicao = (uf: string, indicador: string, periodo: string) =>
+  apiGet<DistribuicaoUfResponse>(`/uf/${uf}/distribuicao`, { indicador, periodo });
+
+export const fetchUfMapa = (uf: string, indicador: string, periodo: string) =>
+  apiGet<MapaUfResponse>(`/uf/${uf}/mapa`, { indicador, periodo });
+
+export const fetchUfArvore = (
+  uf: string,
+  params: { indicador: string; periodo: string; agrupar?: string; node?: string },
+) => apiGet<ArvoreUfResponse>(`/uf/${uf}/arvore`, params);
+
+export const fetchMalha = (uf: string) => apiGet<MalhaResponse>(`/geo/malha/${uf}`);
+
+/** Ação em lote da carteira (Sprint 4): 'relatorio' | 'alerta'. Enfileira um job (202). */
+export const acaoLoteCarteira = (
+  acao: 'relatorio' | 'alerta',
+  body: { entes?: string[]; periodo?: string | null },
+) => apiPost<LoteJobOut, typeof body>(`/carteira/lote/${acao}`, body);
+
+export interface LoteJobOut {
+  id: string;
+  acao: string;
+  status: string;
+  periodo: string | null;
+  total_entes: number;
+  entes: string[];
+  criado_em: string | null;
+}
+
+// --- Central de Dados: jobs assíncronos de ingestão (Sprint 24) ---
+export type IngestJobStatus = 'na_fila' | 'executando' | 'concluido' | 'falhou' | 'cancelado';
+export type IngestJobTipo = 'run' | 'backfill' | 'replay';
+
+export interface IngestJobItem {
+  ente: string;
+  chave: string;
+  ok: boolean;
+  erro: string | null;
+  silver_rows: number;
+  detalhe?: Record<string, unknown> | null;
+}
+export interface IngestJobResultado {
+  itens: IngestJobItem[];
+  indicadores_recalculados: string[];
+  cobertura_antes: number | null;
+  cobertura_depois: number | null;
+  delta_cobertura: number | null;
+  erro_sistema?: { fase?: string; erro?: string } | null;
+  resumo_execucao?: Record<string, unknown> | null;
+}
+export interface IngestionLog {
+  id: string;
+  job_id: string;
+  fonte: string;
+  cod_ibge: string | null;
+  periodo: string | null;
+  versao: string | null;
+  status: string;
+  mensagem: string | null;
+  ts: string;
+}
+export interface IngestJob {
+  id: string;
+  org_id: string;
+  criado_por: string | null;
+  fonte: string;
+  tipo: IngestJobTipo;
+  entes: string[];
+  periodos: string[];
+  parametros: Record<string, unknown> | null;
+  status: IngestJobStatus;
+  progresso_pct: number;
+  itens_total: number;
+  itens_ok: number;
+  itens_erro: number;
+  tentativas: number;
+  erro_resumo: string | null;
+  log_ref: string | null;
+  resultado: IngestJobResultado | null;
+  logs: IngestionLog[];
+  criado_em: string | null;
+  iniciado_em: string | null;
+  terminado_em: string | null;
+}
+export interface IngestJobCreateResult {
+  precisa_confirmacao: boolean;
+  estimativa_itens: number;
+  limiar: number;
+  job: IngestJob | null;
+}
+export interface IngestJobCreateInput {
+  fonte: string;
+  tipo?: IngestJobTipo;
+  entes: string[];
+  anos?: number[];
+  periodos?: string[];
+  versao?: string | null;
+  parametros?: Record<string, unknown>;
+  confirmar?: boolean;
+}
+export interface RetificacaoItem {
+  cod_ibge: string;
+  relatorio: string;
+  periodo: string;
+  versao_entrega: string;
+  homologada_em: string | null;
+  versoes_anteriores: number;
+}
+
+export const criarIngestJob = (body: IngestJobCreateInput) =>
+  apiPost<IngestJobCreateResult, IngestJobCreateInput>('/admin/ingestion/jobs', body);
+export const fetchIngestJobs = (params?: { status?: string; fonte?: string }) =>
+  apiGet<IngestJob[]>('/admin/ingestion/jobs', params);
+export const fetchIngestJob = (id: string) =>
+  apiGet<IngestJob>(`/admin/ingestion/jobs/${id}`);
+export const cancelarIngestJob = (id: string) =>
+  apiPost<IngestJob, Record<string, never>>(`/admin/ingestion/jobs/${id}/cancelar`, {});
+export const retryIngestJob = (id: string) =>
+  apiPost<IngestJob, Record<string, never>>(`/admin/ingestion/jobs/${id}/retry`, {});
+export const fetchRetificacoes = (desde?: string) =>
+  apiGet<RetificacaoItem[]>('/admin/ingestion/retificacoes', { desde });
+
+/** Atualiza as capacidades de um papel (aba Permissões — fim do mock). */
+export const atualizarPapelCapacidades = (papelId: string, capacidades: Capacidade[]) =>
+  apiPatch<PapelOut, { capacidades: Capacidade[] }>(`/papeis/${papelId}`, { capacidades });

@@ -1,15 +1,38 @@
 /** Porta de autenticação: mostra o login enquanto não há sessão; depois libera o app. */
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { colors, font } from '../theme';
 import { login } from '../services/api';
+import { fetchHealth } from '../services/backend';
 import { useApp } from '../context/AppContext';
+
+/** Credencial de demonstração: o **backend** decide se pode aparecer. */
+const DEMO_EMAIL = 'admin@municipio.gov.br';
+const DEMO_SENHA = 'senha1234';
 
 export function LoginGate({ children }: { children: ReactNode }) {
   const { token, setToken } = useApp();
-  const [email, setEmail] = useState('admin@municipio.gov.br');
-  const [senha, setSenha] = useState('senha1234');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  const [ambienteLocal, setAmbienteLocal] = useState(false);
+
+  // Sem sessão ainda: /health é público e informa o ambiente. Fora de 'local' a
+  // credencial de demonstração não é exibida nem pré-preenchida.
+  useEffect(() => {
+    let vivo = true;
+    fetchHealth()
+      .then((h) => {
+        if (!vivo || h.app_env?.toLowerCase() !== 'local') return;
+        setAmbienteLocal(true);
+        setEmail((atual) => atual || DEMO_EMAIL);
+        setSenha((atual) => atual || DEMO_SENHA);
+      })
+      .catch(() => undefined);
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   if (token) return <>{children}</>;
 
@@ -95,9 +118,11 @@ export function LoginGate({ children }: { children: ReactNode }) {
         >
           {carregando ? 'Entrando…' : 'Entrar'}
         </button>
-        <div style={{ fontSize: 10.5, color: colors.faint, fontFamily: font.mono }}>
-          demo: admin@municipio.gov.br · senha1234
-        </div>
+        {ambienteLocal && (
+          <div style={{ fontSize: 10.5, color: colors.faint, fontFamily: font.mono }}>
+            demo: {DEMO_EMAIL} · {DEMO_SENHA}
+          </div>
+        )}
       </form>
     </div>
   );

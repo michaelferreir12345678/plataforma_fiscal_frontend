@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Async, ErrorBox, Loading } from '../components/AsyncState';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
+import { PageHeader } from '../components/PageHeader';
 import { useApp, useResource } from '../context/AppContext';
 import {
   baixarRelatorio,
   criarAgendamentoRelatorio,
   criarRelatorio,
+  editarAgendamento,
+  excluirAgendamento,
+  fetchAgendamentos,
+  fetchEntes,
   fetchRelatorio,
   fetchRelatorioModelos,
   fetchRelatorios,
+  type RelatorioAgendamento,
   type RelatorioDetalhe,
   type RelatorioEscopo,
   type RelatorioFormato,
@@ -45,7 +52,16 @@ export function RelatoriosPage() {
   const { token, ente, periodo } = useApp();
   const modelos = useResource(fetchRelatorioModelos, [token]);
   const historico = useResource(() => fetchRelatorios(80), [token]);
-  const [modelo, setModelo] = useState('executivo');
+  const agendamentos = useResource(fetchAgendamentos, [token]);
+  // Sprint 26: até aqui lote/estadual pegavam o escopo inteiro sem seleção — para uma
+  // Sefaz com 185 municípios, um clique enfileirava 185 relatórios. O backend sempre
+  // aceitou `entes: [...]`; o que faltava era a tela deixar escolher.
+  const escopoEntes = useResource(() => fetchEntes({ limit: 200 }), [token]);
+  const [entesSelecionados, setEntesSelecionados] = useState<string[]>([]);
+  // "Gerar relatório completo" nas páginas fiscais (Sprint 25) chega com o modelo escolhido;
+  // ente e período continuam vindo do contexto único, para não haver duas verdades.
+  const [params] = useSearchParams();
+  const [modelo, setModelo] = useState(params.get('modelo') || 'executivo');
   const [escopo, setEscopo] = useState<RelatorioEscopo>('ente');
   const [formato, setFormato] = useState<RelatorioFormato>('pdf');
   const [periodicidade, setPeriodicidade] = useState<'semanal' | 'mensal' | 'bimestral'>('mensal');
@@ -104,6 +120,8 @@ export function RelatoriosPage() {
         formato,
         escopo,
         ente: escopo === 'ente' ? ente.cod_ibge : undefined,
+        // Lista vazia = todos do escopo (o backend resolve); com seleção, só os escolhidos.
+        entes: escopo !== 'ente' && entesSelecionados.length > 0 ? entesSelecionados : undefined,
         periodo,
         secoes: active.secoes,
       });
@@ -132,12 +150,14 @@ export function RelatoriosPage() {
         formato,
         escopo,
         ente: escopo === 'ente' ? ente.cod_ibge : undefined,
+        entes: escopo !== 'ente' && entesSelecionados.length > 0 ? entesSelecionados : undefined,
         periodo,
         periodicidade,
         proxima_execucao: next.toISOString(),
         secoes: active.secoes,
       });
       setMessage(`Agendamento ${result.periodicidade} criado para ${formatDate(result.proxima_execucao)}.`);
+      agendamentos.reload();
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
@@ -156,24 +176,29 @@ export function RelatoriosPage() {
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Relatórios e Exportação">
-      <Card style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 18px' }} pad={0}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>Relatórios &amp; Exportação</div>
-          <div style={{ fontSize: 11, color: colors.muted, fontFamily: font.mono }}>
-            PDF · Excel · Slides · fontes e memória preservadas no snapshot
-          </div>
-        </div>
-        <div style={{ flex: 1 }} />
-        <select value={periodicidade} onChange={(event) => setPeriodicidade(event.target.value as typeof periodicidade)} style={selectStyle}>
-          <option value="semanal">Semanal</option>
-          <option value="mensal">Mensal</option>
-          <option value="bimestral">Bimestral</option>
-        </select>
-        <button disabled={busy || !active} onClick={() => void schedule()} style={secondaryButton}>
-          <Icon size={13}><circle cx="8" cy="8" r="6" /><path d="M8 5v3l2 2" /></Icon>
-          Agendar recorrente
-        </button>
-      </Card>
+      <PageHeader
+        title="Relatórios & Exportação"
+        context={`${ente.nome} · ${periodo || 'sem período selecionado'} · snapshots com fontes e memória preservadas`}
+        source="Indicadores gold e memórias de cálculo versionadas"
+        actions={(
+          <>
+            <select
+              aria-label="Periodicidade do agendamento"
+              value={periodicidade}
+              onChange={(event) => setPeriodicidade(event.target.value as typeof periodicidade)}
+              style={selectStyle}
+            >
+              <option value="semanal">Semanal</option>
+              <option value="mensal">Mensal</option>
+              <option value="bimestral">Bimestral</option>
+            </select>
+            <button type="button" disabled={busy || !active} onClick={() => void schedule()} style={secondaryButton}>
+              <Icon size={13}><circle cx="8" cy="8" r="6" /><path d="M8 5v3l2 2" /></Icon>
+              Agendar recorrente
+            </button>
+          </>
+        )}
+      />
 
       {actionError && <ErrorBox message={actionError} />}
       {message && <div style={{ padding: '9px 12px', borderRadius: 5, background: colors.greenBg, color: colors.green, fontSize: 12 }}>{message}</div>}
@@ -190,7 +215,7 @@ export function RelatoriosPage() {
         <Card style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Construtor</div>
-            <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
               {active?.nome ?? 'Carregando modelos…'} · {active?.publico}
             </div>
           </div>
@@ -202,13 +227,15 @@ export function RelatoriosPage() {
             </div>
           </Field>
           <Field label="Ente / carteira">
-            <div style={readOnlyField}>
-              {escopo === 'ente'
-                ? `${ente.nome} · IBGE ${ente.cod_ibge}`
-                : escopo === 'estadual'
-                  ? 'Cobertura estadual dentro do seu escopo efetivo'
-                  : 'Todos os entes da carteira no seu escopo efetivo'}
-            </div>
+            {escopo === 'ente' ? (
+              <div style={readOnlyField}>{`${ente.nome} · IBGE ${ente.cod_ibge}`}</div>
+            ) : (
+              <SeletorEntesRelatorio
+                res={escopoEntes}
+                selecionados={entesSelecionados}
+                onMudar={setEntesSelecionados}
+              />
+            )}
           </Field>
           <Field label="Período fiscal">
             <div style={readOnlyField}>{periodo}</div>
@@ -225,7 +252,7 @@ export function RelatoriosPage() {
               ))}
             </div>
           </Field>
-          <button disabled={busy || !active} onClick={() => void generate()} style={{ ...primaryButton, opacity: busy ? .65 : 1 }}>
+          <button type="button" disabled={busy || !active} onClick={() => void generate()} style={{ ...primaryButton, opacity: busy ? .65 : 1 }}>
             <Icon size={15} stroke={colors.bg} sw={1.6}><path d="M8 2v8M5 7l3 3 3-3M3 13h10" /></Icon>
             {busy ? 'Enfileirando…' : 'Gerar relatório'}
           </button>
@@ -237,15 +264,17 @@ export function RelatoriosPage() {
         </div>
       </div>
 
+      <Agendamentos res={agendamentos} onErro={setActionError} />
+
       <Card pad={0}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px 10px' }}>
           <Icon size={14} stroke={colors.primary}><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></Icon>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Histórico real de relatórios</div>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: colors.muted, fontFamily: font.mono }}>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.muted, fontFamily: font.mono }}>
             {historico.data?.total ?? 0} artefato(s) · versionado
           </span>
         </div>
-        {historico.loading && !historico.data ? <Loading /> : historico.error ? <ErrorBox message={historico.error} /> : (
+        {historico.loading && !historico.data ? <Loading /> : historico.error ? <ErrorBox message={historico.error} onRetry={historico.reload} /> : (
           <History items={historico.data?.itens ?? []} onSelect={(item) => void fetchRelatorio(item.id).then(setDetalhe).catch((error) => setActionError(errorMessage(error)))} onDownload={download} />
         )}
       </Card>
@@ -255,14 +284,14 @@ export function RelatoriosPage() {
 
 function ModelCard({ item, selected, onClick }: { item: RelatorioModelo; selected: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ textAlign: 'left', padding: 14, borderRadius: 6, border: selected ? `2px solid ${colors.primary}` : `1px solid ${colors.border}`, background: selected ? '#F4F8F5' : colors.surface }}>
+    <button type="button" aria-pressed={selected} onClick={onClick} style={{ textAlign: 'left', padding: 14, borderRadius: 6, border: selected ? `2px solid ${colors.primary}` : `1px solid ${colors.border}`, background: selected ? '#F4F8F5' : colors.surface }}>
       <div style={{ width: 34, height: 34, borderRadius: 7, background: colors.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
         <Icon size={18} stroke={colors.primary} sw={1.4}><path d={icons[item.codigo] ?? icons.executivo} /></Icon>
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 600 }}>{item.nome}</div>
-      <div style={{ fontSize: 10, color: colors.primary, fontWeight: 500, marginTop: 4 }}>{item.publico}</div>
-      <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 6, lineHeight: 1.4 }}>{item.descricao}</div>
-      <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: font.mono, marginTop: 9 }}>
+      <div style={{ fontSize: 11, color: colors.primary, fontWeight: 500, marginTop: 4 }}>{item.publico}</div>
+      <div style={{ fontSize: 11, color: colors.muted, marginTop: 6, lineHeight: 1.4 }}>{item.descricao}</div>
+      <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono, marginTop: 9 }}>
         {item.secoes.length} seções · {item.formalidade} · {item.modelo_versao}
       </div>
     </button>
@@ -279,11 +308,18 @@ function BatchPanel({ items, onDownload }: { items: RelatorioItem[]; onDownload:
       {items.map((item) => (
         <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '105px 1fr 90px auto', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${colors.rowBorder}` }}>
           <span style={{ fontSize: 11, fontFamily: font.mono }}>{item.cod_ibge}</span>
-          <div style={{ height: 6, background: colors.borderSoft, borderRadius: 3, overflow: 'hidden' }}>
+          <div
+            role="progressbar"
+            aria-label={`Progresso do relatório do ente ${item.cod_ibge}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={item.progresso}
+            style={{ height: 6, background: colors.borderSoft, borderRadius: 3, overflow: 'hidden' }}
+          >
             <div style={{ height: '100%', width: `${item.progresso}%`, background: statusColor(item.status) }} />
           </div>
-          <span style={{ fontSize: 10.5, color: statusColor(item.status), fontWeight: 600 }}>{item.status}</span>
-          <button disabled={!item.arquivo_url} onClick={() => void onDownload(item)} style={smallButton}>Baixar</button>
+          <span style={{ fontSize: 11, color: statusColor(item.status), fontWeight: 600 }}>{item.status}</span>
+          <button type="button" disabled={!item.arquivo_url} onClick={() => void onDownload(item)} style={smallButton}>Baixar</button>
         </div>
       ))}
     </Card>
@@ -296,7 +332,7 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
     <Card style={{ flex: 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>Pré-visualização auditável</div>
-        <span style={{ fontSize: 10, color: colors.faint, fontFamily: font.mono }}>{item?.formato.toUpperCase() ?? 'aguardando geração'}</span>
+        <span style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{item?.formato.toUpperCase() ?? 'aguardando geração'}</span>
       </div>
       {!item ? <div style={{ padding: 40, textAlign: 'center', color: colors.muted, fontSize: 12 }}>Gere um relatório para visualizar números, fontes e pendências reais.</div> : (
         <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, padding: '24px 28px', maxWidth: 760, margin: '0 auto' }}>
@@ -307,13 +343,13 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{active?.nome ?? item.modelo}</div>
-              <div style={{ fontSize: 10, color: colors.faint, fontFamily: font.mono }}>{item.periodo} · as_of {formatDate(item.as_of)}</div>
+              <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{item.periodo} · as_of {formatDate(item.as_of)}</div>
             </div>
           </div>
           {item.dados_incompletos.length > 0 && (
             <div style={{ marginTop: 12, padding: 10, background: colors.orangeBg, color: colors.orange, borderRadius: 4 }}>
               <div style={{ fontSize: 11, fontWeight: 700 }}>{item.dados_incompletos.length} sinalização(ões) — nenhum item foi omitido</div>
-              {item.dados_incompletos.slice(0, 4).map((issue) => <div key={`${issue.tipo}-${issue.codigo}`} style={{ fontSize: 10.5, marginTop: 4 }}>[{issue.tipo}] {issue.mensagem}</div>)}
+              {item.dados_incompletos.slice(0, 4).map((issue) => <div key={`${issue.tipo}-${issue.codigo}`} style={{ fontSize: 11, marginTop: 4 }}>[{issue.tipo}] {issue.mensagem}</div>)}
             </div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginTop: 14 }}>
@@ -323,13 +359,13 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
                   <span style={{ fontSize: 11 }}>{metric.rotulo}</span>
                   <span style={{ fontFamily: font.mono, fontSize: 11, fontWeight: 700 }}>{metric.valor_formatado}</span>
                 </div>
-                <div style={{ marginTop: 5, fontSize: 9, color: colors.faint, fontFamily: font.mono }}>
+                <div style={{ marginTop: 5, fontSize: 11, color: colors.faint, fontFamily: font.mono }}>
                   {sourceLabel(metric)} · as_of {formatDate(metric.as_of)}
                 </div>
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 9.5, color: colors.faint, marginTop: 12, fontFamily: font.mono }}>
+          <div style={{ fontSize: 11, color: colors.faint, marginTop: 12, fontFamily: font.mono }}>
             gerado {formatDate(item.gerado_em)} · hash {item.conteudo_hash?.slice(0, 16) ?? 'em processamento'}
           </div>
         </div>
@@ -341,30 +377,53 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
 function History({ items, onSelect, onDownload }: { items: RelatorioItem[]; onSelect: (item: RelatorioItem) => void; onDownload: (item: RelatorioItem) => Promise<void> }) {
   if (!items.length) return <div style={{ padding: 24, color: colors.muted, fontSize: 12 }}>Nenhum relatório gerado nesta organização.</div>;
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr .8fr .65fr .8fr .7fr auto', padding: '7px 16px', background: colors.bg, borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, textTransform: 'uppercase' }}>
-        <div>Relatório / ente</div><div>Período</div><div>Formato</div><div>Gerado</div><div>Status</div><div>Ação</div>
-      </div>
-      {items.map((item) => (
-        <div key={item.id} onClick={() => onSelect(item)} style={{ display: 'grid', gridTemplateColumns: '1.6fr .8fr .65fr .8fr .7fr auto', padding: '9px 16px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', cursor: 'pointer', fontSize: 11.5 }}>
-          <div><strong>{item.modelo}</strong><div style={{ color: colors.faint, fontFamily: font.mono, fontSize: 9.5 }}>IBGE {item.cod_ibge} · {item.source_refs.length} fonte(s) · {item.dados_incompletos.length} aviso(s)</div></div>
-          <div style={{ fontFamily: font.mono }}>{item.periodo}</div>
-          <div style={{ fontFamily: font.mono }}>{item.formato.toUpperCase()}</div>
-          <div style={{ color: colors.muted }}>{formatDate(item.gerado_em ?? item.criado_em)}</div>
-          <div style={{ color: statusColor(item.status), fontWeight: 600 }}>{item.status}</div>
-          <button disabled={!item.arquivo_url} onClick={(event) => { event.stopPropagation(); void onDownload(item); }} style={smallButton}>Baixar</button>
-        </div>
-      ))}
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 11.5 }}>
+        <caption className="sr-only">Histórico real de relatórios gerados</caption>
+        <thead>
+          <tr style={{ background: colors.bg, borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, color: colors.muted, textTransform: 'uppercase' }}>
+            {['Relatório / ente', 'Período', 'Formato', 'Gerado', 'Status', 'Ação'].map((label) => (
+              <th key={label} scope="col" style={{ padding: '7px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600 }}>{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id} style={{ borderBottom: `1px solid ${colors.rowBorder}` }}>
+              <th scope="row" style={{ padding: '9px 16px', textAlign: 'left', fontWeight: 400 }}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(item)}
+                  aria-label={`Abrir detalhes do relatório ${item.modelo} para o ente ${item.cod_ibge}`}
+                  style={{ textAlign: 'left', color: 'inherit' }}
+                >
+                  <strong>{item.modelo}</strong>
+                  <span style={{ display: 'block', color: colors.faint, fontFamily: font.mono, fontSize: 11 }}>
+                    IBGE {item.cod_ibge} · {item.source_refs.length} fonte(s) · {item.dados_incompletos.length} aviso(s)
+                  </span>
+                </button>
+              </th>
+              <td style={{ padding: '9px 16px', fontFamily: font.mono }}>{item.periodo}</td>
+              <td style={{ padding: '9px 16px', fontFamily: font.mono }}>{item.formato.toUpperCase()}</td>
+              <td style={{ padding: '9px 16px', color: colors.muted }}>{formatDate(item.gerado_em ?? item.criado_em)}</td>
+              <td style={{ padding: '9px 16px', color: statusColor(item.status), fontWeight: 600 }}>{item.status}</td>
+              <td style={{ padding: '9px 16px' }}>
+                <button type="button" disabled={!item.arquivo_url} onClick={() => void onDownload(item)} style={smallButton}>Baixar</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><div style={{ fontSize: 9.5, color: colors.faint, textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>{label}</div>{children}</div>;
+  return <div><div style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>{label}</div>{children}</div>;
 }
 
 function Toggle({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} style={{ flex: 1, padding: 8, borderRadius: 4, fontSize: 11.5, fontWeight: active ? 600 : 400, background: active ? colors.primary : colors.bg, color: active ? colors.bg : colors.muted, border: active ? 'none' : `1px solid ${colors.border}` }}>{children}</button>;
+  return <button type="button" aria-pressed={active} onClick={onClick} style={{ flex: 1, padding: 8, borderRadius: 4, fontSize: 11.5, fontWeight: active ? 600 : 400, background: active ? colors.primary : colors.bg, color: active ? colors.bg : colors.muted, border: active ? 'none' : `1px solid ${colors.border}` }}>{children}</button>;
 }
 
 function reportMetrics(item: RelatorioItem | null): MetricPreview[] {
@@ -397,6 +456,247 @@ function statusColor(status: string): string {
 const selectStyle = { padding: '7px 10px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.surface, fontSize: 11.5 };
 const secondaryButton = { display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12, fontWeight: 500 };
 const primaryButton = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 13.5, fontWeight: 600 };
-const smallButton = { padding: '5px 9px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 10.5, color: colors.primary };
+const smallButton = { padding: '5px 9px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 11, color: colors.primary };
 const readOnlyField = { padding: '8px 10px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.bg, fontSize: 11.5 };
-const chipStyle = { fontSize: 9.5, padding: '3px 7px', borderRadius: 3, background: colors.accentSoft, color: colors.primary, fontWeight: 600 };
+const chipStyle = { fontSize: 11, padding: '3px 7px', borderRadius: 3, background: colors.accentSoft, color: colors.primary, fontWeight: 600 };
+
+/**
+ * UI de agendamentos (Sprint 25E).
+ *
+ * A auditoria (§2.15) registrou que dava para **criar** uma recorrência e nunca mais
+ * vê-la: sem listagem, o gestor não sabia o que estava agendado nem como parar. Aqui ele
+ * lista, muda a periodicidade, **desativa sem perder o registro** (histórico de que a
+ * regra existiu) e, se for o caso, exclui.
+ */
+function Agendamentos({
+  res,
+  onErro,
+}: {
+  res: ReturnType<typeof useResource<RelatorioAgendamento[]>>;
+  onErro: (mensagem: string | null) => void;
+}) {
+  const [ocupado, setOcupado] = useState<string | null>(null);
+
+  async function acao(id: string, fn: () => Promise<unknown>) {
+    setOcupado(id);
+    onErro(null);
+    try {
+      await fn();
+      res.reload();
+    } catch (error) {
+      onErro(errorMessage(error));
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  return (
+    <Card pad={0}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px 10px' }}>
+        <Icon size={14} stroke={colors.primary}><path d="M3 4h10v9H3z M3 7h10M6 2v3M10 2v3" /></Icon>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Agendamentos</div>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.muted, fontFamily: font.mono }}>
+          {(res.data ?? []).filter((a) => a.ativo).length} ativo(s) de {(res.data ?? []).length}
+        </span>
+      </div>
+      {res.loading && !res.data ? (
+        <Loading />
+      ) : res.error ? (
+        <ErrorBox message={res.error} onRetry={res.reload} />
+      ) : (res.data ?? []).length === 0 ? (
+        <div style={{ padding: '0 16px 16px', fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
+          Nenhuma recorrência criada. Use “agendar” no construtor acima: o relatório passa a ser
+          gerado sozinho na periodicidade escolhida, com o dado vigente na data de execução.
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+            <caption className="sr-only">Agendamentos recorrentes de relatórios</caption>
+            <thead>
+              <tr style={{ background: colors.bg }}>
+                {['Modelo', 'Escopo', 'Período', 'Periodicidade', 'Próxima', 'Última', 'Estado', ''].map((h) => (
+                  <th key={h} scope="col" style={{ padding: '6px 12px', textAlign: 'left', fontSize: 11, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(res.data ?? []).map((a) => (
+                <tr key={a.id} data-testid="agendamento" style={{ borderTop: `1px solid ${colors.rowBorder}`, opacity: a.ativo ? 1 : 0.6 }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{a.modelo}</td>
+                  <td style={{ padding: '8px 12px' }}>
+                    {a.escopo}
+                    <span style={{ color: colors.faint, fontFamily: font.mono, fontSize: 11 }}>
+                      {a.entes.length > 1 ? ` · ${a.entes.length} entes` : a.entes[0] ? ` · ${a.entes[0]}` : ''}
+                    </span>
+                  </td>
+                  <td style={{ padding: '8px 12px', fontFamily: font.mono }}>{a.periodo}</td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <select
+                      aria-label={`Periodicidade do agendamento ${a.modelo}`}
+                      value={a.periodicidade}
+                      disabled={ocupado === a.id}
+                      onChange={(e) => void acao(a.id, () => editarAgendamento(a.id, { periodicidade: e.target.value }))}
+                      style={{ ...selectStyle, padding: '2px 6px', fontSize: 11 }}
+                    >
+                      {['diario', 'semanal', 'mensal', 'bimestral'].map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ padding: '8px 12px', fontFamily: font.mono, fontSize: 11 }}>{formatDate(a.proxima_execucao)}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: font.mono, fontSize: 11, color: colors.muted }}>
+                    {a.ultima_execucao ? formatDate(a.ultima_execucao) : 'nunca executou'}
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <span
+                      style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 3,
+                        background: a.ativo ? colors.greenBg : colors.neutralBg,
+                        color: a.ativo ? colors.green : colors.neutral,
+                      }}
+                    >
+                      {a.ativo ? 'ATIVO' : 'PAUSADO'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button
+                      type="button"
+                      disabled={ocupado === a.id}
+                      onClick={() => void acao(a.id, () => editarAgendamento(a.id, { ativo: !a.ativo }))}
+                      style={miniButton}
+                    >
+                      {a.ativo ? 'desativar' : 'reativar'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ocupado === a.id}
+                      onClick={() => void acao(a.id, () => excluirAgendamento(a.id))}
+                      style={{ ...miniButton, marginLeft: 6, color: colors.red }}
+                    >
+                      excluir
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ padding: '8px 16px 14px', fontSize: 11, color: colors.faint, lineHeight: 1.5 }}>
+            Desativar preserva o registro — o histórico de que a regra existiu e por quanto tempo
+            rodou faz parte da trilha. Excluir remove a recorrência de vez.
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const miniButton = {
+  border: `1px solid ${colors.border}`,
+  background: colors.surface,
+  borderRadius: 4,
+  padding: '2px 8px',
+  fontSize: 11,
+  cursor: 'pointer',
+  color: colors.ink,
+} as const;
+
+/**
+ * Seleção de entes do lote (Sprint 26).
+ *
+ * Pergunta gerencial: **"quero relatório de quais municípios?"** — até aqui a resposta
+ * era sempre "todos", e para uma Sefaz com 185 entes isso significava 185 artefatos por
+ * clique. Nada selecionado continua valendo "todos do escopo" (o backend resolve), mas
+ * agora é uma escolha declarada, não um efeito colateral.
+ */
+function SeletorEntesRelatorio({
+  res,
+  selecionados,
+  onMudar,
+}: {
+  res: ReturnType<typeof useResource<{ data: Array<{ cod_ibge: string; nome: string | null; tem_dado: boolean }>; total: number; escopo_total: number }>>;
+  selecionados: string[];
+  onMudar: (entes: string[]) => void;
+}) {
+  const [filtro, setFiltro] = useState('');
+  const itens = res.data?.data ?? [];
+  const visiveis = filtro
+    ? itens.filter(
+        (e) =>
+          (e.nome ?? '').toLocaleLowerCase('pt-BR').includes(filtro.toLocaleLowerCase('pt-BR')) ||
+          e.cod_ibge.startsWith(filtro),
+      )
+    : itens;
+
+  const alternar = (cod: string) => {
+    onMudar(selecionados.includes(cod) ? selecionados.filter((c) => c !== cod) : [...selecionados, cod]);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontSize: 11, color: colors.muted, lineHeight: 1.45 }}>
+        {selecionados.length === 0
+          ? `Nenhum selecionado — o relatório sai para todos os ${res.data?.escopo_total ?? 0} entes do seu escopo.`
+          : `${selecionados.length} ente(s) selecionado(s) de ${res.data?.escopo_total ?? 0}.`}
+      </div>
+      <input
+        value={filtro}
+        onChange={(e) => setFiltro(e.target.value)}
+        placeholder="Filtrar por nome ou código…"
+        aria-label="Filtrar entes do lote"
+        style={{
+          padding: '5px 8px', border: `1px solid ${colors.border}`, borderRadius: 4,
+          fontSize: 11.5, background: colors.bg, color: colors.ink,
+        }}
+      />
+      <div
+        data-testid="seletor-entes-relatorio"
+        role="group"
+        aria-label="Entes do lote"
+        style={{
+          maxHeight: 190, overflowY: 'auto', border: `1px solid ${colors.border}`,
+          borderRadius: 4, background: colors.surface,
+        }}
+      >
+        {res.loading && !res.data ? (
+          <div style={{ padding: 10, fontSize: 11, color: colors.muted }}>Carregando escopo…</div>
+        ) : visiveis.length === 0 ? (
+          <div style={{ padding: 10, fontSize: 11, color: colors.muted }}>
+            Nenhum ente do escopo com esse filtro.
+          </div>
+        ) : (
+          visiveis.map((e) => (
+            <label
+              key={e.cod_ibge}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7, padding: '4px 8px',
+                fontSize: 11.5, borderBottom: `1px solid ${colors.rowBorder}`, cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selecionados.includes(e.cod_ibge)}
+                onChange={() => alternar(e.cod_ibge)}
+              />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {e.nome ?? e.cod_ibge}
+              </span>
+              <span style={{ fontFamily: font.mono, fontSize: 11, color: colors.faint }}>{e.cod_ibge}</span>
+              {!e.tem_dado && (
+                <span title="Sem dado ingerido: o relatório sairia vazio" style={{ fontSize: 11, color: colors.orange, fontWeight: 700 }}>
+                  SEM DADO
+                </span>
+              )}
+            </label>
+          ))
+        )}
+      </div>
+      {selecionados.length > 0 && (
+        <button type="button" onClick={() => onMudar([])} style={{ ...miniButton, alignSelf: 'flex-start' }}>
+          limpar seleção
+        </button>
+      )}
+    </div>
+  );
+}

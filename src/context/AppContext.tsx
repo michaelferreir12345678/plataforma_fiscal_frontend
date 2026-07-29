@@ -16,7 +16,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getToken, setToken as persistToken } from '../services/api';
+import { ApiError, getToken, setToken as persistToken } from '../services/api';
 import { fetchPeriodos } from '../services/backend';
 
 const CHAVE_CONTEXTO = 'erario_contexto';
@@ -50,6 +50,14 @@ interface AppState {
   /** Entes recentes (atalho do seletor e do ⌘K). */
   recentes: EnteSel[];
   carregandoContexto: boolean;
+  /**
+   * Por que o ente ficou sem período, quando não foi por ausência de dado.
+   *
+   * O `catch` desta busca engolia a razão e toda tela concluía "sem período com dado" —
+   * inclusive quando a resposta tinha sido **403 fora do escopo**. Um problema de
+   * permissão contado como ausência de dado manda o usuário procurar no lugar errado.
+   */
+  contextoIndisponivel: string | null;
 }
 
 const AppCtx = createContext<AppState | null>(null);
@@ -69,6 +77,20 @@ const ENTE_INICIAL: EnteSel = {
   nome: (env.VITE_DEFAULT_ENTE_NOME as string) || 'Fortaleza',
 };
 
+/** Traduz a falha da busca de períodos para uma frase que aponta a causa certa. */
+function motivoDoContexto(erro: unknown, nome: string): string {
+  if (erro instanceof ApiError) {
+    if (erro.status === 403) {
+      return (
+        erro.detail ||
+        `${nome} não está na carteira/escopo do seu usuário — por isso nenhum período aparece.`
+      );
+    }
+    return `Não foi possível carregar os períodos de ${nome}: ${erro.detail || erro.title}`;
+  }
+  return `Não foi possível carregar os períodos de ${nome}.`;
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const persistido = useMemo(lerPersistido, []);
   const [token, setTokenState] = useState<string | null>(getToken());
@@ -79,6 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [periodosRreo, setPeriodosRreo] = useState<string[]>([]);
   const [periodosRgf, setPeriodosRgf] = useState<string[]>([]);
   const [carregandoContexto, setCarregandoContexto] = useState(true);
+  const [contextoIndisponivel, setContextoIndisponivel] = useState<string | null>(null);
 
   const setToken = useCallback((t: string | null) => {
     persistToken(t);
@@ -96,11 +119,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const nomeDoEnte = ente.nome || ente.cod_ibge;
+
   // Descobre os períodos COM DADO do ente e escolhe o default (o mais recente).
   useEffect(() => {
     if (!token) return;
     let vivo = true;
     setCarregandoContexto(true);
+    setContextoIndisponivel(null);
     Promise.all([fetchPeriodos(ente.cod_ibge, 'RREO'), fetchPeriodos(ente.cod_ibge, 'RGF')])
       .then(([rreo, rgf]) => {
         if (!vivo) return;
@@ -115,16 +141,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           atual && listaRgf.includes(atual) ? atual : (rgf.default ?? ''),
         );
       })
-      .catch(() => {
+      .catch((erro: unknown) => {
         if (!vivo) return;
         setPeriodosRreo([]);
         setPeriodosRgf([]);
+        // Guardar o motivo é o ponto: sem ele, um 403 de escopo vira "sem período com
+        // dado" e o usuário vai procurar dado faltante onde falta é permissão.
+        setContextoIndisponivel(motivoDoContexto(erro, nomeDoEnte));
       })
       .finally(() => vivo && setCarregandoContexto(false));
     return () => {
       vivo = false;
     };
-  }, [ente.cod_ibge, token]);
+  }, [ente.cod_ibge, nomeDoEnte, token]);
 
   // Persiste o contexto para o próximo acesso.
   useEffect(() => {
@@ -152,6 +181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPeriodoRgf: setPeriodoRgfState,
     recentes,
     carregandoContexto,
+    contextoIndisponivel,
   };
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }
@@ -166,17 +196,45 @@ export interface Resource<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /**
+   * Preenchido quando a chamada **não se aplica** — e não vai se aplicar. É estado
+   * distinto de `loading`: o bloco que espera para sempre promete um dado que nunca
+   * vem, o que mente mais do que dizer "não há".
+   */
+  indisponivel: ReactNode | null;
   reload: () => void;
 }
 
-/** Executa ``fetcher`` quando ``deps`` mudam, padronizando loading/erro. */
-export function useResource<T>(fetcher: () => Promise<T>, deps: unknown[]): Resource<T> {
+/**
+ * Executa ``fetcher`` quando ``deps`` mudam, padronizando loading/erro.
+ *
+ * ``opcoes.pular`` segura a chamada enquanto o contexto ainda não tem período (o
+ * AppContext descobre o período do ente de forma assíncrona): sem isso a página dispara
+ * uma requisição sabidamente inválida antes da primeira útil.
+ *
+ * Quando a espera **deixa de ser temporária** — o contexto terminou e o período
+ * simplesmente não existe para este ente —, passe ``opcoes.indisponivel``. O recurso
+ * então para de carregar e a página diz o que não há, em vez de girar para sempre.
+ */
+export function useResource<T>(
+  fetcher: () => Promise<T>,
+  deps: unknown[],
+  opcoes?: { pular?: boolean; indisponivel?: ReactNode },
+): Resource<T> {
+  const pular = opcoes?.pular ?? false;
+  const indisponivel = pular ? (opcoes?.indisponivel ?? null) : null;
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    if (pular) {
+      setLoading(true);
+      setError(null);
+      setData(null);
+      return;
+    }
     let vivo = true;
     setLoading(true);
     setError(null);
@@ -189,7 +247,13 @@ export function useResource<T>(fetcher: () => Promise<T>, deps: unknown[]): Reso
       vivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, tick]);
+  }, [...deps, tick, pular]);
 
-  return { data, loading, error, reload: () => setTick((t) => t + 1) };
+  return {
+    data,
+    loading: indisponivel !== null ? false : loading,
+    error,
+    indisponivel,
+    reload: () => setTick((t) => t + 1),
+  };
 }

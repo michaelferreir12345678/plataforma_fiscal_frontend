@@ -95,6 +95,33 @@ export async function apiPatch<TResponse, TBody = unknown>(
   return handle<TResponse>(res);
 }
 
+/** PUT JSON autenticado (cadastros idempotentes, ex.: meta fiscal da LDO). */
+export async function apiPut<TResponse, TBody = unknown>(
+  path: string,
+  body: TBody,
+  params?: Record<string, string | number | undefined | null>,
+): Promise<TResponse> {
+  const url = new URL(BASE + path);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    }
+  }
+  const res = await fetch(url.toString(), {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handle<TResponse>(res);
+}
+
+/** DELETE autenticado. 204 não tem corpo — resolve sem tentar desserializar. */
+export async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(BASE + path, { method: 'DELETE', headers: authHeaders() });
+  if (res.status === 204) return;
+  await handle<unknown>(res);
+}
+
 /** Download autenticado de artefatos binários sem expor o JWT na URL. */
 export async function apiDownload(path: string, filename: string): Promise<void> {
   const res = await fetch(BASE + path, { headers: authHeaders() });

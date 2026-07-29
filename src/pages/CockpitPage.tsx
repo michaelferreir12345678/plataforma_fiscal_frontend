@@ -11,8 +11,11 @@
  */
 import { colors } from '../theme';
 import { Card } from '../components/Card';
-import { Async } from '../components/AsyncState';
-import { Sparkline } from '../components/Sparkline';
+import { Async, ContextoIndisponivel } from '../components/AsyncState';
+import { ExportButton } from '../components/ExportButton';
+import { PageHeader } from '../components/PageHeader';
+import { SeloQualidade } from '../components/SeloQualidade';
+import { TendenciaChart, type PontoTendencia } from '../components/TendenciaChart';
 import { RadialMeter } from '../components/RadialMeter';
 import { useApp, useResource } from '../context/AppContext';
 import { fetchCockpit } from '../services/backend';
@@ -61,7 +64,7 @@ function Secao({ n, titulo, pergunta, children }: { n: number; titulo: string; p
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontSize: 9.5, fontFamily: "'JetBrains Mono', monospace", color: colors.faint }}>
+        <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: colors.faint }}>
           {String(n).padStart(2, '0')}
         </span>
         <h2 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{titulo}</h2>
@@ -75,7 +78,7 @@ function Secao({ n, titulo, pergunta, children }: { n: number; titulo: string; p
 function Fonte({ relatorio, anexo, periodo, versao }: { relatorio?: string | null; anexo?: string | null; periodo?: string | null; versao?: string | null }) {
   if (!relatorio) return null;
   return (
-    <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: "'JetBrains Mono', monospace", marginTop: 6 }}>
+    <div style={{ fontSize: 11, color: colors.faint, fontFamily: "'JetBrains Mono', monospace", marginTop: 6 }}>
       fonte: {relatorio}
       {anexo ? ` · ${anexo}` : ''}
       {periodo ? ` · ${periodo}` : ''}
@@ -85,17 +88,64 @@ function Fonte({ relatorio, anexo, periodo, versao }: { relatorio?: string | nul
 }
 
 export function CockpitPage() {
-  const { ente, periodo } = useApp();
+  const { ente, periodo, carregandoContexto, contextoIndisponivel } = useApp();
   const res = useResource(
-    () => (periodo ? fetchCockpit(ente.cod_ibge, periodo) : Promise.reject(new Error('Sem período com dado para este ente.'))),
+    () => fetchCockpit(ente.cod_ibge, periodo),
     [ente.cod_ibge, periodo],
+    {
+      // Sem período não é erro do cockpit: ou o contexto ainda está carregando, ou existe
+      // um motivo (403 de escopo, ausência de entrega) que o contexto já sabe explicar.
+      pular: !periodo,
+      indisponivel: carregandoContexto ? null : (
+        <ContextoIndisponivel
+          ente={ente.nome}
+          motivo={
+            contextoIndisponivel ??
+            'Nenhuma entrega de RREO foi encontrada para este ente. Assim que houver uma carga, o período aparece aqui.'
+          }
+        />
+      ),
+    },
   );
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 18 }} data-screen-label="Cockpit Executivo">
+      <PageHeader
+        title="Cockpit Executivo"
+        context={`${ente.nome} · ${periodo || 'sem período selecionado'} · síntese fiscal para decisão`}
+        source="RREO, RGF e indicadores gold · SICONFI"
+      />
       <Async res={res}>
         {(c) => (
           <>
+            {/* Sprint 26: o selo vem antes de tudo — se um número desta tela está sob
+                verificação em falha, o gestor precisa ler isso antes do número. */}
+            <SeloQualidade checks={c.qualidade.checks_abertos} />
+
+            {/* Export da leitura do cockpit — a mesma foto que a tela mostra. */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <ExportButton
+                nome="Cockpit"
+                linhas={c.criticos}
+                colunas={[
+                  { cabecalho: 'indicador', valor: (i) => i.indicador },
+                  { cabecalho: 'rotulo', valor: (i) => i.rotulo },
+                  { cabecalho: 'sentido', valor: (i) => i.sentido },
+                  { cabecalho: 'valor_pct', valor: (i) => i.valor_pct },
+                  { cabecalho: 'valor_rs', valor: (i) => i.valor_rs },
+                  { cabecalho: 'limite_pct', valor: (i) => i.limite_pct },
+                  { cabecalho: 'faixa', valor: (i) => i.faixa ?? '' },
+                  { cabecalho: 'distancia_pp', valor: (i) => i.distancia_pp },
+                ]}
+                contexto={{
+                  ente: c.nome ?? ente.nome,
+                  periodo: c.periodo,
+                  fonte: `${c.source_ref.relatorio} ${c.source_ref.anexo ?? ''}`.trim(),
+                }}
+                modeloRelatorio="executivo"
+              />
+            </div>
+
             {/* 1 — RESUMO */}
             <Secao n={1} titulo="Resumo" pergunta="estou bem?">
               <Card style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '16px 18px' }} pad={0}>
@@ -105,13 +155,13 @@ export function CockpitPage() {
                     border: `1px solid ${COR[c.resumo.cor] ?? colors.border}`, textAlign: 'center', minWidth: 190,
                   }}
                 >
-                  <div style={{ fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.muted, fontWeight: 600 }}>
+                  <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.muted, fontWeight: 600 }}>
                     Situação
                   </div>
                   <div style={{ fontSize: 17, fontWeight: 600, color: COR[c.resumo.cor] ?? colors.ink, marginTop: 2 }}>
                     {ROTULO_FAROL[c.resumo.farol] ?? c.resumo.farol}
                   </div>
-                  <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
                     {c.resumo.indicadores_avaliados} indicador(es) apurado(s)
                   </div>
                 </div>
@@ -137,11 +187,11 @@ export function CockpitPage() {
                             ({sinal(m.delta_pp)}{num(m.delta_pp)} p.p.)
                           </span>
                           {m.mudou_de_faixa && (
-                            <span style={{ marginLeft: 6, fontSize: 10, background: colors.orangeBg, color: colors.orange, padding: '1px 5px', borderRadius: 2, fontWeight: 600 }}>
+                            <span style={{ marginLeft: 6, fontSize: 11, background: colors.orangeBg, color: colors.orange, padding: '1px 5px', borderRadius: 2, fontWeight: 600 }}>
                               mudou de faixa: {m.faixa_anterior} → {m.faixa_atual}
                             </span>
                           )}
-                          <span style={{ marginLeft: 6, fontSize: 10, color: colors.faint }}>vs. {m.periodo_anterior}</span>
+                          <span style={{ marginLeft: 6, fontSize: 11, color: colors.faint }}>vs. {m.periodo_anterior}</span>
                         </div>
                       ))}
                     </div>
@@ -217,7 +267,6 @@ function Vazio({ children }: { children: React.ReactNode }) {
 }
 
 function CardCritico({ k }: { k: CriticoItem }) {
-  const cor = COR[k.cor] ?? colors.neutral;
   const teto = Number(k.limite_pct);
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
@@ -258,25 +307,45 @@ function CardTendencia({ t }: { t: TendenciaItem }) {
       </Card>
     );
   }
-  const serie = [
-    ...t.historico.map((p) => Number(p.valor ?? 0)),
-    ...t.projecao.map((p) => Number(p.previsto)),
+  // A unidade do indicador decide o formato. Usar o formatador cru aqui era o que fazia
+  // a RCL aparecer como "41349539093.18" em vez de "R$ 41,3 bi".
+  const formatarPonto = (valor: number) =>
+    t.unidade.toUpperCase().includes('PCT') ? pct(valor) : brl(valor);
+  const pontos: PontoTendencia[] = [
+    ...t.historico.map((p) => ({
+      periodo: p.periodo,
+      valor: p.valor === null ? null : Number(p.valor),
+      projetado: false,
+    })),
+    ...t.projecao.map((p) => ({
+      periodo: p.periodo,
+      valor: Number(p.previsto),
+      projetado: true,
+      icInferior: p.ic_inferior === null ? null : Number(p.ic_inferior),
+      icSuperior: p.ic_superior === null ? null : Number(p.ic_superior),
+    })),
   ];
   const ultimo = t.projecao[t.projecao.length - 1];
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ fontSize: 11.5, fontWeight: 600 }}>{t.rotulo}</div>
-      {serie.length > 1 && (
-        <Sparkline values={serie} color={t.cruzamento_periodo ? colors.orange : colors.primary} width={220} height={44} />
-      )}
+      <TendenciaChart
+        titulo={t.rotulo}
+        pontos={pontos}
+        formatar={formatarPonto}
+        limite={t.limite_pct}
+        cruzamento={t.cruzamento_periodo}
+      />
+      <Legenda cruza={Boolean(t.cruzamento_periodo)} />
       <div style={{ fontSize: 11, color: colors.muted }}>
         {t.historico.length} períodos observados · {t.projecao.length} projetados ({t.modelo})
       </div>
       {ultimo && (
         <div style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
-          {ultimo.periodo}: {num(ultimo.previsto)}{' '}
+          {ultimo.periodo}: {formatarPonto(Number(ultimo.previsto))}{' '}
           <span style={{ color: colors.faint }}>
-            (IC {num(ultimo.ic_inferior)}–{num(ultimo.ic_superior)})
+            (IC {ultimo.ic_inferior === null ? '—' : formatarPonto(Number(ultimo.ic_inferior))}–
+            {ultimo.ic_superior === null ? '—' : formatarPonto(Number(ultimo.ic_superior))})
           </span>
         </div>
       )}
@@ -292,6 +361,33 @@ function CardTendencia({ t }: { t: TendenciaItem }) {
   );
 }
 
+/** Identidade não pode depender só do traço: sólido × tracejado precisa de legenda. */
+function Legenda({ cruza }: { cruza: boolean }) {
+  const item = (amostra: React.ReactNode, rotulo: string) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      {amostra}
+      <span style={{ fontSize: 10.5, color: colors.muted }}>{rotulo}</span>
+    </span>
+  );
+  return (
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      {item(
+        <svg width={16} height={6} aria-hidden><line x1={0} y1={3} x2={16} y2={3} stroke={colors.serieA} strokeWidth={2} /></svg>,
+        'observado',
+      )}
+      {item(
+        <svg width={16} height={6} aria-hidden><line x1={0} y1={3} x2={16} y2={3} stroke={colors.serieA} strokeWidth={2} strokeDasharray="4 3" /></svg>,
+        'projetado (com IC)',
+      )}
+      {cruza &&
+        item(
+          <svg width={10} height={10} aria-hidden><circle cx={5} cy={5} r={4} fill={colors.orange} /></svg>,
+          'cruza o limite',
+        )}
+    </div>
+  );
+}
+
 function CardExplicador({ e }: { e: ExplicadorItem }) {
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -300,7 +396,7 @@ function CardExplicador({ e }: { e: ExplicadorItem }) {
         <Vazio>{e.motivo_indisponivel ?? 'Sem base de comparação.'}</Vazio>
       ) : (
         <>
-          <div style={{ fontSize: 10.5, color: colors.muted }}>
+          <div style={{ fontSize: 11, color: colors.muted }}>
             {e.periodo_anterior} → {e.periodo_atual} · {e.medida}
           </div>
           {e.componentes.map((cp) => (
@@ -347,7 +443,7 @@ function CardRisco({ r }: { r: RiscoItem }) {
   return (
     <Card style={{ borderLeft: `3px solid ${cor}` }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', color: cor, background: fundo, padding: '1px 6px', borderRadius: 2 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: cor, background: fundo, padding: '1px 6px', borderRadius: 2 }}>
           {r.severidade}
         </span>
         <span style={{ fontSize: 12.5, fontWeight: 600 }}>{r.titulo}</span>
@@ -375,13 +471,13 @@ function LinhaQualidade({ f }: { f: QualidadeFonte }) {
   const atrasada = (f.defasagem_periodos ?? 0) > 2;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.8fr 0.8fr 0.8fr 1fr', gap: 8, padding: '9px 16px', borderBottom: `1px solid ${colors.rowBorder}`, fontSize: 11.5, alignItems: 'center' }}>
-      <div style={{ fontWeight: 500 }}>{f.relatorio}<span style={{ color: colors.faint, fontSize: 10 }}> · {f.cadencia}</span></div>
+      <div style={{ fontWeight: 500 }}>{f.relatorio}<span style={{ color: colors.faint, fontSize: 11 }}> · {f.cadencia}</span></div>
       <div style={{ fontFamily: "'JetBrains Mono', monospace" }}>{f.periodo_mais_recente ?? '—'}</div>
       <div style={{ color: atrasada ? colors.orange : colors.muted }}>
         {f.defasagem_periodos === null ? '—' : `${f.defasagem_periodos} período(s) atrás`}
       </div>
       <div style={{ color: colors.muted }}>{f.retificacoes > 0 ? `${f.retificacoes} retificação(ões)` : 'sem retificação'}</div>
-      <div style={{ color: colors.faint, fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace" }}>
+      <div style={{ color: colors.faint, fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
         {f.ultima_carga ? new Date(f.ultima_carga).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sem carga'}
       </div>
     </div>

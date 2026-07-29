@@ -13,6 +13,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.ts',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
     css: false,
+    // Máquina de dev com pouca RAM: arquivos em paralelo disputavam CPU e as esperas
+    // do RTL estouravam por contenção, não por defeito. Serial + folga no timeout.
+    fileParallelism: false,
+    testTimeout: 20000,
   },
 });

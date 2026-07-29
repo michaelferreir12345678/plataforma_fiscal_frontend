@@ -95,11 +95,19 @@ describe('Central de Dados — confirmação e polling', () => {
       }),
     });
 
-    render(<CentralDadosPage />);
+    render(
+      <MemoryRouter>
+        <CentralDadosPage />
+      </MemoryRouter>,
+    );
 
-    const campoEntes = await screen.findByLabelText('Entes');
+    const campoEntes = await screen.findByLabelText(/^Entes \(/);
     expect(campoEntes).toBeDisabled();
     expect(campoEntes).toHaveValue('');
+
+    // O exercício deixou de ser texto livre: escolher 2021 (o piso da série) faz o
+    // backfill retroagir apenas até ele — um ano só.
+    await userEvent.selectOptions(screen.getByLabelText(/Exercício/), '2021');
 
     const disparar = screen.getByRole('button', { name: 'Disparar job' });
     expect(disparar).toBeEnabled();
@@ -109,7 +117,7 @@ describe('Central de Dados — confirmação e polling', () => {
       fonte: 'siconfi_rreo',
       tipo: 'backfill',
       entes: [],
-      anos: [2024],
+      anos: [2021],
       periodos: undefined,
       confirmar: false,
     }));
@@ -138,10 +146,17 @@ describe('Central de Dados — confirmação e polling', () => {
         job: criado,
       });
 
-    render(<CentralDadosPage />);
+    render(
+      <MemoryRouter>
+        <CentralDadosPage />
+      </MemoryRouter>,
+    );
 
-    const campoEntes = await screen.findByLabelText('Entes');
+    const campoEntes = await screen.findByLabelText(/^Entes \(/);
     fireEvent.change(campoEntes, { target: { value: entes.join(',') } });
+    // Um exercício só, para que a estimativa continue medindo a cadência da fonte e
+    // não a extensão do retroativo.
+    await userEvent.selectOptions(screen.getByLabelText(/Exercício/), '2021');
     expect(screen.getByText(/estimativa local pela cadência/)).toHaveTextContent(
       'estimativa local pela cadência: 60 unidade(s)',
     );
@@ -154,7 +169,7 @@ describe('Central de Dados — confirmação e polling', () => {
       fonte: FONTE_LOCAL.fonte,
       tipo: 'backfill',
       entes,
-      anos: [2024],
+      anos: [2021],
       confirmar: false,
     }));
 
@@ -165,7 +180,7 @@ describe('Central de Dados — confirmação e polling', () => {
       fonte: FONTE_LOCAL.fonte,
       tipo: 'backfill',
       entes,
-      anos: [2024],
+      anos: [2021],
       confirmar: true,
     }));
     expect(await screen.findByText(/Job enfileirado \(73 unidade/)).toBeInTheDocument();
@@ -177,7 +192,11 @@ describe('Central de Dados — confirmação e polling', () => {
       .mockResolvedValueOnce([job('executando', 25)])
       .mockResolvedValue([job('concluido', 100)]);
 
-    render(<CentralDadosPage />);
+    render(
+      <MemoryRouter>
+        <CentralDadosPage />
+      </MemoryRouter>,
+    );
 
     await act(async () => {
       await Promise.resolve();
@@ -234,7 +253,11 @@ describe('Central de Dados — confirmação e polling', () => {
     vi.mocked(backend.fetchIngestJobs).mockResolvedValue([falho]);
     vi.spyOn(backend, 'fetchIngestJob').mockResolvedValue(falho);
 
-    render(<CentralDadosPage />);
+    render(
+      <MemoryRouter>
+        <CentralDadosPage />
+      </MemoryRouter>,
+    );
     expect(await screen.findByText('1 unidade falhou')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'detalhes' }));
@@ -333,9 +356,9 @@ describe('Admin real — contratos de cadastro', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Usuários & perfis' }));
     await screen.findByText('Novo usuário');
-    fireEvent.change(screen.getByLabelText('Nome do usuário'), { target: { value: 'Pessoa Real' } });
-    fireEvent.change(screen.getByLabelText('E-mail do usuário'), { target: { value: 'pessoa@example.com' } });
-    fireEvent.change(screen.getByLabelText('Senha inicial'), { target: { value: 'senhaforte' } });
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Pessoa Real' } });
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'pessoa@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^Senha inicial/), { target: { value: 'senhaforte' } });
     await userEvent.click(screen.getByRole('button', { name: 'Criar usuário' }));
     await vi.waitFor(() => expect(criarUsuario).toHaveBeenCalledWith({
       nome: 'Pessoa Real',
@@ -346,7 +369,7 @@ describe('Admin real — contratos de cadastro', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Permissões (RBAC)' }));
     await screen.findByText(/Matriz de permissões/);
-    fireEvent.change(screen.getByLabelText('Nome do novo papel'), { target: { value: 'Operador' } });
+    fireEvent.change(screen.getByLabelText('Novo papel'), { target: { value: 'Operador' } });
     await userEvent.click(screen.getByRole('button', { name: 'Criar papel' }));
     await vi.waitFor(() => expect(criarPapel).toHaveBeenCalledWith({
       nome: 'Operador',

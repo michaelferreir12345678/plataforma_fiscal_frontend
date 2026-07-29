@@ -10,6 +10,12 @@ node_modules
 dist
 dist-ssr
 *.local
+coverage
+playwright-report
+test-results
+lighthouse-report
+.lighthouseci
+.playwright
 
 # Editor
 .vscode/*
@@ -25,3 +31,4 @@ dist-ssr
 # Env
 .env
 .env.*.local
+.env.e2e

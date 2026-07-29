@@ -13,7 +13,7 @@ interface CardProps {
 export function Card({ children, style, pad = 16, accent, className }: CardProps) {
   return (
     <div
-      className={className}
+      className={['ui-card', className].filter(Boolean).join(' ')}
       style={{
         background: colors.surface,
         border: `1px solid ${colors.border}`,

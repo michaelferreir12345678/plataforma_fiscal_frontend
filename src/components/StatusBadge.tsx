@@ -15,7 +15,7 @@ export function StatusBadge({ level, label, dot = false }: StatusBadgeProps) {
         display: 'inline-flex',
         alignItems: 'center',
         gap: 5,
-        fontSize: 9.5,
+        fontSize: 11,
         padding: '2px 8px',
         borderRadius: 3,
         fontWeight: 600,

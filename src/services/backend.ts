@@ -2,7 +2,7 @@
  * Tipos e fetchers tipados das respostas do backend (schemas Pydantic espelhados).
  * Valores monetários vêm em **reais**; a UI divide por 1e6 para exibir em R$ milhões.
  */
-import { apiDownload, apiGet, apiPatch, apiPost } from './api';
+import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPut } from './api';
 
 export type Measures = Record<string, number | null>;
 
@@ -43,6 +43,40 @@ export interface EnteOut {
   uf: string | null;
 }
 
+/** Insumos de comparabilidade da série (deflator IPCA + população) — Sprint 25. */
+export interface AjustePeriodo {
+  periodo: string;
+  fator_deflator: number | null;
+  ipca_acum_pct: number | null;
+  populacao: number | null;
+  pop_ano_ref: number | null;
+}
+export interface SerieAjuste {
+  base_periodo: string;
+  deflator_disponivel: boolean;
+  populacao_disponivel: boolean;
+  fonte_deflator: string;
+  fonte_populacao: string | null;
+  observacao: string | null;
+  itens: AjustePeriodo[];
+}
+
+export interface SerieReceitaItem {
+  periodo: string;
+  arrecadado_acum: number | null;
+  arrecadado_real: number | null;
+  arrecadado_per_capita: number | null;
+  populacao: number | null;
+}
+
+export interface DependenciaResumo {
+  propria: number;
+  transferida: number;
+  total: number;
+  pct_propria: number | null;
+  pct_transferida: number | null;
+}
+
 export interface ReceitaDetalhe {
   cod_ibge: string;
   periodo: string;
@@ -50,16 +84,114 @@ export interface ReceitaDetalhe {
   totais: Measures;
   realizacao_pct: number | null;
   rcl_12m: number | null;
-  dependencia: {
-    propria: number;
-    transferida: number;
-    total: number;
-    pct_propria: number | null;
-    pct_transferida: number | null;
-  };
+  dependencia: DependenciaResumo;
   composicao: DrillChild[];
-  serie: { periodo: string; arrecadado_acum: number | null }[];
+  serie: SerieReceitaItem[];
+  serie_ajuste: SerieAjuste | null;
+  comparacao: {
+    periodo_anterior: string;
+    arrecadado_acum_anterior: number | null;
+    delta_pct: number | null;
+  } | null;
   source_ref: SourceRef;
+}
+
+export interface InconsistenciaAgregacao {
+  eixo?: string;
+  codigo: string;
+  medida: string;
+  valor_no: number;
+  soma_filhos: number;
+}
+
+export interface ReceitaMemoria {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  medidas: string[];
+  totais: Measures;
+  formula_realizacao: string;
+  hierarquia: string;
+  inconsistencias: InconsistenciaAgregacao[];
+  detalhes: Record<string, unknown>;
+  source_ref: SourceRef;
+}
+
+export interface TransferenciaTop {
+  codigo: string;
+  descricao: string;
+  arrecadado_acum: number;
+  pct_das_transferencias: number | null;
+}
+
+export interface ReceitaDependencia {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  resumo: DependenciaResumo;
+  maiores_transferencias: TransferenciaTop[];
+  rcl_12m: number | null;
+  source_ref: SourceRef;
+}
+
+export interface RealizacaoItem {
+  codigo: string;
+  descricao: string;
+  previsto_atualizado: number | null;
+  arrecadado_acum: number | null;
+  realizacao_pct: number | null;
+}
+
+export interface ReceitaRealizacao {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  total: RealizacaoItem;
+  por_categoria: RealizacaoItem[];
+  source_ref: SourceRef;
+}
+
+export type ConciliacaoStatus =
+  | 'conciliado'
+  | 'divergente'
+  | 'contido'
+  | 'excede_agregado'
+  | 'sem_dado_externo'
+  | 'sem_par_rreo';
+
+export interface ConciliacaoItem {
+  transferencia: string;
+  fonte_externa: string;
+  rreo_acum: number | null;
+  externo_acum: number | null;
+  divergencia_pct: number | null;
+  divergencia_rs: number | null;
+  status: ConciliacaoStatus;
+  tabela_externa: string;
+  periodo_externo: string | null;
+  nos_rreo: string[];
+  independente: boolean;
+  /** Linha própria da transferência no RREO ou o agregado que a contém. */
+  base_comparacao: 'linha_especifica' | 'agregado' | 'ausente';
+  participacao_no_agregado_pct: number | null;
+}
+
+export interface ReceitaConciliacao {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  itens: ConciliacaoItem[];
+  tolerancia_pct: number;
+  observacao: string;
+  source_ref: SourceRef;
+}
+
+export interface SerieDespesaItem {
+  periodo: string;
+  empenhado: number | null;
+  empenhado_real: number | null;
+  empenhado_per_capita: number | null;
+  populacao: number | null;
 }
 
 export interface DespesaDetalhe {
@@ -72,7 +204,120 @@ export interface DespesaDetalhe {
   empenhado_pct_rcl: number | null;
   rcl_12m: number | null;
   composicao: DrillChild[];
-  serie: { periodo: string; empenhado: number | null }[];
+  serie: SerieDespesaItem[];
+  serie_ajuste: SerieAjuste | null;
+  comparacao: {
+    periodo_anterior: string;
+    empenhado_anterior: number | null;
+    delta_pct: number | null;
+  } | null;
+  source_ref: SourceRef;
+}
+
+export interface ViolacaoEstagio {
+  eixo: string;
+  codigo: string;
+  empenhado: number | null;
+  liquidado: number | null;
+  pago: number | null;
+  problema: string;
+}
+
+export interface DespesaMemoria {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  medidas: string[];
+  totais_funcao: Measures;
+  totais_natureza: Measures;
+  reconciliacao_eixos_ok: boolean;
+  diferenca_eixos: number | null;
+  formula_potencial_rap: string;
+  hierarquia_funcao: string;
+  hierarquia_natureza: string;
+  inconsistencias: InconsistenciaAgregacao[];
+  violacoes_estagio: ViolacaoEstagio[];
+  detalhes: Record<string, unknown>;
+  source_ref: SourceRef;
+}
+
+export interface EstagioPasso {
+  estagio: string;
+  valor: number | null;
+  delta_anterior: number | null;
+}
+
+export interface LacunaEstagio {
+  nome: string;
+  valor: number;
+  formula: string;
+}
+
+export interface EstagioItem {
+  codigo: string;
+  descricao: string;
+  dotacao_atualizada: number | null;
+  empenhado: number | null;
+  liquidado: number | null;
+  pago: number | null;
+  inscrito_rap: number | null;
+  potencial_rap: number | null;
+}
+
+export interface DespesaEstagios {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  eixo: string;
+  totais: Measures;
+  cascata: EstagioPasso[];
+  lacunas: LacunaEstagio[];
+  por_eixo: EstagioItem[];
+  estagios_ausentes: string[];
+  observacao: string | null;
+  source_ref: SourceRef;
+}
+
+export interface ExecucaoEstagio {
+  estagio: string;
+  executado: number | null;
+  base_dotacao: number | null;
+  executado_pct: number | null;
+  esperado_pct: number;
+  ritmo_pp: number | null;
+  status: 'adiantado' | 'no_ritmo' | 'atrasado' | 'sem_base';
+}
+
+export interface DespesaExecucao {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  eixo: string;
+  bimestre: number;
+  esperado_pct: number;
+  estagios: ExecucaoEstagio[];
+  source_ref: SourceRef;
+}
+
+export interface RigidezComponente {
+  grupo: string;
+  descricao: string;
+  tipo: 'rigida' | 'discricionaria' | 'semivariavel';
+  empenhado: number;
+  pct_despesa: number | null;
+}
+
+export interface DespesaRigidez {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  despesa_total: number;
+  rigida: number;
+  discricionaria: number;
+  semivariavel: number;
+  rigidez_pct: number | null;
+  discricionaria_pct: number | null;
+  componentes: RigidezComponente[];
   source_ref: SourceRef;
 }
 
@@ -83,6 +328,8 @@ export interface SemaforoItem {
   valor_pct_rcl: number | null;
   teto_pct: number | null;
   sentido: string;
+  /** Base do percentual (Sprint 25C) — o semáforo passou a misturar denominadores. */
+  denominador: string;
 }
 export interface KpiItem {
   chave: string;
@@ -114,6 +361,9 @@ export interface LimiteItem {
   prudencial_pct: number | null;
   distancia_teto: number | null;
   distancia_alerta: number | null;
+  /** Base do percentual (Sprint 25C): 'rcl' | 'impostos_transferencias' | 'fundeb'. */
+  denominador: string;
+  base_valor: FiscalDecimal | null;
 }
 export interface LimitesResponse {
   cod_ibge: string;
@@ -140,6 +390,104 @@ export interface PorPoderOut {
   rpps: boolean;
   consolidado: PoderItem;
   itens: PoderItem[];
+  source_ref: SourceRef;
+}
+
+// --- Pessoal (Sprint 25B: página nova consome os 4 endpoints prontos) ---
+export interface PessoalTotais {
+  despesa_bruta: FiscalDecimal | null;
+  exclusoes: FiscalDecimal | null;
+  despesa_liquida: FiscalDecimal | null;
+  pct_rcl: FiscalDecimal | null;
+}
+export interface SeriePessoalItem {
+  periodo: string;
+  despesa_liquida: FiscalDecimal | null;
+  pct_rcl: FiscalDecimal | null;
+  despesa_liquida_real: FiscalDecimal | null;
+  despesa_liquida_per_capita: FiscalDecimal | null;
+  populacao: number | null;
+}
+export interface PessoalDetalhe {
+  cod_ibge: string;
+  periodo: string;
+  /** Período RREO correspondente: base da RCL e do limite (Q1→B2, Q2→B4, Q3→B6). */
+  periodo_rreo: string | null;
+  versao_entrega: string;
+  esfera: string | null;
+  rpps: boolean;
+  totais: PessoalTotais;
+  rcl_12m: FiscalDecimal | null;
+  executivo: PoderItem | null;
+  composicao: DrillChild[];
+  serie: SeriePessoalItem[];
+  serie_ajuste: SerieAjuste | null;
+  comparacao: {
+    periodo_anterior: string;
+    despesa_liquida_anterior: FiscalDecimal | null;
+    delta_pct: FiscalDecimal | null;
+  } | null;
+  periodo_breadcrumb: DrillNodeRef[];
+  source_ref: SourceRef;
+}
+export interface ExclusaoItem {
+  componente: string;
+  valor: FiscalDecimal;
+  incluida: boolean;
+  motivo: string | null;
+}
+export interface PessoalMemoria {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  rpps: boolean;
+  despesa_bruta: FiscalDecimal | null;
+  exclusoes: FiscalDecimal | null;
+  despesa_liquida: FiscalDecimal | null;
+  despesa_liquida_reportada: FiscalDecimal | null;
+  exclusoes_reportadas: FiscalDecimal | null;
+  rcl_12m: FiscalDecimal | null;
+  pct_rcl: FiscalDecimal | null;
+  formula_liquida: string;
+  formula_pct: string;
+  exclusoes_detalhe: ExclusaoItem[];
+  hierarquia: string;
+  detalhes: Record<string, unknown>;
+  source_ref: SourceRef;
+}
+
+/** Simulação de limite (Sprint 3) — impacto de um delta na folha sobre a faixa. */
+export interface SimularLimiteInput {
+  novo_valor_rs?: number | null;
+  delta_rs?: number | null;
+}
+export interface SimularLimiteResponse {
+  indicador: string;
+  valor_rs_atual: FiscalDecimal | null;
+  valor_rs_simulado: FiscalDecimal;
+  valor_pct_atual: FiscalDecimal | null;
+  valor_pct_simulado: FiscalDecimal;
+  faixa_atual: string | null;
+  faixa_simulada: string;
+  teto_pct: FiscalDecimal;
+  persistido: boolean;
+}
+
+/** RCL 12 meses com memória de cálculo (denominador de quase todo limite). */
+export interface RclComponente {
+  conta: string;
+  valor: FiscalDecimal;
+}
+export interface RclResponse {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  as_of: string | null;
+  rcl_12m: FiscalDecimal;
+  receita_corrente: FiscalDecimal;
+  deducoes_total: FiscalDecimal;
+  componentes: RclComponente[];
+  deducoes: RclComponente[];
   source_ref: SourceRef;
 }
 
@@ -182,6 +530,9 @@ export interface SerieDividaItem {
   dc_bruta: FiscalDecimal;
   dcl: FiscalDecimal;
   pct_rcl: FiscalDecimal | null;
+  dcl_real: FiscalDecimal | null;
+  dcl_per_capita: FiscalDecimal | null;
+  populacao: number | null;
   source_ref: SourceRef;
 }
 
@@ -202,6 +553,7 @@ export interface DividaDetalhe {
   capag: CapagHero;
   composicao: DrillChild[];
   serie: SerieDividaItem[];
+  serie_ajuste: SerieAjuste | null;
   comparacao: ComparacaoDivida | null;
   periodo_breadcrumb: DrillNodeRef[];
   source_ref: SourceRef;
@@ -329,6 +681,34 @@ export const fetchDrill = (
   params: { periodo: string; node?: string; eixo?: string },
 ) => apiGet<DrillEnvelope>(`/entes/${ibge}/${recurso}/arvore`, params);
 
+// --- Receita (Sprint 25A: fim dos endpoints ociosos da auditoria §6) ---
+export const fetchReceitaMemoria = (ibge: string, periodo: string) =>
+  apiGet<ReceitaMemoria>(`/entes/${ibge}/receita/memoria`, { periodo });
+
+export const fetchReceitaDependencia = (ibge: string, periodo: string) =>
+  apiGet<ReceitaDependencia>(`/entes/${ibge}/receita/dependencia`, { periodo });
+
+export const fetchReceitaRealizacao = (ibge: string, periodo: string) =>
+  apiGet<ReceitaRealizacao>(`/entes/${ibge}/receita/realizacao`, { periodo });
+
+/** Contraprova RREO × FPM/FUNDEB/ICMS (Sprint 1B): divergência = qualidade de dado. */
+export const fetchReceitaConciliacao = (ibge: string, periodo: string) =>
+  apiGet<ReceitaConciliacao>(`/entes/${ibge}/receita/transferencias/conciliacao`, { periodo });
+
+// --- Despesa ---
+export const fetchDespesaMemoria = (ibge: string, periodo: string) =>
+  apiGet<DespesaMemoria>(`/entes/${ibge}/despesa/memoria`, { periodo });
+
+export const fetchDespesaEstagios = (ibge: string, periodo: string, eixo = 'funcao') =>
+  apiGet<DespesaEstagios>(`/entes/${ibge}/despesa/estagios`, { periodo, eixo });
+
+/** Eixo natureza por padrão: é o Anexo (01) que publica o estágio "pago". */
+export const fetchDespesaExecucao = (ibge: string, periodo: string, eixo = 'natureza') =>
+  apiGet<DespesaExecucao>(`/entes/${ibge}/despesa/execucao`, { periodo, eixo });
+
+export const fetchDespesaRigidez = (ibge: string, periodo: string) =>
+  apiGet<DespesaRigidez>(`/entes/${ibge}/despesa/rigidez`, { periodo });
+
 export const fetchDashboard = (ibge: string, periodo: string) =>
   apiGet<DashboardResponse>(`/entes/${ibge}/dashboard`, { periodo });
 
@@ -337,6 +717,39 @@ export const fetchLimites = (ibge: string, periodo: string) =>
 
 export const fetchPessoalPorPoder = (ibge: string, periodo: string) =>
   apiGet<PorPoderOut>(`/entes/${ibge}/pessoal/por-poder`, { periodo });
+
+export const fetchPessoal = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<PessoalDetalhe>(`/entes/${ibge}/pessoal`, { periodo, as_of: asOf });
+
+export const fetchPessoalArvore = (
+  ibge: string,
+  params: { periodo: string; node?: string; asOf?: string | null },
+) =>
+  apiGet<DrillEnvelope>(`/entes/${ibge}/pessoal/arvore`, {
+    periodo: params.periodo,
+    node: params.node,
+    as_of: params.asOf,
+  });
+
+export const fetchPessoalMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<PessoalMemoria>(`/entes/${ibge}/pessoal/memoria`, { periodo, as_of: asOf });
+
+/** RCL 12m com memória — o denominador de quase todo limite da LRF. */
+export const fetchRcl = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<RclResponse>(`/entes/${ibge}/rcl`, { periodo, as_of: asOf });
+
+/** Simulador de impacto: delta na folha (ou novo valor) → nova faixa do limite. */
+export const simularLimite = (
+  ibge: string,
+  indicador: string,
+  periodo: string,
+  body: SimularLimiteInput,
+) =>
+  apiPost<SimularLimiteResponse, SimularLimiteInput>(
+    `/entes/${ibge}/limites/${indicador}/simular`,
+    body,
+    { periodo },
+  );
 
 export const fetchDivida = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<DividaDetalhe>(`/entes/${ibge}/divida`, { periodo, as_of: asOf });
@@ -360,6 +773,26 @@ export const fetchDividaCapag = (ibge: string, periodo: string, asOf?: string | 
 
 export const fetchDividaCronograma = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<DividaCronograma>(`/entes/${ibge}/divida/cronograma`, { periodo, as_of: asOf });
+
+/** PVL/CDP do SADIPEM: pedidos de verificação de limites e decisões do Tesouro. */
+export interface PvlItem {
+  id_pvl: string | null;
+  tipo_operacao: string | null;
+  valor: FiscalDecimal | null;
+  status: string | null;
+  decisao: string | null;
+  data_analise: string | null;
+}
+export interface PvlOut {
+  cod_ibge: string;
+  itens: PvlItem[];
+  total_valor: FiscalDecimal | null;
+  versao_entrega: string | null;
+  observacao: string | null;
+  source_ref: SourceRef;
+}
+
+export const fetchDividaPvl = (ibge: string) => apiGet<PvlOut>(`/entes/${ibge}/divida/pvl`);
 
 export const simularOperacaoDivida = (
   ibge: string,
@@ -410,12 +843,41 @@ export interface ResultadoDetalhe {
   meta: MetaResumo;
   receita_componentes: ResultadoComponente[];
   despesa_componentes: ResultadoComponente[];
-  serie: { periodo: string; resultado_primario: FiscalDecimal | null; resultado_nominal: FiscalDecimal | null }[];
+  serie: SerieResultadoItem[];
+  serie_ajuste: SerieAjuste | null;
   comparacao:
     | { periodo_anterior: string; resultado_primario_anterior: FiscalDecimal | null; delta_rs: FiscalDecimal | null }
     | null;
   periodo_breadcrumb: DrillNodeRef[];
   source_ref: SourceRef;
+}
+
+export interface SerieResultadoItem {
+  periodo: string;
+  resultado_primario: FiscalDecimal | null;
+  resultado_nominal: FiscalDecimal | null;
+  resultado_primario_real: FiscalDecimal | null;
+  resultado_primario_per_capita: FiscalDecimal | null;
+  populacao: number | null;
+}
+
+/** Meta da LDO cadastrada pela organização (§11.5): restrita às telas do ente. */
+export interface MetaCadastro {
+  id: string;
+  exercicio: number;
+  indicador: 'primario' | 'nominal';
+  valor: FiscalDecimal;
+  fonte_declarada: string;
+  observacao: string | null;
+  atualizado_em: string;
+  atualizado_por: string | null;
+}
+export interface MetaFiscalUpsert {
+  exercicio: number;
+  indicador: 'primario' | 'nominal';
+  valor: number;
+  fonte_declarada: string;
+  observacao?: string | null;
 }
 export interface CascataPasso {
   rotulo: string;
@@ -457,6 +919,22 @@ export interface ReconciliacaoResultado {
   observacao: string;
   source_ref: SourceRef;
 }
+export interface MemoriaResultado {
+  cod_ibge: string;
+  periodo: string;
+  versao_entrega: string;
+  valores: ResultadoValores;
+  ajustes: { codigo: string; descricao: string; valor: FiscalDecimal }[];
+  formula_primario: string;
+  formula_nominal: string;
+  formula_nominal_abaixo: string;
+  identidade_primario_ok: boolean | null;
+  identidade_nominal_dcl_ok: boolean | null;
+  fontes: Record<string, string>;
+  detalhes: Record<string, unknown>;
+  source_ref: SourceRef;
+}
+
 export interface MetaResultado {
   cod_ibge: string;
   periodo: string;
@@ -466,6 +944,10 @@ export interface MetaResultado {
   fracao_exercicio: FiscalDecimal;
   projecao_primario: FiscalDecimal | null;
   esforco_necessario: FiscalDecimal | null;
+  /** a6 = publicada pelo ente; manual = cadastrada nesta organização; ausente. */
+  origem: 'a6' | 'manual' | 'ausente';
+  restrita_ao_ente: boolean;
+  cadastros: MetaCadastro[];
   observacao: string;
   source_ref: SourceRef;
 }
@@ -481,6 +963,19 @@ export const fetchResultadoReconciliacao = (ibge: string, periodo: string, asOf?
 
 export const fetchResultadoMeta = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<MetaResultado>(`/entes/${ibge}/resultado/meta`, { periodo, as_of: asOf });
+
+export const fetchResultadoMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<MemoriaResultado>(`/entes/${ibge}/resultado/memoria`, { periodo, as_of: asOf });
+
+// Meta da LDO cadastrada pela organização (§11.5 — nunca entra em agregado/relatório).
+export const fetchMetasFiscais = (ibge: string) =>
+  apiGet<MetaCadastro[]>(`/entes/${ibge}/meta-fiscal`);
+
+export const salvarMetaFiscal = (ibge: string, body: MetaFiscalUpsert) =>
+  apiPut<MetaCadastro, MetaFiscalUpsert>(`/entes/${ibge}/meta-fiscal`, body);
+
+export const excluirMetaFiscal = (ibge: string, metaId: string) =>
+  apiDelete(`/entes/${ibge}/meta-fiscal/${metaId}`);
 
 // --- Caixa & Restos a Pagar (Sprint 10) ---
 export interface FonteSuficienciaItem {
@@ -592,6 +1087,14 @@ export interface RapOrgaoItem {
   rpnp_a_pagar: FiscalDecimal | null;
   saldo_total: FiscalDecimal | null;
 }
+export interface SerieCaixaItem {
+  periodo: string;
+  disp_liquida_apos_total: FiscalDecimal | null;
+  rpnp_sem_lastro_total: FiscalDecimal | null;
+  rpnp_sem_lastro_real: FiscalDecimal | null;
+  rpnp_sem_lastro_per_capita: FiscalDecimal | null;
+  populacao: number | null;
+}
 export interface CaixaDetalhe {
   cod_ibge: string;
   periodo: string;
@@ -605,7 +1108,8 @@ export interface CaixaDetalhe {
   rap_consolidado: RapOrgaoItem | null;
   rap_por_orgao: RapOrgaoItem[];
   art42_aplicavel: boolean;
-  serie: { periodo: string; disp_liquida_apos_total: FiscalDecimal | null; rpnp_sem_lastro_total: FiscalDecimal | null }[];
+  serie: SerieCaixaItem[];
+  serie_ajuste: SerieAjuste | null;
   comparacao: { periodo_anterior: string; rpnp_sem_lastro_anterior: FiscalDecimal | null; delta_rs: FiscalDecimal | null } | null;
   periodo_breadcrumb: DrillNodeRef[];
   source_ref: SourceRef;
@@ -623,6 +1127,24 @@ export const fetchCaixaRpnpSemLastro = (ibge: string, periodo: string, asOf?: st
 
 export const fetchCaixaArt42 = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<Art42Out>(`/entes/${ibge}/caixa/art42`, { periodo, as_of: asOf });
+
+export interface CaixaMemoria {
+  cod_ibge: string;
+  periodo: string;
+  as_of: string | null;
+  versao_entrega: string;
+  fontes: FonteSuficienciaItem[];
+  total_rpnp_sem_lastro: FiscalDecimal;
+  formula_liquida_antes: string;
+  formula_liquida_apos: string;
+  formula_rpnp_sem_lastro: string;
+  regra_suficiencia: string;
+  detalhes: Record<string, unknown>;
+  source_ref: SourceRef;
+}
+
+export const fetchCaixaMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<CaixaMemoria>(`/entes/${ibge}/caixa/memoria`, { periodo, as_of: asOf });
 
 export const fetchCaixaArvore = (
   ibge: string,
@@ -651,15 +1173,37 @@ export interface MemoriaCalculo {
   componentes: MemoriaMinimoComponente[];
   regra_expurgo: string;
   detalhes: Record<string, unknown>;
+  source_ref?: SourceRef;
+  as_of?: string;
 }
 
 export interface SerieMinimoDetalhe {
   periodo: string;
+  exercicio: number;
+  parcial: boolean;
+  estagio_legal: 'liquidado' | 'empenhado';
   base_impostos_transferencias: FiscalDecimal;
   despesa_aplicada: FiscalDecimal;
   pct_aplicado: FiscalDecimal;
   minimo_pct: FiscalDecimal;
   abaixo_do_minimo: boolean;
+  source_ref: SourceRef;
+  as_of: string;
+}
+
+/** Série plurianual de um mínimo (Sprint 25C) — com a cobertura declarada. */
+export interface SerieMinimoResposta {
+  cod_ibge: string;
+  periodo: string;
+  indicador: 'saude' | 'educacao';
+  minimo_pct: FiscalDecimal;
+  anos_solicitados: number;
+  exercicios_com_dado: number[];
+  exercicios_sem_dado: number[];
+  cobertura_completa: boolean;
+  observacao: string | null;
+  data: SerieMinimoDetalhe[];
+  trajetoria_exercicio: SerieMinimoDetalhe[];
   source_ref: SourceRef;
   as_of: string;
 }
@@ -688,7 +1232,7 @@ export interface MinimoDetalheBase {
   serie: SerieMinimoDetalhe[];
 }
 
-export interface SaudeDetalhe extends MinimoDetalheBase {}
+export type SaudeDetalhe = MinimoDetalheBase;
 
 export interface FundebMinimo {
   base: FiscalDecimal | null;
@@ -816,6 +1360,33 @@ export const fetchMinimosProjecao = (ibge: string, periodo: string, asOf?: strin
     as_of: asOf,
   });
 
+// Endpoints ociosos até a Sprint 25C (auditoria §2.9): série plurianual e memória.
+export const fetchSaudeSerie = (
+  ibge: string,
+  params: { periodo: string; anos?: number; asOf?: string | null },
+) =>
+  apiGet<SerieMinimoResposta>(`/entes/${ibge}/saude/serie`, {
+    periodo: params.periodo,
+    anos: params.anos,
+    as_of: params.asOf,
+  });
+
+export const fetchEducacaoSerie = (
+  ibge: string,
+  params: { periodo: string; anos?: number; asOf?: string | null },
+) =>
+  apiGet<SerieMinimoResposta>(`/entes/${ibge}/educacao/serie`, {
+    periodo: params.periodo,
+    anos: params.anos,
+    as_of: params.asOf,
+  });
+
+export const fetchSaudeMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<MemoriaCalculo>(`/entes/${ibge}/saude/memoria`, { periodo, as_of: asOf });
+
+export const fetchEducacaoMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<MemoriaCalculo>(`/entes/${ibge}/educacao/memoria`, { periodo, as_of: asOf });
+
 // --- Patrimônio (DCA) & Explorador MSC (Sprint 12) ---
 export interface PatrimonioDetalhe {
   cod_ibge: string;
@@ -836,7 +1407,40 @@ export interface PatrimonioDetalhe {
   anos_disponiveis: number[];
   conciliado: boolean | null;
   n_divergencias: number | null;
+  cobertura: CoberturaPatrimonio | null;
   source_ref: SourceRef | null;
+}
+
+/** O que o ente publicou de patrimônio — substitui o seletor-demo (Sprint 25D). */
+export interface CoberturaPatrimonio {
+  tem_dca: boolean;
+  tem_msc: boolean;
+  anos_dca: number[];
+  meses_msc: string[];
+  fontes_ausentes: string[];
+  mensagem: string;
+}
+
+export interface ComparacaoLinha {
+  cod_conta: string;
+  descricao: string | null;
+  nivel: number | null;
+  valores: Record<string, FiscalDecimal | null>;
+  variacao_abs: FiscalDecimal | null;
+  variacao_pct: FiscalDecimal | null;
+  anos_com_valor: number[];
+}
+
+export interface BalancoComparacaoOut {
+  cod_ibge: string;
+  tipo: string;
+  anexo: string | null;
+  anos: number[];
+  anos_sem_balanco: number[];
+  observacao: string | null;
+  linhas: ComparacaoLinha[];
+  memoria: Record<string, unknown>;
+  source_refs: SourceRef[];
 }
 
 export interface MesSaldo {
@@ -967,6 +1571,17 @@ export const fetchBalanco = (
 export const fetchMscConciliacao = (ibge: string, ano?: number | null, asOf?: string | null) =>
   apiGet<ConciliacaoOut>(`/entes/${ibge}/msc/conciliacao`, { ano: ano ?? undefined, as_of: asOf });
 
+/** Comparação anual do mesmo balanço, conta a conta (Sprint 25D). */
+export const fetchBalancoComparacao = (
+  ibge: string,
+  params: { tipo?: string; anos?: number; asOf?: string | null } = {},
+) =>
+  apiGet<BalancoComparacaoOut>(`/entes/${ibge}/balancos/comparacao`, {
+    tipo: params.tipo,
+    anos: params.anos,
+    as_of: params.asOf,
+  });
+
 // --- Benchmarking (Sprint 13) ---
 
 export type BenchmarkCriterio = 'porte' | 'regiao' | 'pib';
@@ -1007,6 +1622,10 @@ export interface BenchmarkValue {
   as_of: string | null;
   source_ref: SourceRef;
   memoria?: Record<string, unknown> | null;
+  /** Leitura per capita — só existe em métricas em R$ (Sprint 25D). */
+  valor_per_capita?: FiscalDecimal | null;
+  populacao?: number | null;
+  pop_ano_ref?: number | null;
 }
 
 export interface BenchmarkCoverage {
@@ -1092,6 +1711,50 @@ export const fetchBenchmark = (params: BenchmarkParams) =>
     coorte: params.coorte,
     periodo: params.periodo,
     as_of: params.asOf,
+  });
+
+/** Trajetória do ente na mesma coorte, período a período (Sprint 25D). */
+export interface BenchmarkEvolucaoPonto {
+  periodo: string;
+  valor_ente: FiscalDecimal;
+  posicao: number;
+  quantidade: number;
+  percentil: FiscalDecimal;
+  mediana: FiscalDecimal;
+  p10: FiscalDecimal;
+  p90: FiscalDecimal;
+  valor_ente_per_capita: FiscalDecimal | null;
+  cobertura: BenchmarkCoverage;
+  as_of: string;
+  source_ref: SourceRef;
+}
+
+export interface BenchmarkEvolucaoResponse {
+  cod_ibge: string;
+  indicador: string;
+  indicador_rotulo: string;
+  unidade: string;
+  sentido: BenchmarkSentido;
+  coorte: BenchmarkCoorte;
+  periodos_solicitados: number;
+  periodos_sem_comparacao: string[];
+  observacao: string | null;
+  pontos: BenchmarkEvolucaoPonto[];
+  memoria: Record<string, unknown>;
+  source_refs: SourceRef[];
+}
+
+export const fetchBenchmarkEvolucao = (params: {
+  ente: string;
+  indicador?: string;
+  coorte?: string;
+  periodos?: number;
+}) =>
+  apiGet<BenchmarkEvolucaoResponse>('/benchmark/evolucao', {
+    ente: params.ente,
+    indicador: params.indicador,
+    coorte: params.coorte,
+    periodos: params.periodos,
   });
 
 export const fetchBenchmarkRanking = (params: BenchmarkRankingParams) =>
@@ -1210,6 +1873,49 @@ export const fetchProjecao = (
     as_of: params.asOf,
   });
 
+/** Comparação das três camadas de projeção (Sprint 25E). */
+export interface ModeloComparado {
+  modelo: string;
+  rotulo: string;
+  disponivel: boolean;
+  motivo_indisponivel: string | null;
+  escolhido: boolean;
+  valor_final: FiscalDecimal | null;
+  ic_inferior_final: FiscalDecimal | null;
+  ic_superior_final: FiscalDecimal | null;
+  amplitude_ic_media: FiscalDecimal | null;
+  erro_padrao: FiscalDecimal | null;
+  r2: FiscalDecimal | null;
+  n_obs: number | null;
+  cruza_limite: boolean;
+  periodo_cruzamento: string | null;
+  memoria: Record<string, unknown>;
+}
+
+export interface ComparacaoModelosResponse {
+  cod_ibge: string;
+  indicador: string;
+  descricao: string;
+  unidade: string;
+  horizonte: number;
+  periodos_projetados: string[];
+  n_periodos_historicos: number;
+  criterio_escolha: string;
+  modelos: ModeloComparado[];
+  exogenas_fontes: Record<string, unknown>;
+  aviso: string;
+  source_ref: SourceRef;
+}
+
+export const fetchComparacaoModelos = (
+  ibge: string,
+  params: { indicador: ForecastIndicador; horizonte?: number },
+) =>
+  apiGet<ComparacaoModelosResponse>(`/entes/${ibge}/projecao/comparacao`, {
+    indicador: params.indicador,
+    horizonte: params.horizonte,
+  });
+
 export const simularCenario = (
   ibge: string,
   indicador: ForecastIndicador,
@@ -1309,6 +2015,39 @@ export const fetchCarteiraAlertas = () =>
 
 export const patchAlerta = (id: string, status: AlertaStatus) =>
   apiPatch<AlertaOut, { status: AlertaStatus }>(`/alertas/${id}`, { status });
+
+/** Alertas já tratados, com quem resolveu e em quantos dias (Sprint 25E). */
+export interface HistoricoItem extends AlertaOut {
+  resolvido_em: string | null;
+  resolvido_por: string | null;
+  dias_ate_resolver: number | null;
+}
+
+export interface HistoricoAlertasResponse {
+  escopo: string;
+  cod_ibge: string | null;
+  gerado_em: string;
+  total: number;
+  resolvidos: number;
+  descartados: number;
+  tempo_medio_dias: number | null;
+  por_categoria: Record<string, number>;
+  itens: HistoricoItem[];
+  observacao: string | null;
+}
+
+export const fetchAlertasHistorico = (params: {
+  ente: string;
+  escopo?: 'ente' | 'carteira';
+  categoria?: string;
+  limite?: number;
+}) =>
+  apiGet<HistoricoAlertasResponse>('/alertas/historico', {
+    escopo: params.escopo ?? 'ente',
+    ente: (params.escopo ?? 'ente') === 'ente' ? params.ente : undefined,
+    categoria: params.categoria,
+    limite: params.limite,
+  });
 
 // --- Contexto: busca de entes e períodos com dado (Sprint 22) ---
 export interface EnteBusca {
@@ -1457,11 +2196,26 @@ export interface QualidadeFonte {
   versao_entrega_vigente: string | null;
   retificacoes: number;
 }
+/** Verificação aberta que recai sobre os números da tela (Sprint 26). */
+export interface ChecagemAberta {
+  check_codigo: string;
+  rotulo: string;
+  status: 'ok' | 'aviso' | 'falha';
+  fonte: string;
+  periodo: string | null;
+  diferenca: FiscalDecimal | null;
+  tolerancia: FiscalDecimal | null;
+  motivo: string | null;
+}
+
 export interface CockpitQualidade {
   fontes: QualidadeFonte[];
   defasagem_maxima: number | null;
   confiavel: boolean;
   observacao: string | null;
+  checks_abertos: ChecagemAberta[];
+  n_checks_falha: number;
+  n_checks_aviso: number;
 }
 export interface CockpitResponse {
   cod_ibge: string;
@@ -1505,6 +2259,11 @@ export interface MeResponse {
   nome: string;
   org_ativa: MembershipInfo | null;
   memberships: MembershipInfo[];
+  /**
+   * Operador da plataforma (Sprint 19). Serve para não oferecer uma rota que
+   * devolveria 403 — a garantia continua no backend, não nesta flag.
+   */
+  is_superuser?: boolean;
 }
 /** Contrato do shell: quem está logado e em qual organização. */
 export const fetchMe = () => apiGet<MeResponse>('/me');
@@ -1817,6 +2576,24 @@ export const criarRelatorio = (body: RelatorioCreateInput) =>
 export const criarAgendamentoRelatorio = (body: AgendamentoCreateInput) =>
   apiPost<RelatorioAgendamento, AgendamentoCreateInput>('/relatorios/agendamentos', body);
 
+/** UI de agendamentos (Sprint 25E): listar, editar/desativar e excluir. */
+export interface AgendamentoPatchInput {
+  ativo?: boolean;
+  periodicidade?: string;
+  periodo?: string;
+  formato?: RelatorioFormato;
+  proxima_execucao?: string;
+}
+
+export const fetchAgendamentos = () =>
+  apiGet<RelatorioAgendamento[]>('/relatorios/agendamentos');
+
+export const editarAgendamento = (id: string, body: AgendamentoPatchInput) =>
+  apiPatch<RelatorioAgendamento, AgendamentoPatchInput>(`/relatorios/agendamentos/${id}`, body);
+
+export const excluirAgendamento = (id: string) =>
+  apiDelete(`/relatorios/agendamentos/${id}`);
+
 export const baixarRelatorio = (item: RelatorioItem) => {
   if (!item.arquivo_url || !item.arquivo_nome) {
     return Promise.reject(new Error('Arquivo ainda não disponível.'));
@@ -1898,7 +2675,29 @@ export const perguntarAssistente = (body: {
   pergunta: string;
   periodo?: string | null;
   as_of?: string | null;
+  /** Rota da tela de onde veio a pergunta — "pergunte sobre esta tela" (Sprint 25E). */
+  pagina?: string | null;
 }) => apiPost<AssistResposta, typeof body>('/assistant/perguntar', body);
+
+/** Histórico de conversas da organização (endpoint ocioso até a Sprint 25E). */
+export interface ConversaResumo {
+  id: string;
+  tipo: string;
+  cod_ibge: string | null;
+  periodo: string | null;
+  pergunta: string;
+  resposta: string;
+  recusa: boolean;
+  modelo: string | null;
+  criado_em: string;
+}
+
+export interface ConversasOut {
+  itens: ConversaResumo[];
+}
+
+export const fetchConversas = (limit = 20) =>
+  apiGet<ConversasOut>('/assistant/conversas', { limit });
 
 export const gerarResumoExecutivo = (body: {
   ente: string;
@@ -2001,6 +2800,12 @@ export interface CarteiraLoteResult {
   adicionados: string[];
   removidos: string[];
   ignorados: string[];
+  /**
+   * Recusados por falta de licença ativa (Sprint 19). Lista separada de `ignorados`
+   * — ali a causa é duplicidade/inexistência; aqui é comercial, e quem resolve é o
+   * operador da plataforma, não o administrador do tenant.
+   */
+  nao_licenciados?: string[];
   total_carteira: number;
 }
 
@@ -2027,6 +2832,9 @@ export const carteiraLote = (body: {
 export interface EnteRef {
   cod_ibge: string;
   nome: string | null;
+  /** Ver o consolidado da UF não implica poder abrir o cockpit do Governo do Estado. */
+  acessivel: boolean;
+  motivo_indisponivel: string | null;
 }
 export interface IndicadorConsolidado {
   indicador: string;
@@ -2116,6 +2924,8 @@ export interface DistribuicaoUfResponse {
 }
 export interface MapaUfEnte {
   cod_ibge: string;
+  /** Nome do município — sem ele o mapa obriga a decorar código IBGE. */
+  nome?: string | null;
   valor_pct: FiscalDecimal | null;
   faixa: string | null;
   cor: string;
@@ -2275,6 +3085,17 @@ export const fetchIngestJobs = (params?: { status?: string; fonte?: string }) =>
   apiGet<IngestJob[]>('/admin/ingestion/jobs', params);
 export const fetchIngestJob = (id: string) =>
   apiGet<IngestJob>(`/admin/ingestion/jobs/${id}`);
+/** Estado do consumidor da fila: sem isso, "Na fila" não distingue espera de abandono. */
+export interface SaudeFila {
+  consumidores: number;
+  consumidores_vivos: number;
+  aguardando: number;
+  executando: number;
+  fila_redis: number | null;
+  redis_disponivel: boolean;
+  detalhe: string | null;
+}
+export const fetchSaudeFila = () => apiGet<SaudeFila>('/admin/ingestion/jobs/saude');
 export const cancelarIngestJob = (id: string) =>
   apiPost<IngestJob, Record<string, never>>(`/admin/ingestion/jobs/${id}/cancelar`, {});
 export const retryIngestJob = (id: string) =>
@@ -2285,3 +3106,189 @@ export const fetchRetificacoes = (desde?: string) =>
 /** Atualiza as capacidades de um papel (aba Permissões — fim do mock). */
 export const atualizarPapelCapacidades = (papelId: string, capacidades: Capacidade[]) =>
   apiPatch<PapelOut, { capacidades: Capacidade[] }>(`/papeis/${papelId}`, { capacidades });
+
+
+// --- Qualidade do dado & lineage (Sprint 26) ---
+export type StatusCheck = 'ok' | 'aviso' | 'falha';
+
+export interface CheckQualidade {
+  id: string;
+  job_id: string | null;
+  fonte: string;
+  cod_ibge: string | null;
+  periodo: string | null;
+  check_codigo: string;
+  rotulo: string;
+  status: StatusCheck;
+  esquerda: FiscalDecimal | null;
+  direita: FiscalDecimal | null;
+  diferenca: FiscalDecimal | null;
+  tolerancia: FiscalDecimal | null;
+  detalhe: Record<string, unknown>;
+  executado_em: string;
+}
+
+export interface ResumoQualidade {
+  total: number;
+  ok: number;
+  aviso: number;
+  falha: number;
+  fontes_com_falha: string[];
+  checks_com_falha: string[];
+}
+
+export interface QualidadeResponse {
+  gerado_em: string;
+  resumo: ResumoQualidade;
+  itens: CheckQualidade[];
+  total: number;
+  pagina: number;
+  por_pagina: number;
+  observacao: string | null;
+}
+
+export const fetchQualidade = (params: {
+  fonte?: string;
+  status?: StatusCheck;
+  ente?: string;
+  pagina?: number;
+  porPagina?: number;
+} = {}) =>
+  apiGet<QualidadeResponse>('/admin/qualidade', {
+    fonte: params.fonte,
+    status: params.status,
+    ente: params.ente,
+    pagina: params.pagina,
+    por_pagina: params.porPagina,
+  });
+
+export type CamadaLineage = 'fonte' | 'bronze' | 'silver' | 'gold' | 'endpoint' | 'pagina';
+
+export interface LineageNo {
+  id: string;
+  camada: CamadaLineage;
+}
+
+export interface LineageAresta {
+  origem: string;
+  destino: string;
+  tipo: string;
+  detalhe: Record<string, unknown>;
+}
+
+export interface LineageResponse {
+  no: string | null;
+  camada: string | null;
+  montante: LineageAresta[];
+  jusante: LineageAresta[];
+  paginas_afetadas: string[];
+  fontes_de_origem: string[];
+  nos: LineageNo[];
+  arestas: LineageAresta[];
+  total_arestas: number;
+}
+
+export const fetchLineage = (no?: string) =>
+  apiGet<LineageResponse>('/admin/lineage', { no });
+
+// --- Control plane da plataforma (Sprint 19) --------------------------------
+// Exclusivo do operador (`is_superuser`). Um usuário de tenant recebe 403 aqui —
+// a UI usa isso para nem oferecer a rota, e o backend para garanti-la.
+
+export type TipoLicenca = 'ente' | 'uf' | 'global';
+export type StatusLicenca = 'ativa' | 'suspensa' | 'expirada';
+
+export interface Licenca {
+  id: string;
+  org_id: string;
+  tipo: TipoLicenca;
+  cod_ibge: string | null;
+  uf: string | null;
+  vigencia_inicio: string;
+  vigencia_fim: string | null;
+  status: StatusLicenca;
+  /** Status efetivo hoje: `ativa` com prazo vencido já não vale. */
+  vigente: boolean;
+  observacao: string | null;
+  criada_em: string;
+}
+
+export interface OrgUso {
+  org_id: string;
+  nome: string;
+  tipo_conta: string;
+  logo_url: string | null;
+  criada_em: string;
+  licencas_ativas: number;
+  /** Nulo sob licença global — o alcance não é enumerável. */
+  entes_licenciados: number | null;
+  entes_na_carteira: number;
+  usuarios: number;
+  relatorios_gerados: number;
+  consultas_ia: number;
+  entes_com_dado: number;
+}
+
+export interface LicencaCreate {
+  tipo: TipoLicenca;
+  cod_ibge?: string | null;
+  uf?: string | null;
+  vigencia_inicio?: string | null;
+  vigencia_fim?: string | null;
+  observacao?: string | null;
+}
+
+export interface ProvisionamentoOut {
+  org_id: string;
+  nome: string;
+  admin_usuario_id: string;
+  admin_email: string;
+  papel_admin_id: string;
+  licencas: Licenca[];
+}
+
+export const fetchPlatformOrgs = () => apiGet<OrgUso[]>('/platform/orgs');
+
+export const fetchPlatformUso = (orgId?: string) =>
+  apiGet<OrgUso[]>('/platform/uso', { org_id: orgId });
+
+export const fetchLicencas = (orgId: string) =>
+  apiGet<Licenca[]>(`/platform/orgs/${orgId}/licencas`);
+
+export const concederLicenca = (orgId: string, body: LicencaCreate) =>
+  apiPost<Licenca, LicencaCreate>(`/platform/orgs/${orgId}/licencas`, body);
+
+export const alterarLicenca = (
+  licencaId: string,
+  body: { status?: StatusLicenca; vigencia_fim?: string | null; observacao?: string | null },
+) => apiPatch<Licenca, typeof body>(`/platform/licencas/${licencaId}`, body);
+
+export const provisionarOrg = (body: {
+  nome: string;
+  tipo_conta: string;
+  metrica_cobranca?: string | null;
+  admin_email: string;
+  admin_nome: string;
+  admin_senha: string;
+  licencas?: LicencaCreate[];
+}) => apiPost<ProvisionamentoOut, typeof body>('/platform/orgs', body);
+
+// --- Perfil e organização ativa ---------------------------------------------
+// Trocar de organização **reautentica**: muda tudo o que a sessão enxerga, então o
+// crivo é o mesmo de uma operação sensível. Não cria vínculo — entrar numa organização
+// de que não se participa é concessão do operador da plataforma.
+
+export const trocarOrganizacao = (org_id: string, senha: string) =>
+  apiPost<{ access_token: string; token_type: string }, { org_id: string; senha: string }>(
+    '/me/organizacao',
+    { org_id, senha },
+  );
+
+export const atualizarPerfil = (nome: string) =>
+  apiPatch<MeResponse, { nome: string }>('/me', { nome });
+
+export const alterarSenha = (senha_atual: string, senha_nova: string) =>
+  apiPost<void, { senha_atual: string; senha_nova: string }>('/me/senha', {
+    senha_atual,
+    senha_nova,
+  });

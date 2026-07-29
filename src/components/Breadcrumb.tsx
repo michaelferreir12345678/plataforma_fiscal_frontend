@@ -23,7 +23,7 @@ export function Breadcrumb({ crumbs, source }: { crumbs: Crumb[]; source?: strin
         </span>
       ))}
       {source && (
-        <span style={{ marginLeft: 10, fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>{source}</span>
+        <span style={{ marginLeft: 10, fontSize: 11, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>{source}</span>
       )}
     </div>
   );

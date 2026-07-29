@@ -13,8 +13,18 @@ export const colors = {
 
   // texto
   ink: '#0F1A14',
-  muted: '#5B6B5F',
-  faint: '#8A968C',
+  /**
+   * Texto secundário. Precisa passar AA também sobre `yellowSoft`, onde aparece em
+   * caixas de aviso: 4,65:1 (era 4,02:1 quando o token só fora aferido contra as
+   * superfícies claras). Sobre branco, 6,54:1.
+   */
+  muted: '#536156',
+  /**
+   * Texto terciário. Aferido contra **todos** os fundos em que de fato assenta —
+   * inclusive `accentSoft`, usado na linha selecionada das tabelas: 4,60:1
+   * (era 4,34:1). Sobre o fundo institucional, 5,07:1.
+   */
+  faint: '#626E64',
 
   // marca
   primary: '#1B3A2E',
@@ -23,27 +33,66 @@ export const colors = {
   accentSoft: '#E8F0EC',
 
   // risco (semânticas)
-  green: '#1F9D6B',
+  green: '#136B4A',
   greenSoft: '#9CD7B8',
   greenBg: '#E8F5EE',
   yellow: '#E8B53A',
   yellowSoft: '#F2D886',
-  yellowText: '#C49019',
+  yellowText: '#7A5A00',
   yellowBg: '#FBF4DC',
-  orange: '#E07A2F',
+  orange: '#A84F13',
   orangeSoft: '#EFB287',
   orangeBg: '#FBEADA',
-  red: '#D14343',
+  red: '#B4232D',
   redSoft: '#E89999',
   redBg: '#FBDBDB',
   neutral: '#5B6B7B',
   neutralSoft: '#C0C7CE',
   neutralBg: '#EEF1F4',
+
+  /**
+   * Cores de **série** (gráficos). Deliberadamente fora da paleta de risco: verde,
+   * amarelo, laranja e vermelho estão reservados às faixas da LRF e não podem
+   * significar "linha 2". Par validado para daltonismo sobre superfície branca
+   * (ΔE deutan 9,5 · tritan 13,2 · normal 18,9), com traço sólido × tracejado e
+   * rótulo direto como codificação secundária.
+   */
+  serieA: '#0F8CA8',
+  serieB: '#8054C7',
+  serieBSoft: '#EDE6F8',
+  /**
+   * A mesma identidade da série A quando ela precisa virar **texto**. `serieA` é
+   * validada como marca gráfica (3:1, WCAG SC 1.4.11) e reprova como texto — são
+   * critérios distintos. Rótulo, célula e legenda usam esta; traço e preenchimento
+   * continuam em `serieA`. 5,40:1 sobre branco.
+   */
+  serieAInk: '#0C748B',
+
+  // interação
+  focus: '#0B7189',
+  focusHalo: 'rgba(15, 140, 168, 0.24)',
+  overlay: 'rgba(15, 26, 20, 0.50)',
 } as const;
 
 export const font = {
   ui: "'Space Grotesk', system-ui, -apple-system, sans-serif",
   mono: "'JetBrains Mono', monospace",
+} as const;
+
+/** Escala compartilhada; conteúdo informativo nunca usa menos de 11px. */
+export const typeScale = {
+  caption: 11,
+  body: 13,
+  bodyStrong: 14,
+  title: 24,
+  display: 38,
+} as const;
+
+export const layout = {
+  sidebar: 220,
+  sidebarCollapsed: 64,
+  compactBreakpoint: 1024,
+  contentMax: 1600,
 } as const;
 
 export type RiskLevel = 'folga' | 'atencao' | 'prudencial' | 'maximo' | 'neutro';

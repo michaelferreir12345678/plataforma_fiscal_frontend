@@ -13,12 +13,16 @@
  * nunca como zero. Clicar num município (ranking ou mapa) **troca o ente do contexto** e
  * abre o cockpit — o drill do território para o ente.
  */
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { colors } from '../theme';
+import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
 import { Async } from '../components/AsyncState';
+import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
+import { PageHeader } from '../components/PageHeader';
+import { VirtualizedTable, type VirtualColumn } from '../components/VirtualizedTable';
+import { ExportButton } from '../components/ExportButton';
 import { useApp, useResource, type EnteSel } from '../context/AppContext';
 import {
   acaoLoteCarteira,
@@ -94,28 +98,33 @@ export function CarteiraPage() {
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Carteira & Visão Estadual">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em' }}>Carteira &amp; Visão Estadual</div>
-        <span style={{ fontSize: 11, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>
-          UF {uf} · período {periodo || '—'}
-        </span>
-        <div style={{ flex: 1 }} />
-        <TabBar aba={aba} setAba={setAba} />
-      </div>
+      <PageHeader
+        title="Carteira & Visão Estadual"
+        context={`UF ${uf} · período ${periodo || '—'} · consolidado municipal, ente estadual e carteira`}
+        source="SICONFI · indicadores gold · malha territorial IBGE"
+        actions={<TabBar aba={aba} setAba={setAba} />}
+      />
 
-      {!periodo ? (
-        <Card style={{ padding: '18px 16px', fontSize: 12.5, color: colors.muted }} pad={0}>
-          Selecione um período com dado no seletor do topo para ver o consolidado.
-        </Card>
-      ) : aba === 'consolidado' ? (
-        <ConsolidadoTab uf={uf} periodo={periodo} onEscolherEnte={abrirEnte} />
-      ) : aba === 'estadual' ? (
-        <EnteEstadualTab uf={uf} periodo={periodo} onEscolherEnte={abrirEnte} />
-      ) : aba === 'carteira' ? (
-        <CarteiraTab periodo={periodo} onEscolherEnte={abrirEnte} />
-      ) : (
-        <GruposTab periodo={periodo} onEscolherEnte={abrirEnte} />
-      )}
+      <div
+        id={tabPanelId('carteira-visao', aba)}
+        role="tabpanel"
+        aria-labelledby={tabId('carteira-visao', aba)}
+        tabIndex={0}
+      >
+        {!periodo ? (
+          <Card style={{ padding: '18px 16px', fontSize: 12.5, color: colors.muted }} pad={0}>
+            Selecione um período com dado no seletor do topo para ver o consolidado.
+          </Card>
+        ) : aba === 'consolidado' ? (
+          <ConsolidadoTab uf={uf} periodo={periodo} onEscolherEnte={abrirEnte} />
+        ) : aba === 'estadual' ? (
+          <EnteEstadualTab uf={uf} periodo={periodo} onEscolherEnte={abrirEnte} />
+        ) : aba === 'carteira' ? (
+          <CarteiraTab periodo={periodo} onEscolherEnte={abrirEnte} />
+        ) : (
+          <GruposTab periodo={periodo} onEscolherEnte={abrirEnte} />
+        )}
+      </div>
     </div>
   );
 }
@@ -128,24 +137,13 @@ function TabBar({ aba, setAba }: { aba: Aba; setAba: (a: Aba) => void }) {
     { id: 'grupos', label: 'Grupos' },
   ];
   return (
-    <div role="tablist" aria-label="Contexto" style={{ display: 'flex', gap: 2, background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 6, padding: 2 }}>
-      {abas.map((a) => (
-        <button
-          key={a.id}
-          role="tab"
-          aria-selected={aba === a.id}
-          onClick={() => setAba(a.id)}
-          style={{
-            fontSize: 12, fontWeight: 500, padding: '5px 12px', borderRadius: 4,
-            background: aba === a.id ? colors.surface : 'transparent',
-            color: aba === a.id ? colors.primary : colors.muted,
-            border: aba === a.id ? `1px solid ${colors.border}` : '1px solid transparent',
-          }}
-        >
-          {a.label}
-        </button>
-      ))}
-    </div>
+    <AccessibleTabs
+      tabs={abas}
+      value={aba}
+      onChange={setAba}
+      label="Contexto da carteira"
+      idPrefix="carteira-visao"
+    />
   );
 }
 
@@ -176,12 +174,12 @@ function ConsolidadoTab({
                 {c.n_municipios_com_dado}/{c.n_municipios} com dado em {c.periodo}
               </span>
               {c.ente_estadual && (
-                <span style={{ fontSize: 10.5, color: colors.faint }}>
+                <span style={{ fontSize: 11, color: colors.faint }}>
                   · o Governo {c.uf_nome ? `do ${c.uf_nome}` : 'do estado'} é um ente à parte (aba “Ente estadual”)
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 10.5, color: colors.faint, marginTop: 4 }}>{c.observacao}</div>
+            <div style={{ fontSize: 11, color: colors.faint, marginTop: 4 }}>{c.observacao}</div>
           </Card>
         )}
       </Async>
@@ -198,11 +196,13 @@ function ConsolidadoTab({
       </Async>
 
       {/* seletor de indicador para mapa/ranking/distribuição */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <span style={{ fontSize: 10.5, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Indicador</span>
+      <div role="group" aria-label="Indicador do mapa e do ranking" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Indicador</span>
         {INDICADORES.map((ind) => (
           <button
             key={ind.codigo}
+            type="button"
+            aria-pressed={indicador === ind.codigo}
             onClick={() => setIndicador(ind.codigo)}
             style={{
               fontSize: 11.5, padding: '4px 10px', borderRadius: 4,
@@ -221,7 +221,7 @@ function ConsolidadoTab({
         <Card style={{ display: 'flex', flexDirection: 'column', minHeight: 380 }}>
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Mapa coroplético</div>
-            <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
               malha real do IBGE · clique num município para abrir o cockpit
             </div>
           </div>
@@ -240,7 +240,7 @@ function ConsolidadoTab({
         <Card style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Distribuição no território</div>
-            <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
               percentis e concentração — “sou exceção ou regra?”
             </div>
           </div>
@@ -253,14 +253,35 @@ function ConsolidadoTab({
         <div style={{ padding: '14px 16px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Ranking municipal</div>
-            <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
               percentil e destaque · clique para trocar o ente e abrir o cockpit
             </div>
           </div>
           {ranking.data && (
-            <span style={{ fontSize: 10.5, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
-              {ranking.data.n_com_valor} com valor de {ranking.data.n_total}
-            </span>
+            <>
+              <span style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+                {ranking.data.n_com_valor} com valor de {ranking.data.n_total}
+              </span>
+              <ExportButton
+                nome={`Ranking ${indicador}`}
+                linhas={ranking.data.itens}
+                colunas={[
+                  { cabecalho: 'posicao', valor: (i) => i.posicao },
+                  { cabecalho: 'cod_ibge', valor: (i) => i.cod_ibge },
+                  { cabecalho: 'municipio', valor: (i) => i.nome ?? '' },
+                  { cabecalho: 'valor_pct', valor: (i) => i.valor_pct },
+                  { cabecalho: 'valor_rs', valor: (i) => i.valor_rs },
+                  { cabecalho: 'faixa', valor: (i) => i.faixa ?? '' },
+                  { cabecalho: 'percentil', valor: (i) => i.percentil },
+                ]}
+                contexto={{
+                  ente: `Municípios ${uf}`,
+                  periodo,
+                  fonte: `ranking ${indicador} · ${ranking.data.unidade}`,
+                }}
+                modeloRelatorio="comparativo"
+              />
+            </>
           )}
         </div>
         <Async res={ranking}>
@@ -276,7 +297,7 @@ function IndicadorCard({ ind }: { ind: IndicadorConsolidado }) {
   const ratio = ind.tipo === 'ratio';
   return (
     <Card pad={0} style={{ padding: '12px 14px', borderLeft: `3px solid ${c.stroke}` }}>
-      <div style={{ fontSize: 9.5, color: colors.faint, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600 }}>
+      <div style={{ fontSize: 11, color: colors.faint, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600 }}>
         {ind.rotulo}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
@@ -284,27 +305,27 @@ function IndicadorCard({ ind }: { ind: IndicadorConsolidado }) {
           {ratio ? pct(ind.valor_pct) : brl(ind.numerador)}
         </div>
         {ratio && ind.teto_pct && (
-          <div style={{ fontSize: 10, color: colors.muted }}>/ teto {pct(ind.teto_pct, 0)}</div>
+          <div style={{ fontSize: 11, color: colors.muted }}>/ teto {pct(ind.teto_pct, 0)}</div>
         )}
       </div>
       {ratio && (
-        <div style={{ fontSize: 10, color: colors.faint, marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>
+        <div style={{ fontSize: 11, color: colors.faint, marginTop: 1, fontFamily: "'JetBrains Mono', monospace" }}>
           Σ {brl(ind.numerador)} / Σ {brl(ind.denominador)}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+        <span style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
           {ind.n_entes_com_dado}/{ind.n_entes_total}
         </span>
-        <span style={{ fontSize: 9.5, color: colors.faint }}>· cobertura {pct(ind.cobertura_pct, 0)}</span>
+        <span style={{ fontSize: 11, color: colors.faint }}>· cobertura {pct(ind.cobertura_pct, 0)}</span>
         {ind.periodos_mistos && (
-          <span title="Há municípios reportando em período/cadência diferente" style={{ fontSize: 8.5, color: colors.orange, background: colors.orangeBg, border: `1px solid ${colors.orangeSoft}`, borderRadius: 2, padding: '1px 4px', fontWeight: 600 }}>
+          <span title="Há municípios reportando em período/cadência diferente" style={{ fontSize: 11, color: colors.orange, background: colors.orangeBg, border: `1px solid ${colors.orangeSoft}`, borderRadius: 2, padding: '1px 4px', fontWeight: 600 }}>
             PERÍODOS MISTOS
           </span>
         )}
       </div>
       {ind.entes_ausentes.length > 0 && (
-        <div style={{ fontSize: 9.5, color: colors.faint, marginTop: 3 }}>
+        <div style={{ fontSize: 11, color: colors.faint, marginTop: 3 }}>
           {ind.entes_ausentes.length} sem dado no período
         </div>
       )}
@@ -326,23 +347,47 @@ function Distribuicao({ dist }: { dist: import('../services/backend').Distribuic
         <div style={{ fontSize: 12, color: colors.muted }}>Sem municípios com valor neste período.</div>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 90 }}>
-            {dist.histograma.map((b, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }} title={`${fmt(b.faixa_inferior)}–${fmt(b.faixa_superior)}: ${b.contagem}`}>
-                <div style={{ width: '100%', height: `${(b.contagem / maxCont) * 100}%`, background: colors.greenSoft, border: `1px solid ${colors.green}`, borderRadius: '2px 2px 0 0', minHeight: b.contagem ? 2 : 0 }} />
-              </div>
-            ))}
+          <div
+            role="img"
+            aria-label={`Histograma de ${dist.n_com_valor} municípios em ${dist.histograma.length} faixas. A tabela seguinte contém os valores exatos.`}
+          >
+            <div aria-hidden style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 90 }}>
+              {dist.histograma.map((b, i) => (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }} title={`${fmt(b.faixa_inferior)}–${fmt(b.faixa_superior)}: ${b.contagem}`}>
+                  <div style={{ width: '100%', height: `${(b.contagem / maxCont) * 100}%`, background: colors.greenSoft, border: `1px solid ${colors.green}`, borderRadius: '2px 2px 0 0', minHeight: b.contagem ? 2 : 0 }} />
+                </div>
+              ))}
+            </div>
           </div>
+          <table className="sr-only">
+            <caption>Alternativa tabular do histograma territorial</caption>
+            <thead>
+              <tr>
+                <th scope="col">Faixa inicial</th>
+                <th scope="col">Faixa final</th>
+                <th scope="col">Municípios</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dist.histograma.map((b, i) => (
+                <tr key={i}>
+                  <td>{fmt(b.faixa_inferior)}</td>
+                  <td>{fmt(b.faixa_superior)}</td>
+                  <td>{b.contagem}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
             {perc.map(([k, v]) => (
               <div key={k} style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 8.5, color: colors.faint, textTransform: 'uppercase' }}>{k}</div>
-                <div style={{ fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace", fontWeight: 500 }}>{fmt(v)}</div>
+                <div style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase' }}>{k}</div>
+                <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 500 }}>{fmt(v)}</div>
               </div>
             ))}
           </div>
           {(dist.concentracao_top5_pct !== null || dist.total !== null) && (
-            <div style={{ borderTop: `1px solid ${colors.borderSoft}`, paddingTop: 8, fontSize: 10.5, color: colors.muted }}>
+            <div style={{ borderTop: `1px solid ${colors.borderSoft}`, paddingTop: 8, fontSize: 11, color: colors.muted }}>
               Concentração: os 5 maiores respondem por{' '}
               <b style={{ color: colors.ink }}>{pct(dist.concentracao_top5_pct, 1)}</b>
               {dist.concentracao_top10_pct !== null && <> · top 10: <b style={{ color: colors.ink }}>{pct(dist.concentracao_top10_pct, 1)}</b></>}
@@ -363,37 +408,87 @@ function RankingLista({
   if (itens.length === 0) {
     return <div style={{ padding: '16px', fontSize: 12, color: colors.muted }}>Nenhum município no escopo com dado.</div>;
   }
-  return (
-    <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-      {itens.map((e) => {
+  const abrir = (e: RankingItem) =>
+    onEscolherEnte({ cod_ibge: e.cod_ibge, nome: e.nome ?? e.cod_ibge });
+  const columns: VirtualColumn<RankingItem>[] = [
+    {
+      key: 'posicao',
+      header: 'Posição',
+      width: 68,
+      render: (e) => (
+        <span style={{ color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>
+          #{String(e.posicao).padStart(2, '0')}
+        </span>
+      ),
+    },
+    {
+      key: 'ente',
+      header: 'Município',
+      width: '38%',
+      render: (e) => {
         const c = corDe(e.cor);
-        const valor = tipoRatio ? pct(e.valor_pct) : brl(e.valor_rs);
         return (
           <button
-            key={e.cod_ibge}
-            onClick={() => onEscolherEnte({ cod_ibge: e.cod_ibge, nome: e.nome ?? e.cod_ibge })}
+            type="button"
+            onClick={() => abrir(e)}
             style={{
-              display: 'grid', gridTemplateColumns: '28px 1.6fr 0.7fr 0.9fr 0.5fr', gap: 8, alignItems: 'center',
-              width: '100%', textAlign: 'left', padding: '7px 16px', borderBottom: `1px solid ${colors.rowBorder}`, fontSize: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              width: '100%',
+              minWidth: 0,
+              textAlign: 'left',
+              fontWeight: 500,
             }}
           >
-            <span style={{ fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>
-              #{String(e.posicao).padStart(2, '0')}
+            <span aria-hidden style={{ width: 4, height: 16, background: c.stroke, borderRadius: 2, flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {e.nome ?? e.cod_ibge}
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-              <span style={{ width: 4, height: 16, background: c.stroke, borderRadius: 2, flexShrink: 0 }} />
-              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.nome ?? e.cod_ibge}</span>
-              {e.destaque && <span style={{ fontSize: 8, color: colors.red, background: colors.redBg, borderRadius: 2, padding: '0 4px', fontWeight: 700 }}>!</span>}
-            </span>
-            <span style={{ fontSize: 10, color: colors.faint }}>{e.regiao ?? '—'}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 500, color: c.text, textAlign: 'right' }}>{valor}</span>
-            <span style={{ fontSize: 9.5, color: colors.muted, textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>
-              p{e.percentil !== null ? Math.round(Number(e.percentil)) : '—'}
-            </span>
+            {e.destaque && (
+              <span role="img" aria-label="Destaque de risco" style={{ color: colors.red, background: colors.redBg, borderRadius: 2, padding: '0 4px', fontWeight: 700 }}>
+                !
+              </span>
+            )}
           </button>
         );
-      })}
-    </div>
+      },
+    },
+    { key: 'regiao', header: 'Região', width: '18%', render: (e) => e.regiao ?? '—' },
+    {
+      key: 'valor',
+      header: 'Valor',
+      width: '20%',
+      align: 'right',
+      render: (e) => (
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 500, color: corDe(e.cor).text }}>
+          {tipoRatio ? pct(e.valor_pct) : brl(e.valor_rs)}
+        </span>
+      ),
+    },
+    {
+      key: 'percentil',
+      header: 'Percentil',
+      width: '16%',
+      align: 'right',
+      render: (e) => (
+        <span style={{ color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+          p{e.percentil !== null ? Math.round(Number(e.percentil)) : '—'}
+        </span>
+      ),
+    },
+  ];
+  return (
+    <VirtualizedTable
+      rows={itens}
+      columns={columns}
+      rowKey={(e) => e.cod_ibge}
+      caption={`Ranking municipal com ${itens.length} entes`}
+      height={360}
+      rowHeight={44}
+      onRowActivate={abrir}
+      getRowLabel={(e) => `${e.posicao}º, ${e.nome ?? e.cod_ibge}`}
+    />
   );
 }
 
@@ -406,6 +501,42 @@ function coordsRings(geom: { type: string; coordinates: unknown }): number[][][]
   return [];
 }
 
+type Point = [number, number];
+
+function distanceToSegmentSquared(point: Point, start: Point, end: Point): number {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  if (dx === 0 && dy === 0) {
+    return (point[0] - start[0]) ** 2 + (point[1] - start[1]) ** 2;
+  }
+  const t = Math.max(
+    0,
+    Math.min(1, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / (dx * dx + dy * dy)),
+  );
+  const projected: Point = [start[0] + t * dx, start[1] + t * dy];
+  return (point[0] - projected[0]) ** 2 + (point[1] - projected[1]) ** 2;
+}
+
+/** Ramer–Douglas–Peucker em coordenadas já projetadas, com tolerância subpixel. */
+function simplifyRing(points: Point[], tolerance = 0.7): Point[] {
+  if (points.length <= 4) return points;
+  const first = points[0];
+  const last = points[points.length - 1];
+  let farthest = 0;
+  let index = -1;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const distance = distanceToSegmentSquared(points[i], first, last);
+    if (distance > farthest) {
+      farthest = distance;
+      index = i;
+    }
+  }
+  if (index < 0 || farthest <= tolerance * tolerance) return [first, last];
+  const left = simplifyRing(points.slice(0, index + 1), tolerance);
+  const right = simplifyRing(points.slice(index), tolerance);
+  return [...left.slice(0, -1), ...right];
+}
+
 function Choropleth({
   malha, mapa, onClickEnte,
 }: {
@@ -413,7 +544,7 @@ function Choropleth({
 }) {
   const W = 520;
   const H = 520;
-  const { paths, corPorCod } = useMemo(() => {
+  const { paths, originalPoints, renderedPoints } = useMemo(() => {
     const feats = malha.malha.features as GeoFeature[];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const f of feats) {
@@ -434,46 +565,172 @@ function Choropleth({
     const px = (x: number) => offX + (x - minX) * escala;
     const py = (y: number) => offY + (maxY - y) * escala; // inverte o eixo Y
 
+    let originalPoints = 0;
+    let renderedPoints = 0;
     const paths = feats.map((f) => {
       const d = coordsRings(f.geometry)
-        .map((ring) => 'M' + ring.map(([x, y]) => `${px(x).toFixed(1)} ${py(y).toFixed(1)}`).join(' L') + 'Z')
+        .map((ring) => {
+          const projected = ring.map(([x, y]) => [px(x), py(y)] as Point);
+          const simplified = simplifyRing(projected);
+          originalPoints += projected.length;
+          renderedPoints += simplified.length;
+          return `M${simplified.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L')}Z`;
+        })
         .join(' ');
       return { cod: String(f.properties.codarea), d };
     });
-    const corPorCod = new Map(mapa.entes.map((e) => [e.cod_ibge, e]));
-    return { paths, corPorCod };
-  }, [malha, mapa]);
+    return { paths, originalPoints, renderedPoints };
+  }, [malha]);
+  const corPorCod = useMemo(() => new Map(mapa.entes.map((e) => [e.cod_ibge, e])), [mapa.entes]);
+  const codigosInterativos = useMemo(
+    () => paths.filter((path) => {
+      const ente = corPorCod.get(path.cod);
+      return Boolean(ente && !ente.no_escopo);
+    }).map((path) => path.cod),
+    [corPorCod, paths],
+  );
+  const [municipioAtivo, setMunicipioAtivo] = useState(() => codigosInterativos[0] ?? '');
+  // Tooltip próprio em vez do `title` nativo: aquele leva ~1s para aparecer e não
+  // mostra a faixa. Num mapa, a informação tem de vir junto com o ponteiro.
+  const [sob, setSob] = useState<{ nome: string; valor: string; x: number; y: number } | null>(null);
+  const codigoComTab = codigosInterativos.includes(municipioAtivo)
+    ? municipioAtivo
+    : codigosInterativos[0] ?? '';
+  const mapId = useId();
 
   const ratio = mapa.entes.some((e) => e.valor_pct !== null);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: '100%' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', flex: 1, minHeight: 0 }} role="img" aria-label={`Mapa de ${mapa.rotulo}`}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: '100%', height: '100%' }}
+        role="group"
+        aria-labelledby="mapa-uf-titulo mapa-uf-descricao"
+      >
+        <title id="mapa-uf-titulo">Mapa de {mapa.rotulo}</title>
+        <desc id="mapa-uf-descricao">
+          Mapa municipal da UF {mapa.uf}. Use as setas para percorrer os municípios no escopo
+          e Enter ou Espaço para abrir.
+          O ranking logo abaixo oferece a mesma navegação em formato tabular.
+        </desc>
         {paths.map((p) => {
           const ente = corPorCod.get(p.cod);
           const c = corDe(ente?.cor);
+          const interativo = Boolean(ente && !ente.no_escopo);
+          const nome = ente?.nome || p.cod;
+          const valor =
+            ente && ente.valor_pct !== null
+              ? `${mapa.rotulo}: ${pct(ente.valor_pct)}`
+              : ente?.no_escopo
+                ? 'fora do escopo'
+                : 'sem dado';
+          const descricao = `${nome} · ${valor}`;
+          const ativar = () => {
+            if (interativo) onClickEnte({ cod_ibge: p.cod, nome });
+          };
           return (
             <path
               key={p.cod}
+              id={`${mapId}-${p.cod}`}
               d={p.d}
               fill={c.fill}
               stroke={colors.surface}
               strokeWidth={0.4}
-              style={{ cursor: ente && !ente.no_escopo ? 'pointer' : 'default' }}
-              onClick={() => ente && !ente.no_escopo && onClickEnte({ cod_ibge: p.cod, nome: p.cod })}
+              role={interativo ? 'button' : undefined}
+              tabIndex={interativo && p.cod === codigoComTab ? 0 : -1}
+              aria-label={interativo ? `Abrir município ${descricao}` : descricao}
+              aria-hidden={interativo ? undefined : true}
+              style={{ cursor: interativo ? 'pointer' : 'default' }}
+              onClick={ativar}
+              onMouseEnter={(event) =>
+                setSob({
+                  nome,
+                  valor,
+                  x: event.nativeEvent.offsetX,
+                  y: event.nativeEvent.offsetY,
+                })
+              }
+              onMouseMove={(event) =>
+                setSob((atual) =>
+                  atual
+                    ? { ...atual, x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY }
+                    : atual,
+                )
+              }
+              onMouseLeave={() => setSob(null)}
+              onFocus={() => {
+                if (interativo) setMunicipioAtivo(p.cod);
+                setSob({ nome, valor, x: 0, y: 0 });
+              }}
+              onBlur={() => setSob(null)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  ativar();
+                  return;
+                }
+                if (!interativo) return;
+                const atual = codigosInterativos.indexOf(p.cod);
+                let proximo = atual;
+                if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                  proximo = (atual + 1) % codigosInterativos.length;
+                } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                  proximo = (atual - 1 + codigosInterativos.length) % codigosInterativos.length;
+                } else if (event.key === 'Home') {
+                  proximo = 0;
+                } else if (event.key === 'End') {
+                  proximo = codigosInterativos.length - 1;
+                } else {
+                  return;
+                }
+                event.preventDefault();
+                const proximoCodigo = codigosInterativos[proximo];
+                setMunicipioAtivo(proximoCodigo);
+                window.requestAnimationFrame(() => document.getElementById(`${mapId}-${proximoCodigo}`)?.focus());
+              }}
             >
-              <title>{`${p.cod}${ente && ente.valor_pct !== null ? ` · ${pct(ente.valor_pct)}` : ente?.no_escopo ? ' · fora do escopo' : ' · sem dado'}`}</title>
+              <title>{descricao}</title>
             </path>
           );
         })}
       </svg>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 10 }}>
+        {sob && (
+          <div
+            role="presentation"
+            style={{
+              position: 'absolute',
+              // Desloca do cursor para não tapar justamente o município apontado.
+              left: Math.min(sob.x + 14, 260),
+              top: Math.max(sob.y - 10, 0),
+              pointerEvents: 'none',
+              background: colors.ink,
+              color: colors.bg,
+              borderRadius: 4,
+              padding: '6px 9px',
+              fontSize: 11.5,
+              lineHeight: 1.4,
+              maxWidth: 240,
+              boxShadow: '0 2px 8px rgba(15, 26, 20, 0.25)',
+              zIndex: 2,
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>{sob.nome}</div>
+            <div style={{ fontFamily: font.mono, opacity: 0.92 }}>{sob.valor}</div>
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11 }}>
         {Object.entries(mapa.legenda).map(([faixa, cor]) => (
           <span key={faixa} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 9, height: 9, background: corDe(cor).fill, border: `1px solid ${corDe(cor).stroke}` }} />
             {faixa}
           </span>
         ))}
-        <span style={{ marginLeft: 'auto', color: colors.faint }}>{ratio ? '% da RCL' : 'valor absoluto'} · {malha.n_areas} municípios</span>
+        <span style={{ marginLeft: 'auto', color: colors.faint }}>
+          {ratio ? '% da RCL' : 'valor absoluto'} · {malha.n_areas} municípios · malha otimizada{' '}
+          {renderedPoints.toLocaleString('pt-BR')}/{originalPoints.toLocaleString('pt-BR')} pontos
+        </span>
       </div>
     </div>
   );
@@ -502,14 +759,36 @@ function EnteEstadualTab({
             </div>
             {est ? (
               <div>
-                <button
-                  onClick={() => onEscolherEnte({ cod_ibge: est.cod_ibge, nome: est.nome ?? est.cod_ibge })}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12.5, fontWeight: 500 }}
-                >
-                  <Icon size={13} stroke={colors.bg}><path d="M3 8h10M9 4l4 4-4 4" /></Icon>
-                  Abrir cockpit de {est.nome ?? est.cod_ibge}
-                </button>
-                <div style={{ fontSize: 10, color: colors.faint, marginTop: 8, fontFamily: "'JetBrains Mono', monospace" }}>
+                {est.acessivel ? (
+                  <button
+                    type="button"
+                    onClick={() => onEscolherEnte({ cod_ibge: est.cod_ibge, nome: est.nome ?? est.cod_ibge })}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12.5, fontWeight: 500 }}
+                  >
+                    <Icon size={13} stroke={colors.bg}><path d="M3 8h10M9 4l4 4-4 4" /></Icon>
+                    Abrir cockpit de {est.nome ?? est.cod_ibge}
+                  </button>
+                ) : (
+                  /* Sem acesso, o botão levava a 403 — e o 403 chegava à tela disfarçado de
+                     "ente sem período com dado". Dizer o motivo é mais útil que oferecer. */
+                  <div
+                    role="note"
+                    style={{
+                      display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: 560,
+                      padding: '10px 12px', borderRadius: 5,
+                      background: colors.yellowSoft, border: `1px solid ${colors.border}`,
+                    }}
+                  >
+                    <Icon size={14} stroke={colors.muted}>
+                      <circle cx="8" cy="8" r="6" /><path d="M8 5v4M8 11h.01" />
+                    </Icon>
+                    <span style={{ fontSize: 12, color: colors.muted, lineHeight: 1.5 }}>
+                      {est.motivo_indisponivel ??
+                        'O cockpit do ente estadual não está disponível para este usuário.'}
+                    </span>
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: colors.faint, marginTop: 8, fontFamily: "'JetBrains Mono', monospace" }}>
                   código IBGE {est.cod_ibge} · esfera estadual
                 </div>
               </div>
@@ -549,8 +828,8 @@ function CarteiraTab({ periodo, onEscolherEnte }: { periodo: string; onEscolherE
               {r.total_entes} entes · {r.entes_com_dados} com dado em {r.periodo}
             </span>
             <div style={{ flex: 1 }} />
-            <button onClick={() => disparar('relatorio')} style={loteBtn}>Gerar relatório do escopo</button>
-            <button onClick={() => disparar('alerta')} style={loteBtn}>Configurar alerta do escopo</button>
+            <button type="button" onClick={() => disparar('relatorio')} style={loteBtn}>Gerar relatório do escopo</button>
+            <button type="button" onClick={() => disparar('alerta')} style={loteBtn}>Configurar alerta do escopo</button>
           </Card>
         )}
       </Async>
@@ -561,7 +840,7 @@ function CarteiraTab({ periodo, onEscolherEnte }: { periodo: string; onEscolherE
       )}
       <Card pad={0} style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '12px 16px 8px', fontSize: 13, fontWeight: 600 }}>
-          Grade de entes <span style={{ fontSize: 10.5, color: colors.muted, fontWeight: 400 }}>· clique para trocar o ente e abrir o cockpit</span>
+          Grade de entes <span style={{ fontSize: 11, color: colors.muted, fontWeight: 400 }}>· clique para trocar o ente e abrir o cockpit</span>
         </div>
         <Async res={grade}>
           {(g) => <GradeCarteira linhas={g.data} onEscolherEnte={onEscolherEnte} />}
@@ -580,31 +859,73 @@ function GradeCarteira({ linhas, onEscolherEnte }: { linhas: CarteiraEnteRow[]; 
   const ROTULO: Record<string, string> = { conforme: 'Conforme', alerta: 'Alerta', prudencial: 'Prudencial', critico: 'Crítico', sem_dados: 'Sem dados' };
   const ind = (e: CarteiraEnteRow, k: string) => e.indicadores.find((i) => i.indicador === k) ?? null;
   if (linhas.length === 0) return <div style={{ padding: '16px', fontSize: 12, color: colors.muted }}>Nenhum ente com dado no período.</div>;
-  return (
-    <div style={{ maxHeight: 460, overflowY: 'auto' }}>
-      {linhas.map((e) => {
-        const c = corDe(e.cor);
+  const abrir = (e: CarteiraEnteRow) =>
+    onEscolherEnte({ cod_ibge: e.cod_ibge, nome: e.nome ?? e.cod_ibge });
+  const columns: VirtualColumn<CarteiraEnteRow>[] = [
+    {
+      key: 'ente',
+      header: 'Ente',
+      width: '46%',
+      render: (e) => (
+        <button
+          type="button"
+          onClick={() => abrir(e)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', minWidth: 0, textAlign: 'left' }}
+        >
+          <span aria-hidden style={{ width: 4, height: 16, background: corDe(e.cor).stroke, borderRadius: 2, flexShrink: 0 }} />
+          <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {e.nome ?? e.cod_ibge}
+          </span>
+        </button>
+      ),
+    },
+    {
+      key: 'pessoal',
+      header: 'Pessoal',
+      width: '18%',
+      align: 'right',
+      render: (e) => {
         const pessoal = ind(e, 'pessoal_executivo');
-        const dcl = ind(e, 'divida_consolidada_liquida');
+        return <span style={{ fontFamily: "'JetBrains Mono', monospace", color: corDe(pessoal?.cor).text }}>{pct(pessoal?.valor_pct)}</span>;
+      },
+    },
+    {
+      key: 'dcl',
+      header: 'DCL',
+      width: '18%',
+      align: 'right',
+      render: (e) => (
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: colors.muted }}>
+          {pct(ind(e, 'divida_consolidada_liquida')?.valor_pct, 1)}
+        </span>
+      ),
+    },
+    {
+      key: 'conformidade',
+      header: 'Conformidade',
+      width: '18%',
+      align: 'right',
+      render: (e) => {
+        const c = corDe(e.cor);
         return (
-          <button
-            key={e.cod_ibge}
-            onClick={() => onEscolherEnte({ cod_ibge: e.cod_ibge, nome: e.nome ?? e.cod_ibge })}
-            style={{ display: 'grid', gridTemplateColumns: '1.8fr 0.8fr 0.8fr 1fr', gap: 8, alignItems: 'center', width: '100%', textAlign: 'left', padding: '7px 16px', borderBottom: `1px solid ${colors.rowBorder}`, fontSize: 12 }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span style={{ width: 4, height: 16, background: c.stroke, borderRadius: 2, flexShrink: 0 }} />
-              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.nome ?? e.cod_ibge}</span>
-            </span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", textAlign: 'right', color: corDe(pessoal?.cor).text }}>{pct(pessoal?.valor_pct)}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", textAlign: 'right', color: colors.muted }}>{pct(dcl?.valor_pct, 1)}</span>
-            <span style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 2, fontWeight: 600, background: c.fill, color: '#2A2A28' }}>{ROTULO[e.conformidade] ?? e.conformidade}</span>
-            </span>
-          </button>
+          <span style={{ padding: '1px 7px', borderRadius: 2, fontWeight: 600, background: c.fill, color: colors.ink }}>
+            {ROTULO[e.conformidade] ?? e.conformidade}
+          </span>
         );
-      })}
-    </div>
+      },
+    },
+  ];
+  return (
+    <VirtualizedTable
+      rows={linhas}
+      columns={columns}
+      rowKey={(e) => e.cod_ibge}
+      caption={`Grade da carteira com ${linhas.length} entes`}
+      height={Math.min(460, Math.max(160, linhas.length * 44 + 46))}
+      rowHeight={44}
+      onRowActivate={abrir}
+      getRowLabel={(e) => `${e.nome ?? e.cod_ibge}, ${ROTULO[e.conformidade] ?? e.conformidade}`}
+    />
   );
 }
 
@@ -630,8 +951,8 @@ function GruposTab({ periodo, onEscolherEnte }: { periodo: string; onEscolherEnt
                 <Card key={chave} pad={0} style={{ display: 'flex', flexDirection: 'column' }}>
                   <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: `1px solid ${colors.border}` }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{chave}</div>
-                    <span style={{ fontSize: 10.5, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>{entes.length} entes</span>
-                    {criticos > 0 && <span style={{ fontSize: 9.5, color: colors.red, background: colors.redBg, borderRadius: 2, padding: '1px 6px', fontWeight: 600 }}>{criticos} em atenção</span>}
+                    <span style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>{entes.length} entes</span>
+                    {criticos > 0 && <span style={{ fontSize: 11, color: colors.red, background: colors.redBg, borderRadius: 2, padding: '1px 6px', fontWeight: 600 }}>{criticos} em atenção</span>}
                   </div>
                   <GradeCarteira linhas={entes} onEscolherEnte={onEscolherEnte} />
                 </Card>

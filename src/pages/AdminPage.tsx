@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
+import { PageHeader } from '../components/PageHeader';
 import { useResource } from '../context/AppContext';
 import { Async } from '../components/AsyncState';
 import { Link } from 'react-router-dom';
@@ -73,30 +74,27 @@ export function AdminPage() {
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Administração">
-      <Card style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 18px' }} pad={0}>
-        <div style={{ width: 40, height: 40, borderRadius: 6, background: colors.primaryGrad, color: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={22} stroke={colors.bg}><path d="M8 2l5 2.5v3.5c0 3-2 5-5 6-3-1-5-3-5-6V4.5z" /><circle cx="8" cy="7" r="1.6" /><path d="M5.5 11c0-1.4 1.1-2.2 2.5-2.2s2.5.8 2.5 2.2" /></Icon>
-        </div>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>Administração &amp; Configurações</div>
-          <div style={{ fontSize: 11, color: colors.muted, fontFamily: font.mono }}>governança multi-tenant · cobrança, integrações e auditoria reais</div>
-        </div>
-        <div style={{ flex: 1 }} />
+      <PageHeader
+        title="Administração & Configurações"
+        context="Governança multi-tenant · cobrança, integrações, usuários e auditoria"
+        source="Dados operacionais sob RBAC e trilha de auditoria"
+        actions={(
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', border: '1px solid #C7E5D5', background: colors.greenBg, borderRadius: 4 }}>
           <Icon size={14} stroke={colors.green}><path d="M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4z" /><path d="M5.5 8l1.7 1.7L10.5 6.5" /></Icon>
           <div style={{ lineHeight: 1.15 }}>
             <div style={{ fontSize: 11, fontWeight: 600 }}>Tenant isolado</div>
-            <div style={{ fontSize: 9.5, color: colors.green, fontFamily: font.mono }}>RLS: escopo não vaza entre orgs</div>
+            <div style={{ fontSize: 11, color: colors.green, fontFamily: font.mono }}>RLS: escopo não vaza entre orgs</div>
           </div>
         </div>
-      </Card>
+        )}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 12, alignItems: 'start' }}>
         <Card pad={8} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {tabs.map((t) => {
             const a = t.key === tab;
             return (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 5, textAlign: 'left', background: a ? colors.surface : 'transparent', color: a ? colors.ink : colors.muted, border: `1px solid ${a ? colors.border : 'transparent'}`, boxShadow: a ? '0 1px 2px rgba(15,26,20,.06)' : 'none' }}>
+              <button type="button" key={t.key} aria-pressed={a} onClick={() => setTab(t.key)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 5, textAlign: 'left', background: a ? colors.surface : 'transparent', color: a ? colors.ink : colors.muted, border: `1px solid ${a ? colors.border : 'transparent'}`, boxShadow: a ? '0 1px 2px rgba(15,26,20,.06)' : 'none' }}>
                 <Icon size={15}><path d={t.icon} /></Icon>
                 <span style={{ fontSize: 12.5, fontWeight: 500 }}>{t.label}</span>
               </button>
@@ -130,7 +128,16 @@ function Carteira() {
     if (!cod.trim()) return;
     setBusy(true); setErr(null);
     try {
-      await carteiraLote({ adicionar: [{ cod_ibge: cod.trim(), grupo: grupo.trim() || null }], remover: [] });
+      const r = await carteiraLote({ adicionar: [{ cod_ibge: cod.trim(), grupo: grupo.trim() || null }], remover: [] });
+      // O lote responde 200 mesmo recusando por licença (Sprint 19). Sem dizer isso, a
+      // tela ficaria inerte e o administrador acharia que o cadastro funcionou.
+      if (r.nao_licenciados?.length) {
+        setErr(
+          `O ente ${r.nao_licenciados.join(', ')} não está coberto por licença ativa desta ` +
+          'organização e por isso não entrou na carteira. Fale com o operador da plataforma.',
+        );
+        return;
+      }
       setCod(''); setGrupo(''); res.reload();
     } catch (e) { setErr((e as { detail?: string; message?: string }).detail || (e as Error).message); }
     finally { setBusy(false); }
@@ -148,12 +155,12 @@ function Carteira() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}`, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Gestão de carteira · em lote</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>entes acompanhados (referência por código IBGE — nunca copia o dado)</div>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>entes acompanhados (referência por código IBGE — nunca copia o dado)</div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input value={cod} onChange={(e) => setCod(e.target.value)} placeholder="cód. IBGE" style={inp(96)} />
-          <input value={grupo} onChange={(e) => setGrupo(e.target.value)} placeholder="grupo (opcional)" style={inp(130)} />
-          <button onClick={add} disabled={busy || !cod.trim()} style={btnPrimary(busy || !cod.trim())}>
+          <input aria-label="Código IBGE do ente" value={cod} onChange={(e) => setCod(e.target.value)} placeholder="cód. IBGE" style={inp(96)} />
+          <input aria-label="Grupo do ente" value={grupo} onChange={(e) => setGrupo(e.target.value)} placeholder="grupo (opcional)" style={inp(130)} />
+          <button type="button" onClick={add} disabled={busy || !cod.trim()} style={btnPrimary(busy || !cod.trim())}>
             <Icon size={13} stroke={colors.bg} sw={1.6}><path d="M8 3v10M3 8h10" /></Icon> Adicionar
           </button>
         </div>
@@ -162,7 +169,7 @@ function Carteira() {
       <Async res={res}>
         {(entes) => (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 11, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               <div>Código IBGE</div><div>Grupo</div><div>Tag</div><div style={{ textAlign: 'right' }}>Ação</div>
             </div>
             {entes.length === 0 && <div style={{ padding: '18px', fontSize: 12, color: colors.faint }}>Carteira vazia — adicione um ente pelo código IBGE.</div>}
@@ -172,11 +179,11 @@ function Carteira() {
                 <div style={{ color: colors.muted }}>{e.grupo || '—'}</div>
                 <div style={{ color: colors.muted }}>{e.tag || '—'}</div>
                 <div style={{ textAlign: 'right' }}>
-                  <button onClick={() => remove(e.cod_ibge)} disabled={busy} style={{ fontSize: 10.5, color: colors.red, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '3px 8px' }}>Remover</button>
+                  <button type="button" onClick={() => remove(e.cod_ibge)} disabled={busy} style={{ fontSize: 11, color: colors.red, border: `1px solid ${colors.border}`, borderRadius: 4, padding: '3px 8px' }}>Remover</button>
                 </div>
               </div>
             ))}
-            <div style={{ padding: '8px 18px', fontSize: 10.5, color: colors.faint }}>{entes.length} ente(s) na carteira.</div>
+            <div style={{ padding: '8px 18px', fontSize: 11, color: colors.faint }}>{entes.length} ente(s) na carteira.</div>
           </>
         )}
       </Async>
@@ -224,7 +231,7 @@ function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void
             <span style={{ fontFamily: font.mono, fontSize: 24, fontWeight: 600 }}>{brl(pv.valor_total)}</span>
             <span style={{ fontSize: 11, color: colors.muted }}>/ {b.assinatura?.ciclo || 'mensal'}</span>
           </div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 4 }}>
             métrica: <b style={{ color: colors.primary }}>{METRICA_LABEL[pv.metrica_cobranca]}</b> · {num(pv.quantidade)} × {brl(pv.preco_unitario)}
           </div>
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${colors.borderSoft}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -232,7 +239,7 @@ function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void
               Plano: <b style={{ color: colors.ink }}>{b.assinatura?.plano ?? 'legado'}</b>
               {' · '}status: <b style={{ color: b.assinatura?.status === 'ativa' ? colors.green : colors.orange }}>{b.assinatura?.status ?? 'sem assinatura'}</b>
             </div>
-            <div style={{ padding: '8px 10px', borderRadius: 4, background: colors.bg, color: colors.faint, fontSize: 10.5 }}>
+            <div style={{ padding: '8px 10px', borderRadius: 4, background: colors.bg, color: colors.faint, fontSize: 11 }}>
               Licença, métrica e preço são definidos pelo control plane da plataforma e ficam em modo somente leitura para o tenant.
             </div>
           </div>
@@ -244,20 +251,20 @@ function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void
             <Icon size={14} stroke={colors.yellowText}><path d="M3 6l5-3 5 3v7H3zM6 13V9h4v4" /></Icon>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Emitir fatura · compra pública</div>
           </div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: colors.muted, marginBottom: 12 }}>
             competência {pv.competencia} · {pv.ja_emitida ? 'já emitida' : 'em aberto'} — {typeof memoEntes === 'number' ? `${memoEntes} ente(s)` : (pv.memoria?.base as string) || ''}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label style={lbl}>Competência (YYYY-MM)</label>
-            <input value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={inp('100%')} />
-            <label style={lbl}>Nota de empenho</label>
-            <input value={empenho} onChange={(e) => setEmpenho(e.target.value)} placeholder="2026NE000842" style={inp('100%')} />
-            <label style={lbl}>Contrato / processo</label>
-            <input value={contrato} onChange={(e) => setContrato(e.target.value)} placeholder="CT-118/2026" style={inp('100%')} />
-            <button onClick={emitir} disabled={busy} style={btnPrimary(busy)}>Emitir fatura de {brl(pv.valor_total)}</button>
+            <label htmlFor="fatura-competencia" style={lbl}>Competência (YYYY-MM)</label>
+            <input id="fatura-competencia" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={inp('100%')} />
+            <label htmlFor="fatura-empenho" style={lbl}>Nota de empenho</label>
+            <input id="fatura-empenho" value={empenho} onChange={(e) => setEmpenho(e.target.value)} placeholder="2026NE000842" style={inp('100%')} />
+            <label htmlFor="fatura-contrato" style={lbl}>Contrato / processo</label>
+            <input id="fatura-contrato" value={contrato} onChange={(e) => setContrato(e.target.value)} placeholder="CT-118/2026" style={inp('100%')} />
+            <button type="button" onClick={emitir} disabled={busy} style={btnPrimary(busy)}>Emitir fatura de {brl(pv.valor_total)}</button>
           </div>
           {pv.source_refs.length > 0 && (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${colors.borderSoft}`, fontSize: 9.5, color: colors.faint }}>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${colors.borderSoft}`, fontSize: 11, color: colors.faint }}>
               proveniência: {pv.source_refs.map((s) => `${s.relatorio}${s.periodo ? ' ' + s.periodo : ''}`).join(' · ')}
             </div>
           )}
@@ -267,7 +274,7 @@ function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void
       {/* Faturas */}
       <Card pad={0}>
         <div style={{ padding: '12px 18px', borderBottom: `1px solid ${colors.border}`, fontSize: 13, fontWeight: 600 }}>Faturas emitidas</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1fr 1fr 1fr 0.7fr', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1fr 1fr 1fr 0.7fr', padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 11, fontWeight: 600, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
           <div>Competência</div><div>Empenho</div><div>Contrato</div><div style={{ textAlign: 'right' }}>Valor</div><div style={{ textAlign: 'center' }}>Status</div>
         </div>
         {b.faturas.length === 0 && <div style={{ padding: 18, fontSize: 12, color: colors.faint }}>Nenhuma fatura emitida ainda.</div>}
@@ -278,7 +285,7 @@ function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void
             <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.contrato_ref || '—'}</div>
             <div style={{ fontFamily: font.mono, textAlign: 'right' }}>{brl(f.valor_total)}</div>
             <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: f.status === 'paga' ? colors.greenBg : colors.yellowBg, color: f.status === 'paga' ? colors.green : colors.yellowText }}>{f.status.toUpperCase()}</span>
+              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: f.status === 'paga' ? colors.greenBg : colors.yellowBg, color: f.status === 'paga' ? colors.green : colors.yellowText }}>{f.status.toUpperCase()}</span>
             </div>
           </div>
         ))}
@@ -296,7 +303,7 @@ function Integracoes() {
       <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Integrações &amp; dados</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>estado global dos conectores · alteração exclusiva do control plane</div>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>estado global dos conectores · alteração exclusiva do control plane</div>
         </div>
         <div style={{ flex: 1 }} />
         <Link
@@ -314,15 +321,15 @@ function Integracoes() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>{i.nome}</span>
-                    <span style={{ fontSize: 8.5, padding: '1px 6px', background: i.categoria === 'nacional' ? colors.accentSoft : colors.neutralBg, color: i.categoria === 'nacional' ? colors.primary : colors.neutral, borderRadius: 2, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{i.codigo}</span>
+                    <span style={{ fontSize: 11, padding: '1px 6px', background: i.categoria === 'nacional' ? colors.accentSoft : colors.neutralBg, color: i.categoria === 'nacional' ? colors.primary : colors.neutral, borderRadius: 2, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{i.codigo}</span>
                   </div>
                   <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>{i.descricao}</div>
-                  <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{i.fontes.length} conector(es): {i.fontes.join(', ')}</div>
+                  <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{i.fontes.length} conector(es): {i.fontes.join(', ')}</div>
                 </div>
                 <div style={{ textAlign: 'right', minWidth: 74 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 600, color: i.ativo ? colors.green : colors.faint }}>{i.ativo ? 'Ativa' : 'Pausada'}</div>
                 </div>
-                <span aria-label={`Integração ${i.codigo} em modo somente leitura`} title="Somente o control plane pode alterar uma integração global" style={{ fontSize: 9, padding: '3px 7px', borderRadius: 3, background: colors.bg, color: colors.faint, border: `1px solid ${colors.border}` }}>
+                <span title={`Integração ${i.codigo}: somente o control plane pode alterar uma integração global`} style={{ fontSize: 11, padding: '3px 7px', borderRadius: 3, background: colors.bg, color: colors.faint, border: `1px solid ${colors.border}` }}>
                   somente leitura
                 </span>
               </div>
@@ -349,17 +356,17 @@ function Auditoria() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: `1px solid ${colors.border}`, flexWrap: 'wrap', gap: 8 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Trilha de auditoria</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>toda ação sensível é registrada e atribuível — filtrável</div>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>toda ação sensível é registrada e atribuível — filtrável</div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <input value={acao} onChange={(e) => setAcao(e.target.value)} placeholder="ação (ex.: EMITIR_FATURA)" style={inp(190)} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="busca livre" style={inp(140)} />
+          <input aria-label="Filtrar auditoria por ação" value={acao} onChange={(e) => setAcao(e.target.value)} placeholder="ação (ex.: EMITIR_FATURA)" style={inp(190)} />
+          <input aria-label="Busca livre na auditoria" value={q} onChange={(e) => setQ(e.target.value)} placeholder="busca livre" style={inp(140)} />
         </div>
       </div>
       <Async res={res}>
         {(page) => (
           <>
-            <div style={{ padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 10, color: colors.muted }}>{page.total} evento(s)</div>
+            <div style={{ padding: '7px 18px', background: colors.bg, borderBottom: `1px solid ${colors.border}`, fontSize: 11, color: colors.muted }}>{page.total} evento(s)</div>
             {page.itens.length === 0 && <div style={{ padding: 18, fontSize: 12, color: colors.faint }}>Nenhum evento para o filtro.</div>}
             {page.itens.map((a) => (
               <div key={a.id} style={{ display: 'flex', gap: 12, padding: '11px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'flex-start' }}>
@@ -368,9 +375,9 @@ function Auditoria() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontFamily: font.mono, wordBreak: 'break-word' }}>{a.recurso}</div>
-                  <div style={{ fontSize: 10, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{new Date(a.ts).toLocaleString('pt-BR')}</div>
+                  <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{new Date(a.ts).toLocaleString('pt-BR')}</div>
                 </div>
-                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, fontWeight: 600, background: colors.accentSoft, color: colors.primary, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{a.acao}</span>
+                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 3, fontWeight: 600, background: colors.accentSoft, color: colors.primary, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{a.acao}</span>
               </div>
             ))}
           </>
@@ -390,7 +397,7 @@ function Organizacao() {
       <Card pad={0}>
         <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Organizações reais</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>dados de GET /orgs; a organização ativa vem de /me</div>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>dados de GET /orgs; a organização ativa vem de /me</div>
         </div>
         <Async res={orgs}>
           {(itens) => itens.length === 0 ? (
@@ -402,11 +409,11 @@ function Organizacao() {
                 <div key={org.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'center', padding: '11px 18px', borderBottom: `1px solid ${colors.rowBorder}`, fontSize: 11.5 }}>
                   <div>
                     <div style={{ fontWeight: 600 }}>{org.nome}</div>
-                    <div style={{ fontFamily: font.mono, color: colors.faint, fontSize: 9.5 }}>{org.id}</div>
+                    <div style={{ fontFamily: font.mono, color: colors.faint, fontSize: 11 }}>{org.id}</div>
                   </div>
                   <span>{org.tipo_conta}</span>
                   <span style={{ color: colors.muted }}>{org.metrica_cobranca ?? 'sem métrica'}</span>
-                  <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: ativa ? colors.greenBg : colors.bg, color: ativa ? colors.green : colors.faint }}>{ativa ? 'ATIVA' : new Date(org.criada_em).toLocaleDateString('pt-BR')}</span>
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 3, background: ativa ? colors.greenBg : colors.bg, color: ativa ? colors.green : colors.faint }}>{ativa ? 'ATIVA' : new Date(org.criada_em).toLocaleDateString('pt-BR')}</span>
                 </div>
               );
             })
@@ -422,7 +429,7 @@ function Organizacao() {
             administradores da organização gerenciam usuários, papéis e permissões sem ampliar
             o próprio escopo de tenant.
           </div>
-          <div style={{ padding: '9px 10px', borderRadius: 4, background: colors.bg, color: colors.faint, fontSize: 10.5 }}>
+          <div style={{ padding: '9px 10px', borderRadius: 4, background: colors.bg, color: colors.faint, fontSize: 11 }}>
             Para provisionar outra organização, solicite a ação a um superadministrador da plataforma.
           </div>
         </div>
@@ -478,7 +485,7 @@ function Usuarios() {
       <Card pad={0}>
         <div style={{ padding: '14px 18px', borderBottom: `1px solid ${colors.border}` }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Usuários</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>cadastros devolvidos pelo contrato real de GET /users</div>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>cadastros devolvidos pelo contrato real de GET /users</div>
         </div>
         <Async res={res}>
           {(usuarios) =>
@@ -489,17 +496,17 @@ function Usuarios() {
                 {usuarios.map((u) => (
                   <div key={u.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 0.8fr', padding: '10px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: colors.accentSoft, color: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>{iniciaisDe(u.nome)}</div>
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: colors.accentSoft, color: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>{iniciaisDe(u.nome)}</div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 500 }}>{u.nome}</div>
-                        <div style={{ fontSize: 10, color: colors.faint, fontFamily: font.mono }}>{u.email}</div>
+                        <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{u.email}</div>
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: colors.muted }}>
                       {u.papel_nome ?? 'papel não informado'} · MFA {u.mfa_ativo ? 'ativo' : 'inativo'}
                     </div>
                     <div>
-                      <span style={{ fontSize: 9.5, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: u.mfa_ativo ? colors.greenBg : colors.bg, color: u.mfa_ativo ? colors.green : colors.muted }}>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: u.mfa_ativo ? colors.greenBg : colors.bg, color: u.mfa_ativo ? colors.green : colors.muted }}>
                         {u.mfa_ativo ? 'MFA' : 'sem MFA'}
                       </span>
                     </div>
@@ -514,14 +521,14 @@ function Usuarios() {
       <Card>
         <form onSubmit={(e) => void criar(e)} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Novo usuário</div>
-          <label style={lbl}>Nome</label>
-          <input aria-label="Nome do usuário" value={nome} onChange={(e) => setNome(e.target.value)} style={inp('100%')} />
-          <label style={lbl}>E-mail</label>
-          <input aria-label="E-mail do usuário" type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp('100%')} />
-          <label style={lbl}>Senha inicial (mín. 8)</label>
-          <input aria-label="Senha inicial" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} style={inp('100%')} />
-          <label style={lbl}>Papel na organização</label>
-          <select aria-label="Papel do usuário" value={papelId} onChange={(e) => setPapelId(e.target.value)} style={inp('100%')}>
+          <label htmlFor="novo-usuario-nome" style={lbl}>Nome</label>
+          <input id="novo-usuario-nome" value={nome} onChange={(e) => setNome(e.target.value)} style={inp('100%')} />
+          <label htmlFor="novo-usuario-email" style={lbl}>E-mail</label>
+          <input id="novo-usuario-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp('100%')} />
+          <label htmlFor="novo-usuario-senha" style={lbl}>Senha inicial (mín. 8)</label>
+          <input id="novo-usuario-senha" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} style={inp('100%')} />
+          <label htmlFor="novo-usuario-papel" style={lbl}>Papel na organização</label>
+          <select id="novo-usuario-papel" value={papelId} onChange={(e) => setPapelId(e.target.value)} style={inp('100%')}>
             <option value="">menor privilégio disponível</option>
             {(papeis.data ?? []).map((papel) => (
               <option key={papel.id} value={papel.id}>{papel.nome}</option>
@@ -604,15 +611,15 @@ function Permissoes() {
   return (
     <Card className="fade-in">
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Matriz de permissões · papel × capacidade (RBAC)</div>
-      <div style={{ fontSize: 10.5, color: colors.muted, marginBottom: 12 }}>clique numa célula para conceder/retirar a capacidade</div>
+      <div style={{ fontSize: 11, color: colors.muted, marginBottom: 12 }}>clique numa célula para conceder/retirar a capacidade</div>
       <form onSubmit={(e) => void criarNovo(e)} style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: 10, marginBottom: 12, border: `1px solid ${colors.border}`, borderRadius: 6, background: colors.bg, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 180 }}>
-          <label style={lbl}>Novo papel</label>
-          <input aria-label="Nome do novo papel" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} style={inp('100%')} />
+          <label htmlFor="novo-papel-nome" style={lbl}>Novo papel</label>
+          <input id="novo-papel-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} style={inp('100%')} />
         </div>
         <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
           {CAPACIDADES.map(({ cap, label }) => (
-            <label key={cap} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: colors.muted }}>
+            <label key={cap} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: colors.muted }}>
               <input
                 type="checkbox"
                 checked={novasCapacidades.includes(cap)}
@@ -636,9 +643,10 @@ function Permissoes() {
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 640 }}>
+            <caption className="sr-only">Matriz de permissões por papel e capacidade</caption>
             <thead><tr>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: 9.5, color: colors.faint, textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>Capacidade</th>
-              {papeis.map((p) => <th key={p.id} style={{ textAlign: 'center', padding: '8px 6px', fontSize: 9.5, color: colors.muted, textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>{p.nome}</th>)}
+              <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, color: colors.faint, textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>Capacidade</th>
+              {papeis.map((p) => <th key={p.id} scope="col" style={{ textAlign: 'center', padding: '8px 6px', fontSize: 11, color: colors.muted, textTransform: 'uppercase', fontWeight: 600, borderBottom: `1px solid ${colors.border}` }}>{p.nome}</th>)}
             </tr></thead>
             <tbody>
               {CAPACIDADES.map(({ cap, label }) => (
@@ -649,6 +657,7 @@ function Permissoes() {
                     return (
                       <td key={p.id} style={{ padding: 6, textAlign: 'center' }}>
                         <button
+                          type="button"
                           onClick={() => alternar(p, cap)}
                           disabled={Boolean(salvando)}
                           aria-label={`${p.capacidades.includes(cap) ? 'Retirar' : 'Conceder'} ${label} de ${p.nome}`}
@@ -671,5 +680,5 @@ function Permissoes() {
 
 // ------------------------- estilos ------------------------- //
 const inp = (w: number | string) => ({ width: w, fontSize: 12, padding: '7px 10px', border: `1px solid ${colors.border}`, borderRadius: 5, background: colors.bg, color: colors.ink } as const);
-const lbl = { fontSize: 9.5, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 } as const;
+const lbl = { fontSize: 11, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 } as const;
 const btnPrimary = (disabled: boolean) => ({ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 14px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12, fontWeight: 500, opacity: disabled ? 0.5 : 1, border: 'none', cursor: disabled ? 'default' : 'pointer' } as const);

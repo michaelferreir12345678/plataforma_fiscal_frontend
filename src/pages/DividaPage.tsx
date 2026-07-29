@@ -2,13 +2,20 @@ import { useState, type CSSProperties, type FormEvent } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
+import { PageHeader } from '../components/PageHeader';
 import { SectionLabel } from '../components/SectionLabel';
-import { Async, ErrorBox, Loading } from '../components/AsyncState';
+import { Async, ErrorBox, Loading, Skeleton } from '../components/AsyncState';
+import { FonteChip } from '../components/FonteChip';
+import { SeloQualidadePagina } from '../components/SeloQualidade';
+import { SerieChart } from '../components/SerieChart';
+import { ExportButton } from '../components/ExportButton';
 import { useApp, useResource } from '../context/AppContext';
 import { ApiError } from '../services/api';
 import {
+  fetchBenchmark,
   fetchDivida,
   fetchDividaArvore,
+  fetchDividaPvl,
   fetchDividaCapag,
   fetchDividaCronograma,
   fetchDividaMemoria,
@@ -74,6 +81,7 @@ export function DividaPage() {
   const detalhe = useResource(
     () => fetchDivida(ente.cod_ibge, periodoRgf),
     [ente.cod_ibge, periodoRgf],
+    { pular: !periodoRgf },
   );
 
   return (
@@ -82,18 +90,26 @@ export function DividaPage() {
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
       data-screen-label="Detalhe · Dívida"
     >
-      <Breadcrumb
-        crumbs={[
-          { label: 'Dashboard', to: '/dashboard' },
-          { label: 'Análise por bloco' },
-          { label: 'Dívida & Endividamento' },
-        ]}
+      <PageHeader
+        title="Dívida & Endividamento"
+        context={`${ente.nome} · ${periodoRgf || 'sem período selecionado'} · estoque, capacidade de pagamento e cronograma`}
         source={
           detalhe.data
             ? `${sourceText(detalhe.data.dcl.source_ref)} · as_of ${detalhe.data.dcl.as_of}`
             : 'RGF Anexo 2 (DDCL) · SADIPEM · CAPAG/STN'
         }
+        breadcrumb={(
+          <Breadcrumb
+            crumbs={[
+              { label: 'Dashboard', to: '/dashboard' },
+              { label: 'Análise por bloco' },
+              { label: 'Dívida & Endividamento' },
+            ]}
+          />
+        )}
       />
+
+      <SeloQualidadePagina />
 
       <Async res={detalhe}>
         {(data) => (
@@ -163,6 +179,35 @@ function DividaContent({ detalhe }: { detalhe: DividaDetalhe }) {
         <SerieCard detalhe={detalhe} />
       </div>
 
+      {/* Sprint 25B: coorte, PVL/CDP e exportação */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <FonteChip source={detalhe.dcl.source_ref} asOf={detalhe.as_of} />
+        <div style={{ flex: 1 }} />
+        <ExportButton
+          nome="Dívida — série DCL"
+          linhas={detalhe.serie}
+          colunas={[
+            { cabecalho: 'periodo', valor: (l) => l.periodo },
+            { cabecalho: 'dcl', valor: (l) => numberValue(l.dcl) },
+            { cabecalho: 'pct_rcl', valor: (l) => numberValue(l.pct_rcl) },
+            { cabecalho: 'dc_bruta', valor: (l) => numberValue(l.dc_bruta) },
+            { cabecalho: 'dcl_real', valor: (l) => numberValue(l.dcl_real) },
+            { cabecalho: 'populacao', valor: (l) => l.populacao },
+          ]}
+          contexto={{
+            ente: detalhe.cod_ibge,
+            periodo: detalhe.periodo,
+            fonte: sourceText(detalhe.dcl.source_ref),
+          }}
+          modeloRelatorio="limites"
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.15fr', gap: 12 }}>
+        <CoorteCard detalhe={detalhe} />
+        <PvlCard cod={detalhe.cod_ibge} />
+      </div>
+
       <SimuladorCard detalhe={detalhe} />
     </>
   );
@@ -189,7 +234,14 @@ function DclHeroCard({ hero, esfera }: { hero: DclHero; esfera: string | null })
         <strong style={{ fontFamily: font.mono }}>{money(hero.dcl)}</strong>
         <span style={{ color: colors.muted }}> · teto {percent(hero.limite_pct, 0)} · esfera {esfera ?? '—'}</span>
       </div>
-      <div style={{ position: 'relative', height: 12, background: colors.borderSoft, borderRadius: 3 }}>
+      <div
+        role="meter"
+        aria-label={`${hero.rotulo}: ${percent(value)} da RCL ajustada; teto ${percent(ceiling, 0)}`}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(ceiling ?? 0, value ?? 0, 1)}
+        aria-valuenow={value ?? 0}
+        style={{ position: 'relative', height: 12, background: colors.borderSoft, borderRadius: 3 }}
+      >
         <div style={{ position: 'absolute', inset: 0, right: 'auto', width: `${width}%`, background: color, borderRadius: 3 }} />
         <div style={{ position: 'absolute', left: '100%', top: -3, bottom: -3, width: 2, background: colors.red }} />
       </div>
@@ -224,7 +276,7 @@ function CapagHeroCard({ hero, memoria }: { hero: CapagHero; memoria: CapagMemor
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={eyebrow}>{hero.rotulo}</div>
-          <div style={{ fontSize: 10.5, color: colors.muted }}>{hero.natureza} · ano-base {hero.ano_ref}</div>
+          <div style={{ fontSize: 11, color: colors.muted }}>{hero.natureza} · ano-base {hero.ano_ref}</div>
         </div>
         <div style={{ ...heroValue, color: noteColor, fontSize: 44 }}>{hero.nota_final ?? '—'}</div>
       </div>
@@ -239,15 +291,15 @@ function CapagHeroCard({ hero, memoria }: { hero: CapagHero; memoria: CapagMemor
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10.5, color: colors.muted, lineHeight: 1.45 }}>
+      <div style={{ fontSize: 11, color: colors.muted, lineHeight: 1.45 }}>
         {memoria.formula_endividamento}. Base: {memoria.base_numerador} ÷ {memoria.base_denominador}. {memoria.escala}.
         {numberValue(hero.ind_endividamento) != null && ` Índice publicado: ${ratioPercent(hero.ind_endividamento)}.`}
       </div>
       {hero.metodologia_versao && (
-        <div style={{ fontSize: 10, color: colors.faint }}>Metodologia {hero.metodologia_versao}</div>
+        <div style={{ fontSize: 11, color: colors.faint }}>Metodologia {hero.metodologia_versao}</div>
       )}
       {memoria.observacoes.length > 0 && (
-        <div style={{ fontSize: 10, color: colors.faint }}>{memoria.observacoes.join(' · ')}</div>
+        <div style={{ fontSize: 11, color: colors.faint }}>{memoria.observacoes.join(' · ')}</div>
       )}
       <Provenance source={hero.source_ref} asOf={hero.as_of} />
     </Card>
@@ -259,24 +311,25 @@ function MemoriaCard({ data }: { data: DividaMemoria }) {
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <SectionLabel note="cálculo executado no backend sobre o RGF">Memória rastreável da DCL</SectionLabel>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <caption className="sr-only">Memória de cálculo rastreável da dívida consolidada líquida</caption>
         <tbody>
           {data.componentes.map((item, index) => (
             <tr key={`${item.componente}-${index}`} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
               <td style={{ width: 24, padding: '7px 4px', color: colors.muted, fontFamily: font.mono }}>{item.operador}</td>
-              <td style={{ padding: '7px 4px' }}>
+              <th scope="row" style={{ padding: '7px 4px', textAlign: 'left', fontWeight: 400 }}>
                 <div>{humanize(item.componente)}</div>
                 {(item.conta_origem || item.coluna_origem) && (
-                  <div style={{ marginTop: 2, fontSize: 8.5, color: colors.faint, fontFamily: font.mono }}>
+                  <div style={{ marginTop: 2, fontSize: 11, color: colors.faint, fontFamily: font.mono }}>
                     {[item.conta_origem, item.coluna_origem].filter(Boolean).join(' · ')}
                   </div>
                 )}
-              </td>
+              </th>
               <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono }}>{money(item.valor)}</td>
             </tr>
           ))}
           <tr style={{ borderTop: `2px solid ${colors.primary}`, background: colors.accentSoft }}>
             <td style={{ padding: '8px 4px', fontWeight: 700 }}>=</td>
-            <td style={{ padding: '8px 4px', fontWeight: 700 }}>Dívida Consolidada Líquida</td>
+            <th scope="row" style={{ padding: '8px 4px', textAlign: 'left', fontWeight: 700 }}>Dívida Consolidada Líquida</th>
             <td style={{ padding: '8px 4px', textAlign: 'right', fontFamily: font.mono, fontWeight: 700, color: colors.primary }}>
               {money(data.dcl)}
             </td>
@@ -291,7 +344,7 @@ function MemoriaCard({ data }: { data: DividaMemoria }) {
         <div>{data.formula_dcl}</div>
         <div>{data.formula_pct}</div>
       </div>
-      <div style={{ fontSize: 10.5, color: data.reconciliacao_ok == null ? colors.muted : data.reconciliacao_ok ? colors.green : colors.red }}>
+      <div style={{ fontSize: 11, color: data.reconciliacao_ok == null ? colors.muted : data.reconciliacao_ok ? colors.green : colors.red }}>
         Reconciliação com o DDCL: {data.reconciliacao_ok == null ? 'sem linha reportada para conferir' : data.reconciliacao_ok ? 'consistente' : 'divergente'}
         {numberValue(data.diferenca_reconciliacao) != null && ` · diferença ${money(data.diferenca_reconciliacao)}`}
       </div>
@@ -310,7 +363,7 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
         <Empty text="Não há vencimentos publicados para este ente e posição." />
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 178, paddingTop: 8, overflowX: 'auto' }}>
+          <div aria-hidden="true" style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 178, paddingTop: 8, overflowX: 'auto' }}>
             {data.itens.map((item) => {
               const value = numberValue(item.valor) ?? 0;
               const height = maxValue > 0 ? Math.max((value / maxValue) * 100, 4) : 4;
@@ -320,13 +373,38 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
                   title={`Principal ${money(item.principal)} · juros ${money(item.juros)} · encargos ${money(item.encargos)} · ${item.operacoes} operação(ões)`}
                   style={{ minWidth: 56, flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}
                 >
-                  <div style={{ fontFamily: font.mono, fontSize: 9.5, color: colors.muted }}>{money(item.valor)}</div>
+                  <div style={{ fontFamily: font.mono, fontSize: 11, color: colors.muted }}>{money(item.valor)}</div>
                   <div style={{ width: '100%', height: `${height}%`, background: colors.primary, borderRadius: '3px 3px 0 0' }} />
-                  <div style={{ fontSize: 10, color: colors.muted, fontFamily: font.mono }}>{item.ano}</div>
+                  <div style={{ fontSize: 11, color: colors.muted, fontFamily: font.mono }}>{item.ano}</div>
                 </div>
               );
             })}
           </div>
+          <table className="sr-only">
+            <caption>Cronograma anual do serviço da dívida</caption>
+            <thead>
+              <tr>
+                <th scope="col">Ano</th>
+                <th scope="col">Principal</th>
+                <th scope="col">Juros</th>
+                <th scope="col">Encargos</th>
+                <th scope="col">Total</th>
+                <th scope="col">Operações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.itens.map((item) => (
+                <tr key={item.ano}>
+                  <th scope="row">{item.ano}</th>
+                  <td>{money(item.principal)}</td>
+                  <td>{money(item.juros)}</td>
+                  <td>{money(item.encargos)}</td>
+                  <td>{money(item.valor)}</td>
+                  <td>{item.operacoes}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
             <MiniValue label="Principal" value={money(data.total_principal)} />
             <MiniValue label="Juros" value={money(data.total_juros)} />
@@ -384,12 +462,12 @@ function ArvoreCard({
                 </span>
               ))}
               {tree.node && !tree.breadcrumb.some((crumb) => crumb.codigo === tree.node?.codigo) && (
-                <span style={{ color: colors.ink, fontSize: 10.5 }}>› {tree.node.descricao}</span>
+                <span style={{ color: colors.ink, fontSize: 11 }}>› {tree.node.descricao}</span>
               )}
             </div>
             {Object.keys(tree.measures).length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '7px 9px', background: colors.surfaceAlt, border: `1px solid ${colors.borderSoft}`, borderRadius: 4 }}>
-                <span style={{ fontSize: 10, color: colors.muted }}>Agregado do nó atual</span>
+                <span style={{ fontSize: 11, color: colors.muted }}>Agregado do nó atual</span>
                 <MeasureValues measures={tree.measures} />
               </div>
             )}
@@ -407,7 +485,7 @@ function ArvoreCard({
                   >
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 500 }}>{child.descricao}</div>
-                      <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: font.mono }}>{child.codigo}</div>
+                      <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{child.codigo}</div>
                     </div>
                     <MeasureValues measures={child.measures} />
                     <span style={{ color: child.has_children ? colors.primary : colors.faint }}>{child.has_children ? '›' : '·'}</span>
@@ -424,9 +502,12 @@ function ArvoreCard({
   );
 }
 
+/**
+ * Série multi-exercício da DCL (Sprint 25B). A auditoria (§2.6) apontou que a página
+ * mostrava só três quadrimestres: agora vem a série inteira, em nominal, **real** (IPCA)
+ * e per capita — dívida que "cresce" só pela inflação não é dívida que cresceu.
+ */
 function SerieCard({ detalhe }: { detalhe: DividaDetalhe }) {
-  const serie = detalhe.serie.slice(-8);
-  const maxValue = Math.max(...serie.map((item) => numberValue(item.dcl) ?? 0), 0);
   const comparisonItem = detalhe.comparacao
     ? detalhe.serie.find((item) => item.periodo === detalhe.comparacao?.periodo_anterior)
     : undefined;
@@ -435,43 +516,153 @@ function SerieCard({ detalhe }: { detalhe: DividaDetalhe }) {
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <SectionLabel note="drill temporal RGF">Evolução da DCL</SectionLabel>
       {detalhe.periodo_breadcrumb.length > 0 && (
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', fontSize: 10.5, color: colors.muted }}>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', fontSize: 11, color: colors.muted }}>
           {detalhe.periodo_breadcrumb.map((period, index) => (
             <span key={period.codigo}>{index > 0 && '› '}{period.descricao}</span>
           ))}
           <span>› {detalhe.periodo}</span>
         </div>
       )}
-      {serie.length === 0 ? (
+      {detalhe.serie.length === 0 ? (
         <Empty text="Não há série histórica materializada para esta posição." />
       ) : (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 170, paddingTop: 6 }}>
-          {serie.map((item) => {
-            const value = numberValue(item.dcl) ?? 0;
-            const height = maxValue > 0 ? Math.max((value / maxValue) * 100, 4) : 4;
-            return (
-              <div
-                key={item.periodo}
-                title={`${money(item.dcl)} · ${sourceText(item.source_ref)} · as_of ${item.as_of}`}
-                style={{ flex: 1, height: '100%', minWidth: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}
-              >
-                <div style={{ fontSize: 9.5, color: colors.muted, fontFamily: font.mono }}>{percent(item.pct_rcl, 1)}</div>
-                <div style={{ width: '100%', height: `${height}%`, background: colors.primary, borderRadius: '3px 3px 0 0' }} />
-                <div style={{ fontSize: 9, color: colors.faint, fontFamily: font.mono }}>{item.periodo}</div>
-                <div style={{ fontSize: 8, color: colors.faint, fontFamily: font.mono }}>v{item.source_ref.versao_entrega ?? '—'}</div>
-              </div>
-            );
-          })}
-        </div>
+        <SerieChart
+          titulo="A dívida cresceu de verdade? · série RGF multi-exercício"
+          medida="Dívida consolidada líquida"
+          pontos={detalhe.serie.map((item) => ({
+            periodo: item.periodo,
+            nominal: numberValue(item.dcl),
+            real: numberValue(item.dcl_real),
+            perCapita: numberValue(item.dcl_per_capita),
+            populacao: item.populacao,
+          }))}
+          ajuste={detalhe.serie_ajuste}
+          destaque={detalhe.periodo}
+          nota="A DCL é medida contra a RCL: o limite (120% municipal / 200% estadual) é razão, não valor absoluto."
+        />
       )}
       {detalhe.comparacao && (
-        <div style={{ fontSize: 10.5, color: colors.muted }}>
+        <div style={{ fontSize: 11, color: colors.muted }}>
           Mesmo período anterior ({detalhe.comparacao.periodo_anterior}): {money(detalhe.comparacao.dcl_anterior)} · variação{' '}
           {money(detalhe.comparacao.variacao_rs)} ({percent(detalhe.comparacao.variacao_pct)})
         </div>
       )}
       <Provenance source={detalhe.dcl.source_ref} asOf={detalhe.dcl.as_of} />
       {comparisonItem && <Provenance source={comparisonItem.source_ref} asOf={comparisonItem.as_of} />}
+    </Card>
+  );
+}
+
+/** Comparação com a coorte (Sprint 13): sou exceção ou regra entre os meus pares? */
+function CoorteCard({ detalhe }: { detalhe: DividaDetalhe }) {
+  const res = useResource(
+    () =>
+      fetchBenchmark({
+        ente: detalhe.cod_ibge,
+        indicador: 'divida_consolidada_liquida',
+        periodo: detalhe.periodo,
+      }),
+    [detalhe.cod_ibge, detalhe.periodo],
+  );
+  return (
+    <Card>
+      <SectionLabel note="mesma coorte, mesmo período — nunca média de percentuais">
+        Comparação com os pares
+      </SectionLabel>
+      <Async res={res} skeleton={<Skeleton linhas={4} />}>
+        {(b) => (
+          <>
+            <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8 }}>
+              {b.coorte.rotulo} · {b.quantidade} entes com dado em {b.periodo}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <div style={{ fontFamily: font.mono, fontSize: 26, fontWeight: 600, color: colors.primary }}>
+                {percent(b.ente.valor)}
+              </div>
+              <div style={{ fontSize: 11, color: colors.muted }}>
+                posição {b.ente.posicao} de {b.quantidade} · percentil {percent(b.ente.percentil, 0)}
+              </div>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginTop: 10 }}>
+              <caption className="sr-only">Distribuição comparativa do endividamento</caption>
+              <tbody>
+                {(
+                  [
+                    ['p10 (menor endividamento)', b.distribuicao.p10],
+                    ['mediana da coorte', b.distribuicao.mediana],
+                    ['p90 (maior endividamento)', b.distribuicao.p90],
+                  ] as [string, MaybeNumber][]
+                ).map(([rotulo, valor]) => (
+                  <tr key={rotulo} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
+                    <th scope="row" style={{ padding: '5px 4px', color: colors.muted, textAlign: 'left', fontWeight: 400 }}>{rotulo}</th>
+                    <td style={{ padding: '5px 4px', textAlign: 'right', fontFamily: font.mono }}>{percent(valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 11, color: colors.muted, marginTop: 8, lineHeight: 1.45 }}>
+              Cobertura: {b.cobertura.entes_com_valor} de {b.cobertura.entes_elegiveis} entes da
+              coorte têm o indicador neste período — comparar com base incompleta é comparar
+              outra coisa.{b.cobertura.amostra_parcial ? ' Amostra parcial.' : ''}
+            </div>
+            <Provenance source={b.source_ref ?? b.source_refs[0]} asOf={b.as_of} />
+          </>
+        )}
+      </Async>
+    </Card>
+  );
+}
+
+/** PVL/CDP do SADIPEM: pedidos de verificação de limites (endpoint novo da 25B). */
+function PvlCard({ cod }: { cod: string }) {
+  const res = useResource(() => fetchDividaPvl(cod), [cod]);
+  return (
+    <Card>
+      <SectionLabel note="SADIPEM · pedidos de verificação de limites">
+        Operações em tramitação (PVL/CDP)
+      </SectionLabel>
+      <Async res={res} skeleton={<Skeleton linhas={3} />}>
+        {(p) =>
+          p.itens.length === 0 ? (
+            <div style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>{p.observacao}</div>
+          ) : (
+            <>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <caption className="sr-only">Operações de crédito publicadas no SADIPEM</caption>
+                <thead>
+                  <tr style={{ fontSize: 11, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Operação</th>
+                    <th scope="col" style={{ textAlign: 'right', padding: '6px 4px' }}>Valor</th>
+                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Situação</th>
+                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Análise</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {p.itens.map((item, i) => (
+                    <tr key={`${item.id_pvl}-${i}`} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
+                      <td style={{ padding: '7px 4px' }}>
+                        {item.tipo_operacao ?? '—'}
+                        <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{item.id_pvl ?? ''}</div>
+                      </td>
+                      <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono }}>{money(item.valor)}</td>
+                      <td style={{ padding: '7px 4px' }}>{item.status ?? '—'}</td>
+                      <td style={{ padding: '7px 4px', fontSize: 11 }}>
+                        {item.decisao ?? '—'}
+                        {item.data_analise && (
+                          <div style={{ fontSize: 11, color: colors.faint }}>{item.data_analise}</div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 11, color: colors.muted, marginTop: 8 }}>
+                Total pleiteado: <strong style={{ fontFamily: font.mono }}>{money(p.total_valor)}</strong>
+              </div>
+            </>
+          )
+        }
+      </Async>
     </Card>
   );
 }
@@ -549,7 +740,7 @@ function SimuladorCard({ detalhe }: { detalhe: DividaDetalhe }) {
           {loading ? 'Calculando…' : 'Simular'}
         </button>
       </form>
-      <div style={{ fontSize: 9.5, color: colors.faint }}>
+      <div style={{ fontSize: 11, color: colors.faint }}>
         * Bases atuais opcionais; informe apenas quando não constarem da posição fiscal disponível.
       </div>
       {loading && <Loading label="Calculando impacto com a posição fiscal auditada…" />}
@@ -565,7 +756,7 @@ function SimulacaoResultado({ data }: { data: SimulacaoOperacao }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 600 }}>Impacto projetado</div>
         <Badge text={data.persistido ? 'PERSISTIDO' : 'NÃO PERSISTIDO'} color={data.persistido ? colors.red : colors.green} />
-        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: colors.muted }}>RCL base {money(data.rcl_ajustada)}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.muted }}>RCL base {money(data.rcl_ajustada)}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         {data.posicoes.map((position) => <PosicaoCard key={position.indicador} position={position} />)}
@@ -599,16 +790,23 @@ function PosicaoCard({ position }: { position: PosicaoSimulada }) {
       <div style={{ fontSize: 11.5, fontWeight: 600, minHeight: 30 }}>{position.rotulo}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
         <strong style={{ fontFamily: font.mono, fontSize: 20, color }}>{percent(position.pct_projetado)}</strong>
-        <span style={{ fontSize: 9.5, color: colors.muted }}>/ {percent(position.teto_pct, 0)}</span>
+        <span style={{ fontSize: 11, color: colors.muted }}>/ {percent(position.teto_pct, 0)}</span>
       </div>
-      <div style={{ height: 7, background: colors.borderSoft, borderRadius: 2, margin: '7px 0' }}>
+      <div
+        role="meter"
+        aria-label={`${position.rotulo}: projeção ${percent(projected)}; teto ${percent(ceiling, 0)}`}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(ceiling, projected ?? 0, 1)}
+        aria-valuenow={projected ?? 0}
+        style={{ height: 7, background: colors.borderSoft, borderRadius: 2, margin: '7px 0' }}
+      >
         <div style={{ width: `${width}%`, height: '100%', background: color, borderRadius: 2 }} />
       </div>
-      <div style={{ fontSize: 9.5, color: colors.muted, lineHeight: 1.45 }}>
+      <div style={{ fontSize: 11, color: colors.muted, lineHeight: 1.45 }}>
         {position.posicao_atual_conhecida ? `Atual ${percent(position.pct_atual)} · ` : 'Posição atual não disponível · '}
         incremento {money(position.incremento)} · projetado {money(position.valor_projetado)}
       </div>
-      {position.faixa_projetada && <div style={{ fontSize: 9.5, color, marginTop: 4 }}>Faixa: {position.faixa_projetada}</div>}
+      {position.faixa_projetada && <div style={{ fontSize: 11, color, marginTop: 4 }}>Faixa: {position.faixa_projetada}</div>}
     </div>
   );
 }
@@ -626,7 +824,7 @@ function MoneyField({
 }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 9.5, color: colors.muted }}>{label}</span>
+      <span style={{ fontSize: 11, color: colors.muted }}>{label}</span>
       <input
         type="text"
         inputMode="decimal"
@@ -641,11 +839,11 @@ function MoneyField({
 
 function MeasureValues({ measures }: { measures: Record<string, number | null> }) {
   const values = Object.entries(measures);
-  if (values.length === 0) return <span style={{ fontSize: 10, color: colors.faint }}>sem medida</span>;
+  if (values.length === 0) return <span style={{ fontSize: 11, color: colors.faint }}>sem medida</span>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
       {values.map(([key, value]) => (
-        <span key={key} style={{ fontFamily: font.mono, fontSize: 10 }}>
+        <span key={key} style={{ fontFamily: font.mono, fontSize: 11 }}>
           <span style={{ color: colors.faint }}>{humanize(key)} </span>{formatMeasure(key, value)}
         </span>
       ))}
@@ -656,7 +854,7 @@ function MeasureValues({ measures }: { measures: Record<string, number | null> }
 function MiniValue({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ border: `1px solid ${colors.borderSoft}`, borderRadius: 4, padding: '7px 8px' }}>
-      <div style={{ fontSize: 9, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
       <div style={{ fontFamily: font.mono, fontSize: 11.5, fontWeight: 600, marginTop: 2 }}>{value}</div>
     </div>
   );
@@ -664,7 +862,7 @@ function MiniValue({ label, value }: { label: string; value: string }) {
 
 function Badge({ text, color }: { text: string; color: string }) {
   return (
-    <span style={{ fontSize: 8.5, padding: '2px 6px', border: `1px solid ${color}`, color, borderRadius: 3, fontWeight: 700, letterSpacing: '0.04em' }}>
+    <span style={{ fontSize: 11, padding: '2px 6px', border: `1px solid ${color}`, color, borderRadius: 3, fontWeight: 700, letterSpacing: '0.04em' }}>
       {text}
     </span>
   );
@@ -672,7 +870,7 @@ function Badge({ text, color }: { text: string; color: string }) {
 
 function Provenance({ source, asOf }: { source: SourceRef | null | undefined; asOf: string | null | undefined }) {
   return (
-    <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: font.mono, lineHeight: 1.45 }}>
+    <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono, lineHeight: 1.45 }}>
       fonte: {sourceText(source)} · as_of {asOf ?? '—'}
     </div>
   );
@@ -703,7 +901,7 @@ function humanize(value: string): string {
 }
 
 const eyebrow: CSSProperties = {
-  fontSize: 10.5,
+  fontSize: 11,
   color: colors.faint,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
@@ -724,7 +922,7 @@ const formulaBox: CSSProperties = {
   borderRadius: 4,
   color: colors.muted,
   fontFamily: font.mono,
-  fontSize: 9.5,
+  fontSize: 11,
   lineHeight: 1.5,
 };
 
@@ -757,7 +955,7 @@ const segmentButton = (active: boolean): CSSProperties => ({
   color: active ? colors.primary : colors.muted,
   borderRadius: 3,
   padding: '5px 8px',
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: active ? 600 : 400,
   cursor: 'pointer',
 });
@@ -767,7 +965,7 @@ const crumbButton = (active: boolean): CSSProperties => ({
   background: 'transparent',
   padding: 0,
   color: active ? colors.primary : colors.muted,
-  fontSize: 10.5,
+  fontSize: 11,
   fontWeight: active ? 600 : 400,
   cursor: 'pointer',
 });

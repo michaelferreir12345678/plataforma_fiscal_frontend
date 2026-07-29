@@ -99,6 +99,17 @@ export const navSections: NavSection[] = [
         ),
       },
       {
+        to: '/pessoal',
+        label: 'Pessoal',
+        icon: (
+          <Icon>
+            <circle cx="8" cy="5" r="2.5" />
+            <path d="M3 13.5a5 5 0 0110 0" />
+          </Icon>
+        ),
+        badge: { text: 'NOVO', tone: 'new' },
+      },
+      {
         to: '/divida',
         label: 'Dívida e Crédito',
         icon: (

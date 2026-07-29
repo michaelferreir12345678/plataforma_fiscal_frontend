@@ -1,0 +1,78 @@
+/**
+ * Selo de qualidade do dado exibido (Sprint 26).
+ *
+ * Pergunta gerencial que responde: **"posso levar este número para a reunião?"**
+ *
+ * A regra do produto é mostrar o dado mesmo quando há problema — esconder seria pior,
+ * porque o gestor precisa saber o que existe. Mas apresentá-lo como se estivesse
+ * conferido, quando uma verificação está em falha, é apresentar meia verdade. O selo é o
+ * meio-termo honesto: o número aparece, com a ressalva ao lado e o caminho para ver a
+ * conta que não fechou.
+ *
+ * Silencioso quando está tudo certo: um selo verde em toda tela vira ruído e ensina o
+ * usuário a ignorar selos — inclusive o vermelho.
+ */
+import { Link } from 'react-router-dom';
+import { colors, font } from '../theme';
+import { useApp, useResource } from '../context/AppContext';
+import { fetchCockpit, type ChecagemAberta } from '../services/backend';
+
+export function SeloQualidade({ checks }: { checks: ChecagemAberta[] | undefined | null }) {
+  const abertos = checks ?? [];
+  const falhas = abertos.filter((c) => c.status === 'falha');
+  // Aviso sozinho (ex.: fonte não ingerida) não sela o número: não há divergência
+  // apurada, e alarmar por ausência treinaria o gestor a ignorar o selo.
+  if (falhas.length === 0) return null;
+
+  return (
+    <div
+      data-testid="selo-qualidade"
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: '8px 11px',
+        borderRadius: 5,
+        background: colors.redBg,
+        border: `1px solid ${colors.redSoft}`,
+      }}
+    >
+      <span style={{ color: colors.red, fontWeight: 700, lineHeight: 1.3 }}>!</span>
+      <div style={{ fontSize: 11, color: colors.ink, lineHeight: 1.5 }}>
+        <strong style={{ color: colors.red }}>
+          {falhas.length === 1
+            ? 'Uma verificação de qualidade em falha'
+            : `${falhas.length} verificações de qualidade em falha`}{' '}
+          sobre estes números.
+        </strong>{' '}
+        {falhas.slice(0, 2).map((c) => (
+          <span key={c.check_codigo} style={{ fontFamily: font.mono, fontSize: 11 }}>
+            {c.rotulo}
+            {c.diferenca != null ? ` (Δ ${Number(c.diferenca).toLocaleString('pt-BR', { maximumFractionDigits: 2 })})` : ''}
+            {'; '}
+          </span>
+        ))}
+        <Link to="/central-dados?painel=qualidade" style={{ color: colors.primary, fontWeight: 600 }}>
+          ver a conta que não fechou
+        </Link>
+        .
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Versão auto-suficiente para as páginas de detalhe: busca a camada de qualidade do
+ * ente/período do contexto e sela — uma linha por página, sem cada tela reimplementar
+ * a consulta. Silencioso enquanto não há falha (inclusive enquanto carrega).
+ */
+export function SeloQualidadePagina() {
+  const { ente, periodo } = useApp();
+  const res = useResource(
+    () => fetchCockpit(ente.cod_ibge, periodo),
+    [ente.cod_ibge, periodo],
+  );
+  if (!res.data) return null;
+  return <SeloQualidade checks={res.data.qualidade.checks_abertos} />;
+}

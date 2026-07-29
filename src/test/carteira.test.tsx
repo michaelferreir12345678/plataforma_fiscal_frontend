@@ -32,7 +32,7 @@ function consolidadoFake(): backend.ConsolidadoUfResponse {
     uf_nome: 'Ceará',
     periodo: '2024-B6',
     escopo: 'municipios_consolidado',
-    ente_estadual: { cod_ibge: '23', nome: 'Ceará' },
+    ente_estadual: { cod_ibge: '23', nome: 'Ceará', acessivel: true, motivo_indisponivel: null },
     n_municipios: 184,
     n_municipios_com_dado: 170,
     cobertura_pct: '92.4',
@@ -169,8 +169,24 @@ describe('abas', () => {
 
   it('abre direto na aba vinda do seletor de visão (?aba=estadual)', async () => {
     renderCarteira(['/carteira?aba=estadual']);
-    expect(await screen.findByText(/ente estadual/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('tab', { name: 'Ente estadual' }),
+    ).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByText(/Abrir cockpit de Ceará/)).toBeInTheDocument();
+  });
+
+  it('não oferece o cockpit do ente estadual quando ele está fora do escopo', async () => {
+    // Ver o consolidado da UF não implica poder abrir o Governo do Estado. Antes, o botão
+    // era oferecido a todos e o 403 chegava à tela como "ente sem período com dado".
+    const motivo = 'O ente estadual não está na carteira/escopo deste usuário.';
+    vi.mocked(backend.fetchConsolidadoUf).mockResolvedValue({
+      ...consolidadoFake(),
+      ente_estadual: { cod_ibge: '23', nome: 'Ceará', acessivel: false, motivo_indisponivel: motivo },
+    } as never);
+
+    renderCarteira(['/carteira?aba=estadual']);
+    expect(await screen.findByText(motivo)).toBeInTheDocument();
+    expect(screen.queryByText(/Abrir cockpit de Ceará/)).not.toBeInTheDocument();
   });
 });
 

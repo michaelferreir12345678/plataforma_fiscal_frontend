@@ -8,6 +8,7 @@ interface IconProps {
   viewBox?: string;
   children: ReactNode;
   style?: CSSProperties;
+  ariaLabel?: string;
 }
 
 /** Wrapper SVG enxuto — passe os <path>/<circle> como children. */
@@ -19,6 +20,7 @@ export function Icon({
   viewBox = '0 0 16 16',
   children,
   style,
+  ariaLabel,
 }: IconProps) {
   return (
     <svg
@@ -31,6 +33,10 @@ export function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       style={style}
+      role={ariaLabel ? 'img' : undefined}
+      aria-label={ariaLabel}
+      aria-hidden={ariaLabel ? undefined : true}
+      focusable="false"
     >
       {children}
     </svg>

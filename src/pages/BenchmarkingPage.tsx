@@ -1,12 +1,25 @@
+/**
+ * Benchmarking & Comparativos (Módulo 12).
+ *
+ * A Sprint 25D respondeu à auditoria (§2.12): o mart tinha só dois indicadores — ambos
+ * de conformidade — e a tela comparava um único período. Agora há **sete** indicadores
+ * (incluindo os gerenciais: RCL por habitante, investimento e resultado primário sobre a
+ * RCL) e a **evolução na coorte** ao longo dos períodos, exportável.
+ */
 import { useState, type CSSProperties } from 'react';
 import { colors, font, type RiskLevel } from '../theme';
 import { Card } from '../components/Card';
+import { PageHeader } from '../components/PageHeader';
 import { SectionLabel } from '../components/SectionLabel';
 import { StatusBadge } from '../components/StatusBadge';
-import { Async } from '../components/AsyncState';
+import { Async, Skeleton } from '../components/AsyncState';
+import { SerieChart } from '../components/SerieChart';
+import { ExportButton } from '../components/ExportButton';
+import { VirtualizedTable, type VirtualColumn } from '../components/VirtualizedTable';
 import { useApp, useResource } from '../context/AppContext';
 import {
   fetchBenchmark,
+  fetchBenchmarkEvolucao,
   fetchBenchmarkRanking,
   type BenchmarkOrdenacao,
   type BenchmarkRankingResponse,
@@ -21,8 +34,6 @@ import { fmt, pct } from '../utils/format';
 
 const DEFAULT_COHORT = '';
 const DEFAULT_INDICATOR = '';
-const RANKING_COLUMNS = '70px minmax(220px, 2fr) minmax(140px, 1fr) 110px minmax(170px, 1.2fr) 120px';
-
 const CRITERIO_LABEL: Record<string, string> = {
   porte: 'Porte populacional',
   regiao: 'Região',
@@ -119,21 +130,11 @@ export function BenchmarkingPage() {
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
       data-screen-label="Benchmarking"
     >
-      <Card pad={0} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 18px' }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>Benchmarking &amp; Comparativos</div>
-          <div style={{ fontSize: 11, color: colors.muted }}>
-            coortes explícitas · percentil materializado · dado fiscal real
-          </div>
-        </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11.5, fontWeight: 600 }}>{ente.nome}</div>
-          <div style={{ fontSize: 9.5, color: colors.faint, fontFamily: font.mono }}>
-            IBGE {ente.cod_ibge} · período {periodo}
-          </div>
-        </div>
-      </Card>
+      <PageHeader
+        title="Benchmarking & Comparativos"
+        context={`${ente.nome} · IBGE ${ente.cod_ibge} · período ${periodo || '—'} · coortes explícitas e percentis`}
+        source="Indicadores e rankings materializados na camada gold"
+      />
 
       <Async res={benchmark}>
         {(data) => (
@@ -150,6 +151,15 @@ export function BenchmarkingPage() {
               <Distribution data={data} />
               <Comparison data={data} />
             </div>
+
+            <EvolucaoCoorte
+              cod={ente.cod_ibge}
+              enteNome={ente.nome}
+              indicador={data.indicador}
+              coorte={data.coorte.codigo}
+              rotulo={data.indicador_rotulo}
+              unidade={data.unidade}
+            />
 
             <Async res={ranking}>
               {(rankingData) => (
@@ -179,6 +189,126 @@ export function BenchmarkingPage() {
         )}
       </Async>
     </div>
+  );
+}
+
+/**
+ * Multi-período (Sprint 25D). Pergunta gerencial: **"estou melhorando ou piorando em
+ * relação a quem se parece comigo?"** — a foto de um período não responde. A coorte é a
+ * mesma em todos os pontos (o backend a fixa); mudar a régua entre períodos faria a
+ * posição variar sem que o ente tivesse mudado.
+ */
+function EvolucaoCoorte({
+  cod,
+  enteNome,
+  indicador,
+  coorte,
+  rotulo,
+  unidade,
+}: {
+  cod: string;
+  enteNome: string;
+  indicador: string;
+  coorte: string;
+  rotulo: string;
+  unidade: string;
+}) {
+  const res = useResource(
+    () => fetchBenchmarkEvolucao({ ente: cod, indicador, coorte, periodos: 6 }),
+    [cod, indicador, coorte],
+  );
+  const ehPercentual = unidade.includes('percentual');
+  return (
+    <Card>
+      <SectionLabel note="mesma coorte em todos os pontos — senão a posição mudaria sozinha">
+        Evolução na coorte · {rotulo}
+      </SectionLabel>
+      <Async
+        res={res}
+        skeleton={<Skeleton linhas={5} />}
+        vazio={{
+          quando: (e) => e.pontos.length < 2,
+          render: (
+            <div data-testid="evolucao-insuficiente" style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
+              Um único período comparável — sem série não há trajetória. Materialize mais
+              períodos deste indicador para acompanhar o movimento na coorte.
+            </div>
+          ),
+        }}
+      >
+        {(e) => (
+          <>
+            <SerieChart
+              titulo={`${rotulo} — ente × mediana da coorte`}
+              medida={ehPercentual ? '% do denominador' : 'valor'}
+              formato={ehPercentual ? 'pct' : 'brl'}
+              pontos={e.pontos.map((p) => ({
+                periodo: p.periodo,
+                nominal: numberValue(p.valor_ente),
+              }))}
+              nota={`coorte ${e.coorte.rotulo} · mediana no período final ${formatBenchmarkValue(
+                e.pontos[e.pontos.length - 1].mediana,
+                e.unidade,
+              )}`}
+            />
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginTop: 10 }}>
+              <caption className="sr-only">Evolução comparativa do ente e da mediana do grupo</caption>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
+                  <th scope="col" style={thEvo}>Período</th>
+                  <th scope="col" style={{ ...thEvo, textAlign: 'right' }}>Este ente</th>
+                  <th scope="col" style={{ ...thEvo, textAlign: 'right' }}>Mediana</th>
+                  <th scope="col" style={{ ...thEvo, textAlign: 'right' }}>Posição</th>
+                  <th scope="col" style={{ ...thEvo, textAlign: 'right' }}>Cobertura</th>
+                </tr>
+              </thead>
+              <tbody>
+                {e.pontos.map((p) => (
+                  <tr key={p.periodo} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
+                    <td style={{ padding: '5px 4px', fontFamily: font.mono }}>{p.periodo}</td>
+                    <td style={tdEvo}>{formatBenchmarkValue(p.valor_ente, e.unidade)}</td>
+                    <td style={{ ...tdEvo, color: colors.muted }}>{formatBenchmarkValue(p.mediana, e.unidade)}</td>
+                    <td style={tdEvo}>
+                      {p.posicao} de {p.quantidade}
+                    </td>
+                    <td style={{ ...tdEvo, color: colors.muted }}>
+                      {p.cobertura.entes_com_valor}/{p.cobertura.entes_elegiveis}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+              <span style={{ fontSize: 11, color: colors.muted, lineHeight: 1.45, flex: 1 }}>
+                {e.observacao ??
+                  'Todos os períodos da janela tiveram coorte comparável. Período sem par não é interpolado.'}
+              </span>
+              <ExportButton
+                nome={`Evolucao ${indicador}`}
+                linhas={e.pontos}
+                colunas={[
+                  { cabecalho: 'periodo', valor: (p) => p.periodo },
+                  { cabecalho: 'valor_ente', valor: (p) => numberValue(p.valor_ente) },
+                  { cabecalho: 'valor_ente_per_capita', valor: (p) => numberValue(p.valor_ente_per_capita) },
+                  { cabecalho: 'mediana_coorte', valor: (p) => numberValue(p.mediana) },
+                  { cabecalho: 'p10', valor: (p) => numberValue(p.p10) },
+                  { cabecalho: 'p90', valor: (p) => numberValue(p.p90) },
+                  { cabecalho: 'posicao', valor: (p) => p.posicao },
+                  { cabecalho: 'entes_na_coorte', valor: (p) => p.quantidade },
+                  { cabecalho: 'entes_elegiveis', valor: (p) => p.cobertura.entes_elegiveis },
+                ]}
+                contexto={{
+                  ente: enteNome,
+                  periodo: `${e.pontos[0].periodo}-${e.pontos[e.pontos.length - 1].periodo}`,
+                  fonte: `${e.unidade} · coorte ${e.coorte.rotulo}`,
+                }}
+                modeloRelatorio="benchmark"
+              />
+            </div>
+          </>
+        )}
+      </Async>
+    </Card>
   );
 }
 
@@ -214,7 +344,9 @@ function Selectors({
           return (
             <button key={item.id} type="button" onClick={() => onCohort(item.codigo)} style={selectorStyle(active)} title={sourceText(item.source_ref)}>
               <span>{item.rotulo}</span>
-              <span style={{ opacity: 0.72, fontFamily: font.mono, fontSize: 9 }}>
+              {/* Hierarquia por família e peso — `opacity` rebaixaria o contraste do
+                  texto abaixo de AA sobre qualquer fundo do botão. */}
+              <span style={{ fontFamily: font.mono, fontSize: 11, fontWeight: 400 }}>
                 {CRITERIO_LABEL[item.criterio] ?? item.criterio} · {item.faixa}
               </span>
             </button>
@@ -230,7 +362,7 @@ function Selectors({
           return (
             <button key={item.codigo} type="button" onClick={() => onIndicator(item.codigo)} style={indicatorStyle(active)}>
               {item.rotulo}
-              <span style={{ opacity: 0.7, marginLeft: 6, fontFamily: font.mono, fontSize: 9 }}>{item.unidade}</span>
+              <span style={{ marginLeft: 6, fontFamily: font.mono, fontSize: 11, fontWeight: 400 }}>{item.unidade}</span>
             </button>
           );
         })}
@@ -262,7 +394,7 @@ function Distribution({ data }: { data: BenchmarkResponse }) {
     <Card>
       <SectionLabel note={`${data.quantidade} de ${data.cobertura.entes_elegiveis} entes elegíveis · ${data.coorte.rotulo}`}>Posição na distribuição da coorte</SectionLabel>
       {data.cobertura.amostra_parcial && (
-        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 4, background: colors.yellowSoft, color: colors.muted, fontSize: 10.5 }}>
+        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 4, background: colors.yellowSoft, color: colors.muted, fontSize: 11 }}>
           Cobertura parcial: {fmt(numberValue(data.cobertura.percentual) ?? 0, 1)}% dos entes elegíveis têm valor real comparável neste indicador/período. O percentil usa somente esses {data.cobertura.entes_com_valor} entes.
         </div>
       )}
@@ -291,7 +423,7 @@ function Distribution({ data }: { data: BenchmarkResponse }) {
           <div key={point} style={{ position: 'absolute', left: `${point}%`, top: 20, height: 18, width: 1, background: colors.surface, opacity: 0.85 }} />
         ))}
         <div style={{ position: 'absolute', left: '50%', top: 8, height: 40, width: 1, background: colors.muted }} />
-        <div style={{ position: 'absolute', left: '50%', top: -6, transform: 'translateX(-50%)', fontSize: 9, color: colors.muted, fontWeight: 600 }}>
+        <div style={{ position: 'absolute', left: '50%', top: -6, transform: 'translateX(-50%)', fontSize: 11, color: colors.muted, fontWeight: 600 }}>
           mediana
         </div>
         <div style={{ position: 'absolute', left: `${percentile}%`, top: 18, transform: 'translateX(-50%)' }}>
@@ -307,7 +439,7 @@ function Distribution({ data }: { data: BenchmarkResponse }) {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            fontSize: 9.5,
+            fontSize: 11,
             color: colors.primaryDeep,
             fontWeight: 700,
           }}
@@ -319,8 +451,8 @@ function Distribution({ data }: { data: BenchmarkResponse }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5, marginTop: 4 }}>
         {quantiles.map(([label, value]) => (
           <div key={label} style={{ padding: '6px 5px', background: colors.bg, border: `1px solid ${colors.borderSoft}`, borderRadius: 4, textAlign: 'center' }}>
-            <div style={{ fontSize: 8.5, color: colors.faint, textTransform: 'uppercase' }}>{label}</div>
-            <div style={{ fontSize: 9.5, fontFamily: font.mono, marginTop: 2 }}>{formatBenchmarkValue(value, data.unidade)}</div>
+            <div style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase' }}>{label}</div>
+            <div style={{ fontSize: 11, fontFamily: font.mono, marginTop: 2 }}>{formatBenchmarkValue(value, data.unidade)}</div>
           </div>
         ))}
       </div>
@@ -373,7 +505,7 @@ function Comparison({ data }: { data: BenchmarkResponse }) {
           );
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: font.mono, fontSize: 9, color: colors.faint }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: font.mono, fontSize: 11, color: colors.faint }}>
         <span>{formatBenchmarkValue(data.distribuicao.minimo, data.unidade)}</span>
         <span>{formatBenchmarkValue(data.distribuicao.maximo, data.unidade)}</span>
       </div>
@@ -403,13 +535,83 @@ function Ranking({
 }) {
   const anchor = data.ente_ancora;
   const sources = rankingSources(data);
+  const columns: VirtualColumn<BenchmarkValue>[] = [
+    {
+      key: 'posicao',
+      header: <SortHeader label="#" field="posicao" selected={ordenarPor} direction={ordem} onSort={onSort} />,
+      width: 70,
+      render: (item) => (
+        <span style={{ fontFamily: font.mono, color: item.destaque ? colors.primary : colors.muted, fontWeight: item.destaque ? 700 : 400 }}>
+          {item.posicao}
+        </span>
+      ),
+    },
+    {
+      key: 'ente',
+      header: <SortHeader label="Ente" field="nome" selected={ordenarPor} direction={ordem} onSort={onSort} />,
+      width: '30%',
+      render: (item) => {
+        const highlighted = item.destaque || item.cod_ibge === selectedIbge;
+        return (
+          <button
+            type="button"
+            onClick={() => onEnte(item)}
+            aria-current={highlighted ? 'true' : undefined}
+            style={{ width: '100%', minWidth: 0, textAlign: 'left', fontWeight: highlighted ? 700 : 500 }}
+          >
+            <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {entityName(item)}{item.uf ? ` · ${item.uf}` : ''}
+              {highlighted && <span style={{ marginLeft: 8, color: colors.primary }}>● ESTE ENTE</span>}
+            </span>
+            <span style={{ display: 'block', fontFamily: font.mono, color: colors.faint }}>IBGE {item.cod_ibge}</span>
+          </button>
+        );
+      },
+    },
+    {
+      key: 'valor',
+      header: <SortHeader label={benchmark.indicador_rotulo} field="valor" selected={ordenarPor} direction={ordem} onSort={onSort} align="right" />,
+      width: '18%',
+      align: 'right',
+      render: (item) => (
+        <span style={{ fontFamily: font.mono, fontWeight: item.destaque ? 700 : 500 }}>
+          {formatBenchmarkValue(item.valor, benchmark.unidade)}
+        </span>
+      ),
+    },
+    {
+      key: 'percentil',
+      header: <SortHeader label="Percentil" field="percentil" selected={ordenarPor} direction={ordem} onSort={onSort} align="right" />,
+      width: 110,
+      align: 'right',
+      render: (item) => <span style={{ fontFamily: font.mono }}>P{formatPercentile(item.percentil)}</span>,
+    },
+    {
+      key: 'fonte',
+      header: 'Fonte / as_of',
+      width: '25%',
+      render: (item) => (
+        <span style={{ display: 'block', minWidth: 0, fontFamily: font.mono, color: colors.faint, lineHeight: 1.4 }} title={sourceText(item.source_ref)}>
+          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sourceText(item.source_ref)}</span>
+          <span style={{ display: 'block' }}>as_of {item.as_of ?? data.as_of ?? '—'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'faixa',
+      header: 'Faixa',
+      width: 120,
+      align: 'center',
+      render: (item) => <FaixaBadge faixa={item.faixa} />,
+    },
+  ];
 
   return (
     <Card pad={0}>
       <div style={{ padding: '14px 16px 10px', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>Ranking da coorte · ente ancorado</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
             {data.coorte.rotulo} · {data.total} entes com valor · clique numa linha para abrir sua posição e memória
           </div>
         </div>
@@ -419,9 +621,9 @@ function Ranking({
       <div style={{ margin: '0 16px 12px', padding: '10px 12px', border: `1px solid ${colors.primary}`, borderLeftWidth: 4, borderRadius: 5, background: colors.accentSoft }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr repeat(3, minmax(100px, 0.6fr))', gap: 12, alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 9, color: colors.primary, letterSpacing: '0.06em', fontWeight: 700 }}>● ESTE ENTE</div>
+            <div style={{ fontSize: 11, color: colors.primary, letterSpacing: '0.06em', fontWeight: 700 }}>● ESTE ENTE</div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{entityName(anchor)}{anchor.uf ? ` · ${anchor.uf}` : ''}</div>
-            <div style={{ fontSize: 9, color: colors.faint, fontFamily: font.mono }}>IBGE {anchor.cod_ibge}</div>
+            <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>IBGE {anchor.cod_ibge}</div>
           </div>
           <AnchorMetric label="posição" value={`#${anchor.posicao}`} />
           <AnchorMetric label={benchmark.indicador_rotulo} value={formatBenchmarkValue(anchor.valor, benchmark.unidade)} />
@@ -432,76 +634,28 @@ function Ranking({
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: RANKING_COLUMNS, ...tableHeaderStyle }}>
-        <SortHeader label="#" field="posicao" selected={ordenarPor} direction={ordem} onSort={onSort} />
-        <SortHeader label="Ente" field="nome" selected={ordenarPor} direction={ordem} onSort={onSort} />
-        <SortHeader label={benchmark.indicador_rotulo} field="valor" selected={ordenarPor} direction={ordem} onSort={onSort} align="right" />
-        <SortHeader label="Percentil" field="percentil" selected={ordenarPor} direction={ordem} onSort={onSort} align="right" />
-        <div>Fonte / as_of</div>
-        <div style={{ textAlign: 'center' }}>Faixa</div>
-      </div>
-
       {data.itens.length === 0 ? (
         <div style={{ padding: 20, textAlign: 'center', color: colors.muted, fontSize: 11.5 }}>
           A coorte não possui linhas para o indicador e período selecionados.
         </div>
       ) : (
-        data.itens.map((item) => {
-          const highlighted = item.destaque || item.cod_ibge === selectedIbge;
-          return (
-            <button
-              key={item.cod_ibge}
-              type="button"
-              onClick={() => onEnte(item)}
-              aria-current={highlighted ? 'true' : undefined}
-              title={`Selecionar ${entityName(item)} e abrir sua posição na coorte`}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: RANKING_COLUMNS,
-                width: '100%',
-                padding: '9px 16px',
-                border: 0,
-                borderBottom: `1px solid ${colors.rowBorder}`,
-                background: highlighted ? colors.accentSoft : 'transparent',
-                color: colors.ink,
-                fontSize: 12,
-                textAlign: 'left',
-                alignItems: 'center',
-              }}
-            >
-              <div style={{ fontFamily: font.mono, color: highlighted ? colors.primary : colors.muted, fontWeight: highlighted ? 700 : 400 }}>
-                {item.posicao}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: highlighted ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {entityName(item)}{item.uf ? ` · ${item.uf}` : ''}
-                  {highlighted && <span style={{ marginLeft: 8, fontSize: 8.5, color: colors.primary }}>● ESTE ENTE</span>}
-                </div>
-                <div style={{ fontFamily: font.mono, fontSize: 8.5, color: colors.faint }}>IBGE {item.cod_ibge}</div>
-              </div>
-              <div style={{ textAlign: 'right', fontFamily: font.mono, fontWeight: highlighted ? 700 : 500 }}>
-                {formatBenchmarkValue(item.valor, benchmark.unidade)}
-              </div>
-              <div style={{ textAlign: 'right', fontFamily: font.mono, color: highlighted ? colors.primary : colors.muted }}>
-                P{formatPercentile(item.percentil)}
-              </div>
-              <div style={{ minWidth: 0, fontFamily: font.mono, fontSize: 8.5, color: colors.faint, lineHeight: 1.4 }} title={sourceText(item.source_ref)}>
-                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sourceText(item.source_ref)}</div>
-                <div>as_of {item.as_of ?? data.as_of ?? '—'}</div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <FaixaBadge faixa={item.faixa} />
-              </div>
-            </button>
-          );
-        })
+        <VirtualizedTable
+          rows={data.itens}
+          columns={columns}
+          rowKey={(item) => item.cod_ibge}
+          caption={`Ranking da coorte ${data.coorte.rotulo}, ${data.total} entes`}
+          height={Math.min(520, Math.max(220, data.itens.length * 52 + 44))}
+          rowHeight={52}
+          onRowActivate={onEnte}
+          getRowLabel={(item) => `${item.posicao}º, ${entityName(item)}, percentil ${formatPercentile(item.percentil)}`}
+        />
       )}
       {data.total_paginas > 1 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, padding: '10px 16px' }}>
           <button type="button" disabled={data.pagina <= 1} onClick={() => onPage(data.pagina - 1)} style={pageButtonStyle}>
             Anterior
           </button>
-          <span style={{ fontSize: 10, color: colors.muted, fontFamily: font.mono }}>
+          <span style={{ fontSize: 11, color: colors.muted, fontFamily: font.mono }}>
             página {data.pagina} de {data.total_paginas}
           </span>
           <button type="button" disabled={data.pagina >= data.total_paginas} onClick={() => onPage(data.pagina + 1)} style={pageButtonStyle}>
@@ -556,7 +710,7 @@ function MemoryPanel({ benchmark, ranking }: { benchmark: BenchmarkResponse; ran
         <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: colors.ink }}>
           Memória de cálculo rastreável
         </summary>
-        <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: colors.muted, marginTop: 4 }}>
           Critérios, fórmula de percentil, tratamento de empates e ordenação executados no backend.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
@@ -572,15 +726,15 @@ function MemoryPanel({ benchmark, ranking }: { benchmark: BenchmarkResponse; ran
 function MemoryBlock({ title, value }: { title: string; value: Record<string, unknown> }) {
   return (
     <div style={{ border: `1px solid ${colors.borderSoft}`, borderRadius: 5, overflow: 'hidden' }}>
-      <div style={{ padding: '7px 10px', background: colors.bg, fontSize: 9.5, fontWeight: 700, color: colors.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <div style={{ padding: '7px 10px', background: colors.bg, fontSize: 11, fontWeight: 700, color: colors.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         {title}
       </div>
       <div style={{ padding: '7px 10px' }}>
         {Object.keys(value).length === 0 ? (
-          <span style={{ fontSize: 10.5, color: colors.faint }}>Memória não informada.</span>
+          <span style={{ fontSize: 11, color: colors.faint }}>Memória não informada.</span>
         ) : (
           Object.entries(value).map(([key, item]) => (
-            <div key={key} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, .7fr) minmax(0, 1.3fr)', gap: 10, padding: '5px 0', borderBottom: `1px dashed ${colors.borderSoft}`, fontSize: 10.5 }}>
+            <div key={key} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, .7fr) minmax(0, 1.3fr)', gap: 10, padding: '5px 0', borderBottom: `1px dashed ${colors.borderSoft}`, fontSize: 11 }}>
               <span style={{ color: colors.muted }}>{humanize(key)}</span>
               <MemoryValue value={item} />
             </div>
@@ -615,7 +769,7 @@ function MemoryValue({ value }: { value: unknown }) {
 function AnchorMetric({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ textAlign: 'right' }}>
-      <div style={{ fontSize: 8.5, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
       <div style={{ fontFamily: font.mono, fontSize: 14, fontWeight: 700, color: colors.primary, marginTop: 2 }}>{value}</div>
     </div>
   );
@@ -663,7 +817,7 @@ function AuditLine({ sources, asOf, compact = false }: { sources: SourceRef[]; a
         paddingTop: compact ? 0 : 8,
         borderTop: compact ? 0 : `1px solid ${colors.borderSoft}`,
         fontFamily: font.mono,
-        fontSize: 8.8,
+        fontSize: 11,
         color: colors.faint,
         lineHeight: 1.45,
         textAlign: compact ? 'right' : 'left',
@@ -713,15 +867,27 @@ function entityName(item: BenchmarkValue): string {
   return item.nome?.trim() || `Ente ${item.cod_ibge}`;
 }
 
+/**
+ * A unidade do mart deixou de ser só "% da RCL" (Sprints 25C/25D): há percentuais sobre
+ * impostos+transferências, sobre o FUNDEB, e valores em R$ por habitante. O sufixo aqui
+ * é o que impede a leitura errada — "27,14%" sozinho não diz de quê.
+ */
+const SUFIXO_UNIDADE: Record<string, string> = {
+  percentual_rcl: ' da RCL',
+  percentual_impostos_transferencias: ' dos impostos e transf.',
+  percentual_fundeb: ' do FUNDEB',
+};
+
 function formatBenchmarkValue(value: FiscalDecimal, unidade: string): string {
   const parsed = numberValue(value);
   if (parsed === null) return '—';
   const normalized = unidade.toLocaleLowerCase('pt-BR');
+  if (normalized === 'brl_per_capita') return `R$ ${fmt(parsed, 2)}/hab`;
   if (normalized.includes('%') || normalized.includes('percent')) {
-    return `${pct(parsed, 2)}${normalized.includes('rcl') ? ' RCL' : ''}`;
+    return `${pct(parsed, 2)}${SUFIXO_UNIDADE[normalized] ?? ''}`;
   }
   if (normalized === 'brl' || normalized.includes('r$') || normalized.includes('real')) {
-    return `R$ ${fmt(parsed, 2)}${normalized.includes('per capita') ? ' per capita' : ''}`;
+    return `R$ ${fmt(parsed / 1e6, 1)} M`;
   }
   return unidade ? `${fmt(parsed, 2)} ${unidade}` : fmt(parsed, 2);
 }
@@ -802,25 +968,22 @@ function indicatorStyle(active: boolean): CSSProperties {
   };
 }
 
-const tableHeaderStyle: CSSProperties = {
-  padding: '7px 16px',
-  background: colors.bg,
-  borderTop: `1px solid ${colors.border}`,
-  borderBottom: `1px solid ${colors.border}`,
-  fontSize: 9,
-  fontWeight: 600,
-  color: colors.muted,
-  letterSpacing: '0.06em',
-  textTransform: 'uppercase',
-  alignItems: 'center',
-};
-
 const pageButtonStyle: CSSProperties = {
   padding: '6px 10px',
   borderRadius: 4,
   border: `1px solid ${colors.border}`,
   background: colors.surface,
   color: colors.primary,
-  fontSize: 10.5,
+  fontSize: 11,
   fontWeight: 600,
 };
+
+const thEvo = {
+  padding: '6px 4px',
+  fontSize: 11,
+  color: colors.faint,
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.06em',
+  textAlign: 'left' as const,
+};
+const tdEvo = { padding: '5px 4px', textAlign: 'right' as const, fontFamily: font.mono };

@@ -7,11 +7,16 @@
  * progresso anda por polling. Ações custosas (acima do limiar) exigem **confirmação explícita**.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { colors } from '../theme';
+import { useSearchParams } from 'react-router-dom';
+import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Async } from '../components/AsyncState';
+import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
+import { PageHeader } from '../components/PageHeader';
 import { useResource } from '../context/AppContext';
 import {
+  fetchLineage,
+  fetchQualidade,
   cancelarIngestJob,
   criarIngestJob,
   fetchCobertura,
@@ -19,6 +24,7 @@ import {
   fetchIngestJob,
   fetchIngestJobs,
   fetchRetificacoes,
+  fetchSaudeFila,
   retryIngestJob,
 } from '../services/backend';
 import type {
@@ -27,9 +33,12 @@ import type {
   IngestJob,
   IngestJobCreateInput,
   IngestJobCreateResult,
+  LineageAresta,
+  SaudeFila,
+  StatusCheck,
 } from '../services/backend';
 
-type Aba = 'catalogo' | 'cobertura' | 'jobs' | 'retificacoes';
+type Aba = 'catalogo' | 'cobertura' | 'jobs' | 'retificacoes' | 'qualidade' | 'lineage';
 
 const STATUS_COR: Record<string, string> = {
   na_fila: colors.neutral,
@@ -50,35 +59,48 @@ const hora = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
 export function CentralDadosPage() {
-  const [aba, setAba] = useState<Aba>('jobs');
+  const [params] = useSearchParams();
+  // O alerta de qualidade linka para cá com ?painel=qualidade — cair na aba certa é
+  // parte do "nunca silencioso": o gestor clica no alerta e vê a verificação.
+  const abaInicial = (params.get('painel') as Aba | null) ?? 'jobs';
+  const [aba, setAba] = useState<Aba>(abaInicial);
   const abas: { id: Aba; label: string }[] = [
     { id: 'jobs', label: 'Jobs de ingestão' },
+    { id: 'qualidade', label: 'Qualidade' },
+    { id: 'lineage', label: 'Lineage' },
     { id: 'catalogo', label: 'Catálogo de fontes' },
     { id: 'cobertura', label: 'Cobertura' },
     { id: 'retificacoes', label: 'Retificações' },
   ];
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Central de Dados">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>Central de Dados</div>
-        <span style={{ fontSize: 11, color: colors.faint }}>operação da ingestão · sob RBAC e auditoria</span>
-        <div style={{ flex: 1 }} />
-        <div role="tablist" style={{ display: 'flex', gap: 2, background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 6, padding: 2 }}>
-          {abas.map((a) => (
-            <button key={a.id} role="tab" aria-selected={aba === a.id} onClick={() => setAba(a.id)}
-              style={{ fontSize: 12, fontWeight: 500, padding: '5px 12px', borderRadius: 4,
-                background: aba === a.id ? colors.surface : 'transparent',
-                color: aba === a.id ? colors.primary : colors.muted,
-                border: aba === a.id ? `1px solid ${colors.border}` : '1px solid transparent' }}>
-              {a.label}
-            </button>
-          ))}
-        </div>
+      <PageHeader
+        title="Central de Dados"
+        context="Operação da ingestão, qualidade, lineage e cobertura sob RBAC"
+        source="Metadados operacionais, bronze/silver/gold e trilha de auditoria"
+        actions={(
+          <AccessibleTabs
+            tabs={abas}
+            value={aba}
+            onChange={setAba}
+            label="Painéis da Central de Dados"
+            idPrefix="central-dados"
+          />
+        )}
+      />
+      <div
+        id={tabPanelId('central-dados', aba)}
+        role="tabpanel"
+        aria-labelledby={tabId('central-dados', aba)}
+        tabIndex={0}
+      >
+        {aba === 'jobs' && <JobsTab />}
+        {aba === 'qualidade' && <QualidadeTab />}
+        {aba === 'lineage' && <LineageTab />}
+        {aba === 'catalogo' && <CatalogoTab />}
+        {aba === 'cobertura' && <CoberturaTab />}
+        {aba === 'retificacoes' && <RetificacoesTab />}
       </div>
-      {aba === 'jobs' && <JobsTab />}
-      {aba === 'catalogo' && <CatalogoTab />}
-      {aba === 'cobertura' && <CoberturaTab />}
-      {aba === 'retificacoes' && <RetificacoesTab />}
     </div>
   );
 }
@@ -87,6 +109,7 @@ export function CentralDadosPage() {
 function JobsTab() {
   const fontes = useResource(fetchFontes, []);
   const [jobs, setJobs] = useState<IngestJob[]>([]);
+  const [saude, setSaude] = useState<SaudeFila | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [statusFiltro, setStatusFiltro] = useState('');
@@ -97,12 +120,18 @@ function JobsTab() {
     const requisicao = ++requisicaoAtual.current;
     setCarregando(true);
     try {
-      const itens = await fetchIngestJobs({
-        status: statusFiltro || undefined,
-        fonte: fonteFiltro || undefined,
-      });
+      // A saúde vem junto da lista de propósito: é ela que diz se o "Na fila" ao lado
+      // significa "aguardando a vez" ou "ninguém está consumindo".
+      const [itens, estado] = await Promise.all([
+        fetchIngestJobs({
+          status: statusFiltro || undefined,
+          fonte: fonteFiltro || undefined,
+        }),
+        fetchSaudeFila().catch(() => null),
+      ]);
       if (requisicao !== requisicaoAtual.current) return;
       setJobs(itens);
+      setSaude(estado);
       setErro(null);
     } catch (e) {
       if (requisicao !== requisicaoAtual.current) return;
@@ -152,7 +181,7 @@ function JobsTab() {
       <Card pad={0} style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '12px 16px 8px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>
-            Jobs {emAndamento && <span style={{ fontSize: 10, color: colors.yellowText }}>· polling ativo</span>}
+            Jobs {emAndamento && <span style={{ fontSize: 11, color: colors.yellowText }}>· polling ativo</span>}
           </div>
           <div style={{ flex: 1 }} />
           <select aria-label="Filtrar jobs por status" value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)} style={filtroJob}>
@@ -163,9 +192,10 @@ function JobsTab() {
             <option value="">todas as fontes</option>
             {(fontes.data ?? []).map((f) => <option key={f.fonte} value={f.fonte}>{f.fonte}</option>)}
           </select>
-          <button onClick={() => void carregar()} style={{ fontSize: 11, color: colors.primary }}>atualizar</button>
+          <button type="button" onClick={() => void carregar()} style={{ fontSize: 11, color: colors.primary }}>atualizar</button>
         </div>
         {erro && <div role="alert" style={{ padding: '6px 16px', fontSize: 11.5, color: colors.red }}>{erro}</div>}
+        <FilaParada saude={saude} />
         <div style={{ maxHeight: 560, overflowY: 'auto' }}>
           {carregando && jobs.length === 0 ? (
             <div style={{ padding: 16, fontSize: 12, color: colors.muted }}>Carregando jobs…</div>
@@ -180,20 +210,68 @@ function JobsTab() {
   );
 }
 
+/**
+ * Aviso de fila sem consumidor.
+ *
+ * "Na fila" sem worker é indistinguível de "na fila aguardando a vez" — e foi exatamente
+ * assim que quatro jobs ficaram dez minutos parados sem uma linha de explicação. O aviso
+ * só aparece quando o backend afirma que ninguém está consumindo.
+ */
+function FilaParada({ saude }: { saude: SaudeFila | null }) {
+  if (!saude?.detalhe) return null;
+  const grave = !saude.redis_disponivel || (saude.aguardando > 0 && saude.consumidores_vivos === 0);
+  return (
+    <div
+      role={grave ? 'alert' : 'status'}
+      style={{
+        margin: '0 16px 8px',
+        padding: '10px 12px',
+        borderRadius: 5,
+        display: 'flex',
+        gap: 8,
+        alignItems: 'flex-start',
+        background: grave ? colors.redBg : colors.yellowBg,
+        border: `1px solid ${grave ? colors.redSoft : colors.border}`,
+      }}
+    >
+      <span aria-hidden style={{ fontSize: 12, color: grave ? colors.red : colors.yellowText }}>⚠</span>
+      <div style={{ fontSize: 11.5, color: colors.ink, lineHeight: 1.55 }}>
+        {saude.detalhe}
+        <div style={{ marginTop: 4, color: colors.muted, fontFamily: font.mono, fontSize: 11 }}>
+          {saude.aguardando} na fila · {saude.executando} executando · {saude.consumidores_vivos} de{' '}
+          {saude.consumidores} worker(s) com sinal de vida
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const filtroJob: React.CSSProperties = {
   padding: '5px 7px',
   border: `1px solid ${colors.border}`,
   borderRadius: 4,
   background: colors.bg,
   color: colors.ink,
-  fontSize: 10.5,
+  fontSize: 11,
 };
+
+const TODAS_AS_FONTES = '*';
+
+/** Primeiro exercício com dado publicado no SICONFI que a plataforma acompanha. */
+const ANO_PISO = 2021;
+const ANO_CORRENTE = new Date().getFullYear();
+const ANOS_DISPONIVEIS = Array.from(
+  { length: ANO_CORRENTE - ANO_PISO + 1 },
+  (_, i) => ANO_CORRENTE - i,
+).reverse();
 
 function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () => void }) {
   const [fonte, setFonte] = useState(fontes[0]?.fonte ?? '');
   const [tipo, setTipo] = useState<'backfill' | 'run' | 'replay'>('backfill');
   const [entesTexto, setEntesTexto] = useState('');
-  const [anosTexto, setAnosTexto] = useState('2024');
+  // Ano é escolha, não texto livre: digitar '202' disparava uma carga inteira para um
+  // exercício inexistente.
+  const [anoEscolhido, setAnoEscolhido] = useState(ANO_CORRENTE);
   const [periodosTexto, setPeriodosTexto] = useState('2024-B6');
   const [confirmacao, setConfirmacao] = useState<{
     resposta: IngestJobCreateResult;
@@ -202,9 +280,24 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
   const [msg, setMsg] = useState<{ texto: string; erro: boolean } | null>(null);
   const [enviando, setEnviando] = useState(false);
   const envioEmCurso = useRef(false);
+  const dispararRef = useRef<HTMLButtonElement>(null);
+  const confirmarRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!confirmacao) return undefined;
+    const frame = window.requestAnimationFrame(() => confirmarRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [confirmacao]);
 
   const entes = useMemo(() => entesTexto.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean), [entesTexto]);
-  const anos = useMemo(() => anosTexto.split(/[\s,;]+/).map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n)), [anosTexto]);
+  // 'run' carrega o exercício escolhido; 'backfill' retroage dele até o piso da série.
+  const anos = useMemo(
+    () =>
+      tipo === 'backfill'
+        ? ANOS_DISPONIVEIS.filter((a) => a <= anoEscolhido)
+        : [anoEscolhido],
+    [anoEscolhido, tipo],
+  );
   const periodos = useMemo(() => periodosTexto.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean), [periodosTexto]);
   const fonteSelecionada = useMemo(
     () => fontes.find((item) => item.fonte === fonte),
@@ -227,11 +320,16 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
     const multiplicador = multiplicadorCadencia[fonteSelecionada?.cadencia ?? ''] ?? 1;
     return quantidadeEntes * Math.max(anos.length, 1) * multiplicador;
   }, [anos.length, entes.length, fonte, fonteNacional, fonteSelecionada?.cadencia, periodos.length, tipo]);
+  // No leque, o alcance vem do backend (uma fonte pode ser nacional e outra por ente);
+  // a tela só exige o que é comum a todas: entes e exercício.
+  const leque = fonte === TODAS_AS_FONTES;
   const podeEnviar = Boolean(
     fonte
-    && (fonteNacional || entes.length > 0)
-    && (tipo === 'replay' ? periodos.length > 0 : (fonteNacional || anos.length > 0))
-    && estimativa > 0,
+    && (leque
+      ? entes.length > 0 && anos.length > 0
+      : (fonteNacional || entes.length > 0)
+        && (tipo === 'replay' ? periodos.length > 0 : (fonteNacional || anos.length > 0))
+        && estimativa > 0),
   );
 
   const payloadAtual = (): IngestJobCreateInput => ({
@@ -279,54 +377,104 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
   };
 
   const inputStyle: React.CSSProperties = { width: '100%', padding: '7px 9px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12.5, background: colors.bg };
-  const label: React.CSSProperties = { fontSize: 10, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 3, display: 'block' };
+  const label: React.CSSProperties = { fontSize: 11, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 3, display: 'block' };
   const bloqueado = enviando || Boolean(confirmacao);
+  const fecharConfirmacaoComEscape = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || enviando) return;
+    event.preventDefault();
+    setConfirmacao(null);
+    window.requestAnimationFrame(() => dispararRef.current?.focus());
+  };
 
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontSize: 13, fontWeight: 600 }}>Nova execução</div>
       <div>
-        <label style={label}>Fonte</label>
-        <select value={fonte} onChange={(e) => setFonte(e.target.value)} style={inputStyle} aria-label="Fonte" disabled={bloqueado}>
+        <label htmlFor="nova-execucao-fonte" style={label}>Fonte</label>
+        <select id="nova-execucao-fonte" value={fonte} onChange={(e) => setFonte(e.target.value)} style={inputStyle} disabled={bloqueado}>
+          <option value={TODAS_AS_FONTES}>todas as fontes ativas — atualiza o exercício inteiro</option>
           {fontes.map((f) => <option key={f.fonte} value={f.fonte}>{f.fonte} — {f.relatorio}</option>)}
         </select>
+        {fonte === TODAS_AS_FONTES && (
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 1.5 }}>
+            Dispara <b style={{ color: colors.ink }}>um job por fonte</b>, na ordem de
+            dependência (o RGF depois do RREO, o cronograma depois das operações). Fonte
+            com integração desligada fica de fora, e as de escopo nacional não repetem a
+            chamada por município. Cada job aparece na fila e pode ser reexecutado
+            sozinho — se uma fonte falhar, as outras seguem.
+          </div>
+        )}
       </div>
       <div>
-        <label style={label}>Tipo</label>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={label}>Tipo</div>
+        <div role="group" aria-label="Tipo da execução" style={{ display: 'flex', gap: 4 }}>
           {(['backfill', 'run', 'replay'] as const).map((t) => (
-            <button key={t} onClick={() => setTipo(t)} disabled={bloqueado} style={{ flex: 1, fontSize: 11.5, padding: '5px', borderRadius: 4, border: `1px solid ${tipo === t ? colors.primary : colors.border}`, background: tipo === t ? colors.accentSoft : colors.surface, color: tipo === t ? colors.primary : colors.muted, opacity: bloqueado ? 0.6 : 1 }}>{t}</button>
+            <button key={t} type="button" aria-pressed={tipo === t} onClick={() => setTipo(t)} disabled={bloqueado} style={{ flex: 1, fontSize: 11.5, padding: '5px', borderRadius: 4, border: `1px solid ${tipo === t ? colors.primary : colors.border}`, background: tipo === t ? colors.accentSoft : colors.surface, color: tipo === t ? colors.primary : colors.muted, opacity: bloqueado ? 0.6 : 1 }}>{t}</button>
           ))}
         </div>
       </div>
       <div>
-        <label style={label}>
+        <label htmlFor="nova-execucao-entes" style={label}>
           {fonteNacional ? 'Entes (não se aplica à fonte nacional)' : 'Entes (códigos IBGE, separados por vírgula)'}
         </label>
         <input
+          id="nova-execucao-entes"
           value={fonteNacional ? '' : entesTexto}
           onChange={(e) => setEntesTexto(e.target.value)}
           placeholder={fonteNacional ? 'Escopo nacional (BR)' : '2304400, 2307650'}
           style={inputStyle}
-          aria-label="Entes"
           disabled={bloqueado || fonteNacional}
         />
       </div>
       {tipo === 'replay' ? (
         <div>
-          <label style={label}>Períodos (ex.: 2024-B6)</label>
-          <input value={periodosTexto} onChange={(e) => setPeriodosTexto(e.target.value)} style={inputStyle} aria-label="Períodos" disabled={bloqueado} />
+          <label htmlFor="nova-execucao-periodos" style={label}>Períodos (ex.: 2024-B6)</label>
+          <input id="nova-execucao-periodos" value={periodosTexto} onChange={(e) => setPeriodosTexto(e.target.value)} style={inputStyle} disabled={bloqueado} />
         </div>
       ) : (
         <div>
-          <label style={label}>Exercícios (anos)</label>
-          <input value={anosTexto} onChange={(e) => setAnosTexto(e.target.value)} placeholder="2022, 2023, 2024" style={inputStyle} aria-label="Anos" disabled={bloqueado} />
+          <label htmlFor="nova-execucao-ano" style={label}>
+            {tipo === 'backfill' ? 'Exercício mais recente (retroage até o piso)' : 'Exercício'}
+          </label>
+          <select
+            id="nova-execucao-ano"
+            value={String(anoEscolhido)}
+            onChange={(e) => setAnoEscolhido(parseInt(e.target.value, 10))}
+            style={inputStyle}
+            disabled={bloqueado}
+          >
+            {ANOS_DISPONIVEIS.map((a) => (
+              <option key={a} value={a}>
+                {a}
+                {a === ANO_CORRENTE ? ' (em andamento)' : ''}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 1.5 }}>
+            {tipo === 'backfill' ? (
+              <>
+                Carrega <b style={{ color: colors.ink }}>{anos.join(', ')}</b> — todos os
+                períodos de cada exercício.
+              </>
+            ) : (
+              <>Carrega todos os períodos de {anoEscolhido}.</>
+            )}
+            {anoEscolhido === ANO_CORRENTE && (
+              <>
+                {' '}O exercício corrente rende apenas os períodos <b style={{ color: colors.ink }}>já
+                encerrados</b>: pedir um bimestre que ainda não aconteceu geraria trabalho a
+                vazio e registraria como ausente um dado que ninguém deveria ter publicado.
+              </>
+            )}
+          </div>
         </div>
       )}
       <div style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
         estimativa local pela cadência: <b style={{ color: colors.ink }}>{estimativa}</b> unidade(s)
       </div>
       <button
+        ref={dispararRef}
+        type="button"
         disabled={bloqueado || !podeEnviar}
         onClick={() => void enviar(false)}
         style={{ padding: '9px', background: colors.primary, color: colors.bg, borderRadius: 5, fontSize: 12.5, fontWeight: 500, opacity: bloqueado || !podeEnviar ? 0.5 : 1 }}
@@ -337,12 +485,16 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
 
       {/* Confirmação explícita de ação custosa */}
       {confirmacao && (
-        <div role="alertdialog" aria-label="Confirmar ação custosa" style={{ border: `1px solid ${colors.orangeSoft}`, background: colors.orangeBg, borderRadius: 6, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div
+          role="alertdialog"
+          aria-label="Confirmar ação custosa"
+          style={{ border: `1px solid ${colors.orangeSoft}`, background: colors.orangeBg, borderRadius: 6, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}
+        >
           <div style={{ fontSize: 12.5, fontWeight: 600, color: colors.orange }}>Ação custosa</div>
           <div style={{ fontSize: 12, color: colors.ink }}>
             Vai processar <b>{confirmacao.resposta.estimativa_itens}</b> unidades (acima do limiar de {confirmacao.resposta.limiar}). Confirma?
           </div>
-          <div style={{ fontSize: 10.5, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+          <div style={{ fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
             {confirmacao.payload.fonte} · {confirmacao.payload.tipo} ·{' '}
             {confirmacao.payload.entes.length > 0
               ? `${confirmacao.payload.entes.length} ente(s)`
@@ -350,8 +502,19 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
             {(confirmacao.payload.periodos ?? confirmacao.payload.anos ?? []).join(', ')}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button disabled={enviando} onClick={() => void enviar(true, confirmacao.payload)} style={{ flex: 1, padding: '7px', background: colors.orange, color: '#fff', borderRadius: 4, fontSize: 12, fontWeight: 500, opacity: enviando ? 0.6 : 1 }}>{enviando ? 'enfileirando…' : 'Confirmar e executar'}</button>
-            <button disabled={enviando} onClick={() => setConfirmacao(null)} style={{ flex: 1, padding: '7px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12, background: colors.surface }}>Cancelar</button>
+            <button ref={confirmarRef} type="button" disabled={enviando} onKeyDown={fecharConfirmacaoComEscape} onClick={() => void enviar(true, confirmacao.payload)} style={{ flex: 1, padding: '7px', background: colors.orange, color: '#fff', borderRadius: 4, fontSize: 12, fontWeight: 500, opacity: enviando ? 0.6 : 1 }}>{enviando ? 'enfileirando…' : 'Confirmar e executar'}</button>
+            <button
+              type="button"
+              disabled={enviando}
+              onKeyDown={fecharConfirmacaoComEscape}
+              onClick={() => {
+                setConfirmacao(null);
+                window.requestAnimationFrame(() => dispararRef.current?.focus());
+              }}
+              style={{ flex: 1, padding: '7px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12, background: colors.surface }}
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}
@@ -419,21 +582,21 @@ function JobRow({
   return (
     <div style={{ borderBottom: `1px solid ${colors.rowBorder}`, padding: '10px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', background: cor, borderRadius: 3, padding: '2px 6px', minWidth: 74, textAlign: 'center' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: cor, borderRadius: 3, padding: '2px 6px', minWidth: 74, textAlign: 'center' }}>
           {STATUS_ROTULO[detalhe.status] ?? detalhe.status}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 500 }}>
             {detalhe.fonte} · {detalhe.tipo} · {detalhe.entes.length} ente(s) · {detalhe.periodos.join(', ')}
           </div>
-          <div style={{ fontSize: 10, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>
+          <div style={{ fontSize: 11, color: colors.faint, fontFamily: "'JetBrains Mono', monospace" }}>
             {detalhe.itens_ok}/{detalhe.itens_total} ok · {detalhe.itens_erro} erro · tentativa {detalhe.tentativas} · {hora(detalhe.criado_em)}
           </div>
-          {detalhe.erro_resumo && <div style={{ marginTop: 2, fontSize: 10.5, color: colors.red }}>{detalhe.erro_resumo}</div>}
+          {detalhe.erro_resumo && <div style={{ marginTop: 2, fontSize: 11, color: colors.red }}>{detalhe.erro_resumo}</div>}
         </div>
-        {detalhe.status === 'na_fila' && <button disabled={acaoEmCurso} onClick={() => void executarAcao(onCancelar)} style={btnMini}>{acaoEmCurso ? 'cancelando…' : 'cancelar'}</button>}
-        {detalhe.status === 'falhou' && <button disabled={acaoEmCurso} onClick={() => void executarAcao(onRetry)} style={{ ...btnMini, color: colors.orange, borderColor: colors.orangeSoft }}>{acaoEmCurso ? 'enfileirando…' : 'retry'}</button>}
-        <button onClick={alternarDetalhe} style={btnMini}>{aberto ? 'menos' : 'detalhes'}</button>
+        {detalhe.status === 'na_fila' && <button type="button" disabled={acaoEmCurso} onClick={() => void executarAcao(onCancelar)} style={btnMini}>{acaoEmCurso ? 'cancelando…' : 'cancelar'}</button>}
+        {detalhe.status === 'falhou' && <button type="button" disabled={acaoEmCurso} onClick={() => void executarAcao(onRetry)} style={{ ...btnMini, color: colors.orange, borderColor: colors.orangeSoft }}>{acaoEmCurso ? 'enfileirando…' : 'retry'}</button>}
+        <button type="button" onClick={alternarDetalhe} style={btnMini}>{aberto ? 'menos' : 'detalhes'}</button>
       </div>
       {/* Barra de progresso */}
       <div style={{ height: 5, background: colors.bg, borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
@@ -457,11 +620,11 @@ function JobRow({
             </div>
           )}
           {(detalhe.logs?.length ?? 0) > 0 && (
-            <div aria-label={`Logs do job ${detalhe.id}`} style={{ border: `1px solid ${colors.border}`, borderRadius: 4, overflow: 'hidden' }}>
+            <div role="log" aria-label={`Logs do job ${detalhe.id}`} style={{ border: `1px solid ${colors.border}`, borderRadius: 4, overflow: 'hidden' }}>
               {detalhe.logs?.map((entrada) => (
                 <div
                   key={entrada.id}
-                  style={{ display: 'grid', gridTemplateColumns: '130px 110px minmax(0, 1fr)', gap: 8, padding: '5px 7px', borderTop: `1px solid ${colors.rowBorder}`, fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}
+                  style={{ display: 'grid', gridTemplateColumns: '130px 110px minmax(0, 1fr)', gap: 8, padding: '5px 7px', borderTop: `1px solid ${colors.rowBorder}`, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
                 >
                   <span style={{ color: colors.faint }}>{hora(entrada.ts)}</span>
                   <span style={{ color: entrada.status === 'erro' ? colors.red : colors.muted }}>{entrada.status}</span>
@@ -504,7 +667,7 @@ function JobRow({
   );
 }
 
-const btnMini: React.CSSProperties = { fontSize: 10.5, padding: '3px 8px', border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.surface, color: colors.muted };
+const btnMini: React.CSSProperties = { fontSize: 11, padding: '3px 8px', border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.surface, color: colors.muted };
 
 // ============================ Catálogo ============================
 function CatalogoTab() {
@@ -515,11 +678,12 @@ function CatalogoTab() {
       <div style={{ overflowX: 'auto' }}>
         <Async res={res}>
           {(fs) => (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 1480 }}>
+            <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+              <caption className="sr-only">Catálogo e estado operacional das fontes de dados</caption>
               <thead>
                 <tr style={{ background: colors.bg, color: colors.muted, textAlign: 'left' }}>
                   {['Fonte', 'Status', 'Descrição', 'Família', 'Relatório', 'Cadência', 'Última execução', 'Última OK', 'Período recente', 'Defasagem', 'Entes', 'Registros', 'Parser', 'Dependências', 'Páginas'].map((h) => (
-                    <th key={h} style={{ padding: '7px 10px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                    <th key={h} scope="col" style={{ padding: '7px 10px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -539,8 +703,8 @@ function CatalogoTab() {
                     <td style={{ padding: '6px 10px' }}>{f.entes_cobertos}</td>
                     <td style={{ padding: '6px 10px' }} title={f.registros_cobertos == null ? 'Campo ainda não exposto pelo backend' : undefined}>{f.registros_cobertos ?? '—'}</td>
                     <td style={{ padding: '6px 10px', color: colors.faint }}>{f.parser_versao ?? '—'}</td>
-                    <td style={{ padding: '6px 10px', color: colors.faint, fontSize: 10 }}>{f.dependencias.join(', ') || '—'}</td>
-                    <td style={{ padding: '6px 10px', color: colors.faint, fontSize: 10 }}>{f.paginas_impactadas.join(', ') || '—'}</td>
+                    <td style={{ padding: '6px 10px', color: colors.faint, fontSize: 11 }}>{f.dependencias.join(', ') || '—'}</td>
+                    <td style={{ padding: '6px 10px', color: colors.faint, fontSize: 11 }}>{f.paginas_impactadas.join(', ') || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -684,14 +848,15 @@ function CoberturaTab() {
             <div style={{ padding: '6px 16px', fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace", borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, background: colors.bg }}>
               {c.resumo.total_linhas} linhas · {c.resumo.entes} entes · {c.resumo.periodos} períodos · fontes: {c.resumo.fontes.join(', ') || '—'}
             </div>
-            <div style={{ padding: '6px 16px', fontSize: 10.5, color: colors.faint, borderBottom: `1px solid ${colors.border}` }}>
+            <div style={{ padding: '6px 16px', fontSize: 11, color: colors.faint, borderBottom: `1px solid ${colors.border}` }}>
               Lacunas são inferidas pela cadência do catálogo sobre os grupos visíveis nesta página; fontes contínuas/eventuais ficam sem inferência.
             </div>
             <div style={{ maxHeight: 480, overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 960 }}>
+                <caption className="sr-only">Cobertura e lacunas por fonte, ente e período</caption>
                 <thead><tr style={{ color: colors.muted, textAlign: 'left' }}>
                   {['Fonte', 'Ente', 'UF', 'Ano', 'Períodos observados', 'Períodos ausentes', 'Registros', 'Versão', 'Defasagem'].map((h) => (
-                    <th key={h} style={{ padding: '6px 10px', fontSize: 9.5, textTransform: 'uppercase' }}>{h}</th>
+                    <th key={h} scope="col" style={{ padding: '6px 10px', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
@@ -714,9 +879,9 @@ function CoberturaTab() {
               </table>
             </div>
             <div style={{ padding: '8px 16px', borderTop: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, fontSize: 11, color: colors.muted }}>
-              <button disabled={c.page <= 1} onClick={() => setPage((atual) => Math.max(1, atual - 1))} style={btnMini}>anterior</button>
+              <button type="button" disabled={c.page <= 1} onClick={() => setPage((atual) => Math.max(1, atual - 1))} style={btnMini}>anterior</button>
               <span>página {c.page} de {totalPaginas}</span>
-              <button disabled={c.page >= totalPaginas} onClick={() => setPage((atual) => Math.min(totalPaginas, atual + 1))} style={btnMini}>próxima</button>
+              <button type="button" disabled={c.page >= totalPaginas} onClick={() => setPage((atual) => Math.min(totalPaginas, atual + 1))} style={btnMini}>próxima</button>
             </div>
           </>
           );
@@ -732,7 +897,7 @@ function RetificacoesTab() {
   return (
     <Card pad={0}>
       <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>
-        Retificações <span style={{ fontSize: 10.5, color: colors.muted, fontWeight: 400 }}>· entregas que superaram uma versão anterior (§6.5)</span>
+        Retificações <span style={{ fontSize: 11, color: colors.muted, fontWeight: 400 }}>· entregas que superaram uma versão anterior (§6.5)</span>
       </div>
       <Async res={res}>
         {(itens) => itens.length === 0 ? (
@@ -740,9 +905,10 @@ function RetificacoesTab() {
         ) : (
           <div style={{ maxHeight: 520, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+              <caption className="sr-only">Retificações e versões de entregas fiscais</caption>
               <thead><tr style={{ color: colors.muted, textAlign: 'left' }}>
                 {['Ente', 'Relatório', 'Período', 'Versão vigente', 'Homologada', 'Versões anteriores'].map((h) => (
-                  <th key={h} style={{ padding: '6px 10px', fontSize: 9.5, textTransform: 'uppercase' }}>{h}</th>
+                  <th key={h} scope="col" style={{ padding: '6px 10px', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
@@ -764,3 +930,254 @@ function RetificacoesTab() {
     </Card>
   );
 }
+
+/* ==========================================================================
+ * Painel de Qualidade (Sprint 26)
+ *
+ * Pergunta gerencial: **"posso confiar no número que estou vendo?"** Cada linha é uma
+ * verificação executada sobre o dado real, com os dois lados da conta à vista — quem
+ * discorda do veredito consegue refazer a comparação sem abrir o banco.
+ * ========================================================================== */
+function QualidadeTab() {
+  const [status, setStatus] = useState<StatusCheck | ''>('');
+  const [fonte, setFonte] = useState('');
+  const res = useResource(
+    () => fetchQualidade({ status: status || undefined, fonte: fonte || undefined, porPagina: 100 }),
+    [status, fonte],
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Async res={res}>
+        {(q) => (
+          <>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <ResumoCard n={q.resumo.falha} rotulo="Em falha" cor={colors.red} fundo={colors.redBg} />
+              <ResumoCard n={q.resumo.aviso} rotulo="Avisos" cor={colors.orange} fundo={colors.orangeBg} />
+              <ResumoCard n={q.resumo.ok} rotulo="Verificados e corretos" cor={colors.green} fundo={colors.greenBg} />
+              <div style={{ flex: 1 }} />
+              <select
+                aria-label="Filtrar por status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as StatusCheck | '')}
+                style={filtroStyle}
+              >
+                <option value="">todos os status</option>
+                <option value="falha">falha</option>
+                <option value="aviso">aviso</option>
+                <option value="ok">ok</option>
+              </select>
+              <select
+                aria-label="Filtrar por fonte"
+                value={fonte}
+                onChange={(e) => setFonte(e.target.value)}
+                style={filtroStyle}
+              >
+                <option value="">todas as fontes</option>
+                {[...new Set(q.itens.map((i) => i.fonte))].sort().map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+            </div>
+
+            {q.resumo.falha > 0 && (
+              <div style={{ padding: '10px 12px', borderRadius: 6, background: colors.redBg, color: colors.red, fontSize: 11.5, lineHeight: 1.5 }}>
+                <strong>{q.resumo.falha} verificação(ões) em falha</strong> em{' '}
+                {q.resumo.fontes_com_falha.join(', ')}. Enquanto durar, as páginas afetadas
+                exibem o selo de qualidade sobre o número — o dado não é escondido, mas
+                também não é apresentado como se estivesse conferido.
+              </div>
+            )}
+
+            <Card pad={0}>
+              {q.itens.length === 0 ? (
+                <div style={{ padding: 16, fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
+                  {q.observacao ?? 'Nenhuma verificação com os filtros escolhidos.'}
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                    <caption className="sr-only">Verificações automatizadas de qualidade dos dados</caption>
+                    <thead>
+                      <tr style={{ background: colors.bg }}>
+                        {['', 'Verificação', 'Fonte', 'Ente', 'Período', 'Esquerda', 'Direita', 'Diferença', 'Tolerância', 'Executado'].map((h, i) => (
+                          <th key={`${h}-${i}`} scope="col" style={thQ}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {q.itens.map((c) => (
+                        <tr key={c.id} data-testid="check-linha" style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
+                          <td style={{ padding: '6px 10px' }}><SeloStatus status={c.status} /></td>
+                          <td style={{ padding: '6px 10px' }}>
+                            {c.rotulo}
+                            {typeof c.detalhe?.motivo === 'string' && (
+                              <div style={{ fontSize: 11, color: colors.faint }}>{c.detalhe.motivo}</div>
+                            )}
+                          </td>
+                          <td style={tdQ}>{c.fonte}</td>
+                          <td style={tdQ}>{c.cod_ibge ?? '—'}</td>
+                          <td style={tdQ}>{c.periodo ?? '—'}</td>
+                          <td style={tdNum}>{numeroCurto(c.esquerda)}</td>
+                          <td style={tdNum}>{numeroCurto(c.direita)}</td>
+                          <td style={{ ...tdNum, color: c.status === 'falha' ? colors.red : colors.ink }}>
+                            {numeroCurto(c.diferenca)}
+                          </td>
+                          <td style={tdNum}>{numeroCurto(c.tolerancia)}</td>
+                          <td style={tdQ}>{hora(c.executado_em)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div style={{ padding: '8px 12px', fontSize: 11, color: colors.faint, lineHeight: 1.5 }}>
+                {q.total} verificação(ões) no seu escopo. <strong>aviso</strong> inclui o caso
+                &quot;não deu para verificar&quot; (fonte ausente) — que é diferente de &quot;verificado e correto&quot;.
+              </div>
+            </Card>
+          </>
+        )}
+      </Async>
+    </div>
+  );
+}
+
+function ResumoCard({ n, rotulo, cor, fundo }: { n: number; rotulo: string; cor: string; fundo: string }) {
+  return (
+    <div style={{ padding: '8px 14px', borderRadius: 6, background: fundo, minWidth: 120 }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: cor }}>{n}</div>
+      <div style={{ fontSize: 11, color: cor, fontWeight: 600 }}>{rotulo}</div>
+    </div>
+  );
+}
+
+function SeloStatus({ status }: { status: StatusCheck }) {
+  const mapa = {
+    ok: { cor: colors.green, fundo: colors.greenBg, texto: 'OK' },
+    aviso: { cor: colors.orange, fundo: colors.orangeBg, texto: 'AVISO' },
+    falha: { cor: colors.red, fundo: colors.redBg, texto: 'FALHA' },
+  }[status];
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: mapa.fundo, color: mapa.cor, letterSpacing: '0.04em' }}>
+      {mapa.texto}
+    </span>
+  );
+}
+
+/** Números de escala muito diferente (R$ bilhões e p.p.) convivem na mesma coluna. */
+function numeroCurto(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—';
+  const x = Number(v);
+  if (!Number.isFinite(x)) return String(v);
+  if (Math.abs(x) >= 1e6) return `${(x / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} M`;
+  return x.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+}
+
+/* ==========================================================================
+ * Lineage (Sprint 26)
+ *
+ * Pergunta gerencial: **"o que quebra se esta fonte falhar?"** e a inversa, **"de onde
+ * vem o número desta tela?"**. O grafo é o mesmo; muda o sentido da leitura.
+ * ========================================================================== */
+function LineageTab() {
+  const [no, setNo] = useState<string>('silver.siconfi_rgf');
+  const res = useResource(() => fetchLineage(no || undefined), [no]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Async res={res}>
+        {(g) => (
+          <>
+            <Card style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label htmlFor="lineage-no" style={{ fontSize: 11, color: colors.muted }}>
+                Nó do grafo
+              </label>
+              <select
+                id="lineage-no"
+                value={no}
+                onChange={(e) => setNo(e.target.value)}
+                style={{ ...filtroStyle, minWidth: 280 }}
+              >
+                {g.nos.map((n) => (
+                  <option key={n.id} value={n.id}>{`${n.camada} · ${n.id}`}</option>
+                ))}
+              </select>
+              <span style={{ fontSize: 11, color: colors.faint }}>
+                {g.total_arestas} arestas no mapa · camada atual: {g.camada}
+              </span>
+            </Card>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Card>
+                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
+                  De onde vem <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{g.no}</span>
+                </div>
+                <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8 }}>
+                  fontes de origem: {g.fontes_de_origem.length ? g.fontes_de_origem.join(', ') : '— (este nó é uma fonte)'}
+                </div>
+                <ListaArestas arestas={g.montante} vazio="Nada a montante: este nó é uma fonte externa." />
+              </Card>
+              <Card>
+                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
+                  O que quebra se falhar
+                </div>
+                <div data-testid="paginas-afetadas" style={{ fontSize: 11, color: colors.muted, marginBottom: 8 }}>
+                  páginas afetadas: {g.paginas_afetadas.length ? g.paginas_afetadas.join(', ') : '— (este nó é uma página)'}
+                </div>
+                <ListaArestas arestas={g.jusante} vazio="Nada a jusante: este nó é uma página." />
+              </Card>
+            </div>
+          </>
+        )}
+      </Async>
+    </div>
+  );
+}
+
+function ListaArestas({ arestas, vazio }: { arestas: LineageAresta[]; vazio: string }) {
+  if (arestas.length === 0) {
+    return <div style={{ fontSize: 11.5, color: colors.muted }}>{vazio}</div>;
+  }
+  const unicas = arestas.filter(
+    (a, i, todas) => todas.findIndex((b) => b.origem === a.origem && b.destino === a.destino) === i,
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 320, overflowY: 'auto' }}>
+      {unicas.map((a) => (
+        <div key={`${a.origem}->${a.destino}`} style={{ padding: '5px 0', borderTop: `1px solid ${colors.rowBorder}`, fontSize: 11 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: colors.muted }}>{a.origem}</span>
+          <span style={{ color: colors.primary, margin: '0 6px' }}>→</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{a.destino}</span>
+          {typeof a.detalhe?.nota === 'string' && (
+            <div style={{ fontSize: 11, color: colors.faint }}>{a.detalhe.nota}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const filtroStyle = {
+  fontSize: 11.5,
+  padding: '4px 8px',
+  border: `1px solid ${colors.border}`,
+  borderRadius: 4,
+  background: colors.surface,
+  color: colors.ink,
+} as const;
+const thQ = {
+  padding: '6px 10px',
+  textAlign: 'left' as const,
+  fontSize: 11,
+  color: colors.muted,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase' as const,
+};
+const tdQ = { padding: '6px 10px', fontSize: 11 };
+const tdNum = {
+  padding: '6px 10px',
+  textAlign: 'right' as const,
+  fontFamily: "'JetBrains Mono', monospace",
+  fontSize: 11,
+};

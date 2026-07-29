@@ -6,6 +6,7 @@ import { LimitesPage } from './pages/LimitesPage';
 import { ReceitaPage } from './pages/ReceitaPage';
 import { DespesaPage } from './pages/DespesaPage';
 import { DividaPage } from './pages/DividaPage';
+import { PessoalPage } from './pages/PessoalPage';
 import { ResultadoPage } from './pages/ResultadoPage';
 import { CaixaPage } from './pages/CaixaPage';
 import { PatrimonioPage } from './pages/PatrimonioPage';
@@ -14,9 +15,12 @@ import { PrevisoesPage } from './pages/PrevisoesPage';
 import { BenchmarkingPage } from './pages/BenchmarkingPage';
 import { AlertasPage } from './pages/AlertasPage';
 import { AssistentePage } from './pages/AssistentePage';
+import { PerfilPage } from './pages/PerfilPage';
+import { PlataformaPage } from './pages/PlataformaPage';
 import { RelatoriosPage } from './pages/RelatoriosPage';
 import { AdminPage } from './pages/AdminPage';
 import { CentralDadosPage } from './pages/CentralDadosPage';
+import { RequireSuperuser } from './components/RequireSuperuser';
 import { RequireAdministrar } from './components/RequireAdministrar';
 
 export default function App() {
@@ -30,6 +34,7 @@ export default function App() {
         <Route path="/limites" element={<LimitesPage />} />
         <Route path="/receita" element={<ReceitaPage />} />
         <Route path="/despesa" element={<DespesaPage />} />
+        <Route path="/pessoal" element={<PessoalPage />} />
         <Route path="/divida" element={<DividaPage />} />
         <Route path="/resultado" element={<ResultadoPage />} />
         <Route path="/caixa" element={<CaixaPage />} />
@@ -40,12 +45,21 @@ export default function App() {
         <Route path="/alertas" element={<AlertasPage />} />
         <Route path="/assistente" element={<AssistentePage />} />
         <Route path="/relatorios" element={<RelatoriosPage />} />
+        <Route path="/perfil" element={<PerfilPage />} />
         <Route
           path="/admin"
           element={
             <RequireAdministrar>
               <AdminPage />
             </RequireAdministrar>
+          }
+        />
+        <Route
+          path="/plataforma"
+          element={
+            <RequireSuperuser>
+              <PlataformaPage />
+            </RequireSuperuser>
           }
         />
         <Route

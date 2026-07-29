@@ -1,0 +1,69 @@
+name: Frontend quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Lint, types, tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # Trava anti-mock (Sprint 28): falha se dado fiscal inventado voltar ao caminho
+      # de produção, ou se algum dos 13 itens da auditoria §4 reaparecer.
+      - run: npm run lint:mock
+      - run: npm run typecheck
+      - run: npm run typecheck:e2e
+      - run: npm test
+      - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  browser:
+    name: Playwright, axe, visual and Lighthouse
+    needs: static
+    if: ${{ vars.E2E_API_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      E2E_API_BASE_URL: ${{ vars.E2E_API_BASE_URL }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      VITE_API_BASE_URL: ${{ vars.E2E_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run lighthouse
+      - name: Upload browser quality reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-browser-quality
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            playwright-report/
+            test-results/
+            lighthouse-report/

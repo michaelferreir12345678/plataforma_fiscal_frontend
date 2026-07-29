@@ -237,6 +237,29 @@ describe('contexto fiscal (ente + período)', () => {
     const opcoes = await screen.findAllByRole('option');
     expect(opcoes.map((o) => o.textContent)).toEqual(['2024-B6', '2024-B5']);
   });
+
+  it('permite trocar o período somente pelo teclado', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <AppProvider>
+          <SeletorPeriodo usaRgf={false} />
+          <Sonda />
+        </AppProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByTestId('periodo')).toHaveTextContent('2024-B6'));
+
+    const trigger = screen.getByRole('button', { name: 'Selecionar período' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    const opcoes = await screen.findAllByRole('option');
+    await waitFor(() => expect(opcoes[0]).toHaveFocus());
+
+    await user.keyboard('{ArrowDown}{Enter}');
+    await waitFor(() => expect(screen.getByTestId('periodo')).toHaveTextContent('2024-B5'));
+    expect(trigger).toHaveFocus();
+  });
 });
 
 describe('cockpit', () => {

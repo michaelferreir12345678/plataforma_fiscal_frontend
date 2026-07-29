@@ -29,6 +29,32 @@ function authHeaders(): Record<string, string> {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
+/**
+ * Monta a URL final aceitando base **absoluta ou relativa**.
+ *
+ * Em desenvolvimento a base é absoluta (`http://localhost:8000`); atrás de um proxy
+ * reverso ela é relativa (`/api`), que é o que mantém tudo na mesma origem e dispensa
+ * CORS. `new URL()` exige base absoluta e lançava
+ * `Failed to construct 'URL': Invalid URL` em toda tela — a origem da página completa
+ * a relativa, sem mudar o destino.
+ */
+export function montarUrl(
+  path: string,
+  params?: Record<string, string | number | undefined | null>,
+): string {
+  const absoluta = /^[a-z][a-z0-9+.-]*:\/\//i.test(BASE);
+  const raiz = absoluta
+    ? BASE
+    : `${typeof window === 'undefined' ? 'http://localhost' : window.location.origin}${BASE}`;
+  const url = new URL(raiz.replace(/\/+$/, '') + path);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    }
+  }
+  return url.toString();
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (res.status === 401) {
     setToken(null);
@@ -45,13 +71,8 @@ export async function apiGet<T>(
   path: string,
   params?: Record<string, string | number | undefined | null>,
 ): Promise<T> {
-  const url = new URL(BASE + path);
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    }
-  }
-  const res = await fetch(url.toString(), { headers: authHeaders() });
+  const url = montarUrl(path, params);
+  const res = await fetch(url, { headers: authHeaders() });
   return handle<T>(res);
 }
 
@@ -61,13 +82,8 @@ export async function apiPost<TResponse, TBody = unknown>(
   body: TBody,
   params?: Record<string, string | number | undefined | null>,
 ): Promise<TResponse> {
-  const url = new URL(BASE + path);
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    }
-  }
-  const res = await fetch(url.toString(), {
+  const url = montarUrl(path, params);
+  const res = await fetch(url, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -81,13 +97,8 @@ export async function apiPatch<TResponse, TBody = unknown>(
   body: TBody,
   params?: Record<string, string | number | undefined | null>,
 ): Promise<TResponse> {
-  const url = new URL(BASE + path);
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    }
-  }
-  const res = await fetch(url.toString(), {
+  const url = montarUrl(path, params);
+  const res = await fetch(url, {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -101,13 +112,8 @@ export async function apiPut<TResponse, TBody = unknown>(
   body: TBody,
   params?: Record<string, string | number | undefined | null>,
 ): Promise<TResponse> {
-  const url = new URL(BASE + path);
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    }
-  }
-  const res = await fetch(url.toString(), {
+  const url = montarUrl(path, params);
+  const res = await fetch(url, {
     method: 'PUT',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -117,14 +123,14 @@ export async function apiPut<TResponse, TBody = unknown>(
 
 /** DELETE autenticado. 204 não tem corpo — resolve sem tentar desserializar. */
 export async function apiDelete(path: string): Promise<void> {
-  const res = await fetch(BASE + path, { method: 'DELETE', headers: authHeaders() });
+  const res = await fetch(montarUrl(path), { method: 'DELETE', headers: authHeaders() });
   if (res.status === 204) return;
   await handle<unknown>(res);
 }
 
 /** Download autenticado de artefatos binários sem expor o JWT na URL. */
 export async function apiDownload(path: string, filename: string): Promise<void> {
-  const res = await fetch(BASE + path, { headers: authHeaders() });
+  const res = await fetch(montarUrl(path), { headers: authHeaders() });
   if (!res.ok) {
     if (res.status === 401) setToken(null);
     const body = await res.json().catch(() => ({}));
@@ -143,7 +149,7 @@ export async function apiDownload(path: string, filename: string): Promise<void>
 
 export async function login(email: string, senha: string): Promise<string> {
   const form = new URLSearchParams({ username: email, password: senha });
-  const res = await fetch(BASE + '/auth/login', {
+  const res = await fetch(montarUrl('/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),

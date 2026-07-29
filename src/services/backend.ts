@@ -2264,6 +2264,12 @@ export interface MeResponse {
    * devolveria 403 — a garantia continua no backend, não nesta flag.
    */
   is_superuser?: boolean;
+  /**
+   * Ente com que a sessão deve abrir, derivado do tipo da conta pelo backend: uma Sefaz
+   * abre no próprio Governo do Estado; uma prefeitura, no seu município. O contexto já
+   * salvo do usuário continua tendo precedência sobre esta sugestão.
+   */
+  ente_padrao?: { cod_ibge: string; nome: string } | null;
 }
 /** Contrato do shell: quem está logado e em qual organização. */
 export const fetchMe = () => apiGet<MeResponse>('/me');

@@ -17,7 +17,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ApiError, getToken, setToken as persistToken } from '../services/api';
-import { fetchPeriodos } from '../services/backend';
+import { fetchMe, fetchPeriodos } from '../services/backend';
 
 const CHAVE_CONTEXTO = 'prumo_contexto';
 const MAX_RECENTES = 5;
@@ -32,6 +32,12 @@ interface ContextoPersistido {
   periodo: string | null;
   periodoRgf: string | null;
   recentes: EnteSel[];
+  /**
+   * A qual organização este contexto pertence. Sem isso, quem troca de organização
+   * continua vendo o ente da anterior — que costuma estar fora do novo escopo e devolve
+   * 403 na primeira tela.
+   */
+  orgId?: string | null;
 }
 
 interface AppState {
@@ -102,6 +108,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [periodosRgf, setPeriodosRgf] = useState<string[]>([]);
   const [carregandoContexto, setCarregandoContexto] = useState(true);
   const [contextoIndisponivel, setContextoIndisponivel] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(persistido?.orgId ?? null);
 
   const setToken = useCallback((t: string | null) => {
     persistToken(t);
@@ -120,6 +127,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const nomeDoEnte = ente.nome || ente.cod_ibge;
+
+  /**
+   * Adota o ente padrão da organização — o backend é quem sabe qual é, porque depende do
+   * tipo da conta (uma Sefaz abre no Governo do Estado; uma prefeitura, no seu município).
+   *
+   * Só adota quando **não há escolha do usuário a respeitar**: primeiro acesso, ou
+   * contexto salvo que pertence a outra organização. Aplicar sempre desfaria a seleção
+   * feita no seletor de ente a cada recarga da página.
+   */
+  useEffect(() => {
+    if (!token) return;
+    let vivo = true;
+    fetchMe()
+      .then((me) => {
+        if (!vivo) return;
+        const orgAtual = me.org_ativa?.org_id ?? null;
+        setOrgId(orgAtual);
+        const outraOrg = (persistido?.orgId ?? null) !== orgAtual;
+        if (me.ente_padrao && (!persistido || outraOrg)) {
+          setEnteState({ cod_ibge: me.ente_padrao.cod_ibge, nome: me.ente_padrao.nome });
+          setPeriodoState('');
+          setPeriodoRgfState('');
+        }
+      })
+      .catch(() => {
+        /* sem /me o app segue com o contexto salvo; nenhuma tela depende disto */
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [token, persistido]);
 
   // Descobre os períodos COM DADO do ente e escolhe o default (o mais recente).
   useEffect(() => {
@@ -160,12 +198,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(
         CHAVE_CONTEXTO,
-        JSON.stringify({ ente, periodo, periodoRgf, recentes } satisfies ContextoPersistido),
+        JSON.stringify({ ente, periodo, periodoRgf, recentes, orgId } satisfies ContextoPersistido),
       );
     } catch {
       /* localStorage indisponível: o contexto apenas não persiste */
     }
-  }, [ente, periodo, periodoRgf, recentes]);
+  }, [ente, periodo, periodoRgf, recentes, orgId]);
 
   const value: AppState = {
     token,

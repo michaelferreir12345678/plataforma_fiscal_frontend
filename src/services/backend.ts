@@ -2111,10 +2111,13 @@ export interface CriticoItem {
   sentido: string;
   valor_pct: number | null;
   valor_rs: number | null;
-  limite_pct: number;
+  /** `null` = indicador sem limite legal (gerencial). Zero significaria teto igual a zero. */
+  limite_pct: number | null;
   faixa: string | null;
   cor: string;
   distancia_pp: number | null;
+  /** Base do valor: `populacao` é R$/hab; as demais são percentuais. */
+  denominador?: string;
   source_ref: SourceRef;
 }
 export interface PontoSerie {

@@ -9,7 +9,7 @@
  * Linguagem sóbria: a severidade vem da faixa legal devolvida pelo backend, nunca de
  * adjetivo escolhido na UI. Onde não há base, a tela diz que não há — nunca mostra zero.
  */
-import { colors } from '../theme';
+import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Async, ContextoIndisponivel } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
@@ -266,14 +266,24 @@ function Vazio({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 12, color: colors.muted }}>{children}</div>;
 }
 
+/**
+ * Nem todo indicador do cockpit é percentual de uma base, e nem todo indicador tem limite
+ * legal. Antes o card assumia as duas coisas: a RCL por habitante — que é R$/hab e vive em
+ * `valor_rs` — aparecia como "None%", e os gerenciais mostravam "teto 0%", que numa tela de
+ * conformidade se lê como "o teto é zero", o oposto de "não há teto".
+ */
 function CardCritico({ k }: { k: CriticoItem }) {
-  const teto = Number(k.limite_pct);
+  const temLimite = k.limite_pct !== null && k.limite_pct !== undefined;
+  const teto = temLimite ? Number(k.limite_pct) : 0;
+  const porHabitante = k.denominador === 'populacao';
+  const valor = porHabitante ? k.valor_rs : k.valor_pct;
+
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
       <div style={{ fontSize: 11.5, fontWeight: 600, alignSelf: 'flex-start' }}>{k.rotulo}</div>
-      {k.valor_pct === null ? (
+      {valor === null || valor === undefined ? (
         <Vazio>Indicador não apurado neste período.</Vazio>
-      ) : (
+      ) : temLimite && !porHabitante ? (
         <RadialMeter
           atualPct={Number(k.valor_pct)}
           /* As faixas legais (90%/95%/100% do teto) vêm do domínio, não da UI. */
@@ -283,13 +293,25 @@ function CardCritico({ k }: { k: CriticoItem }) {
           gaugeMax={teto * 1.2}
           size={150}
         />
+      ) : (
+        /* Sem teto não há velocímetro: não existe "quanto falta" para um limite que não
+           existe. O número em destaque diz o que há de fato. */
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '18px 0 10px' }}>
+          <span style={{ fontFamily: font.mono, fontSize: 26, fontWeight: 600, color: colors.primary }}>
+            {porHabitante ? brl(Number(valor)) : pct(Number(valor))}
+          </span>
+          <span style={{ fontSize: 11, color: colors.faint, marginTop: 2 }}>
+            {porHabitante ? 'por habitante' : 'sem limite legal aplicável'}
+          </span>
+        </div>
       )}
       <div style={{ fontSize: 11, color: colors.muted, alignSelf: 'flex-start' }}>
-        {k.distancia_pp === null
-          ? 'sem distância apurada'
+        {k.distancia_pp === null || k.distancia_pp === undefined
+          ? temLimite
+            ? 'sem distância apurada'
+            : 'indicador gerencial — acompanhamento, não conformidade'
           : `${num(k.distancia_pp)} p.p. ${k.sentido === 'piso' ? 'acima do mínimo' : 'de folga até o teto'}`}
-        {' · '}
-        {k.sentido === 'piso' ? 'mínimo' : 'teto'} {pct(k.limite_pct, 0)}
+        {temLimite && ` · ${k.sentido === 'piso' ? 'mínimo' : 'teto'} ${pct(k.limite_pct, 0)}`}
       </div>
       <div style={{ alignSelf: 'flex-start' }}>
         <Fonte relatorio={k.source_ref?.relatorio} anexo={k.source_ref?.anexo} periodo={k.source_ref?.periodo} versao={k.source_ref?.versao_entrega} />

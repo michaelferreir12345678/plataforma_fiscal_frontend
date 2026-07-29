@@ -325,3 +325,70 @@ describe('cockpit', () => {
     expect(await screen.findByText(/backend indisponível/)).toBeInTheDocument();
   });
 });
+
+describe('cockpit — indicadores que não são percentual de limite', () => {
+  /**
+   * A RCL por habitante vive em `valor_rs` e o cartão renderizava `valor_pct`: a tela
+   * mostrava "None%" onde havia número. E os gerenciais, sem teto legal, apareciam como
+   * "teto 0%" — que numa tela de conformidade se lê como "o limite é zero".
+   */
+  const semLimite = (extra: Partial<backend.CriticoItem>): backend.CockpitResponse =>
+    cockpitFake({
+      criticos: [
+        {
+          indicador: 'rcl_per_capita',
+          rotulo: 'RCL por habitante',
+          sentido: 'teto',
+          valor_pct: null,
+          valor_rs: 4870.66,
+          limite_pct: null,
+          faixa: null,
+          cor: 'cinza',
+          distancia_pp: null,
+          source_ref: { relatorio: 'RREO', periodo: '2024-B6', versao_entrega: '1' },
+          ...extra,
+        },
+      ],
+    } as never);
+
+  const montar = async (resposta: backend.CockpitResponse) => {
+    vi.spyOn(backend, 'fetchCockpit').mockResolvedValue(resposta as never);
+    render(
+      <MemoryRouter>
+        <AppProvider>
+          <CockpitPage />
+        </AppProvider>
+      </MemoryRouter>,
+    );
+    return screen.findByText('RCL por habitante');
+  };
+
+  it('mostra R$ por habitante em vez de "None%"', async () => {
+    await montar(semLimite({ denominador: 'populacao' }));
+    expect(await screen.findByText(/R\$\s?4\.871/)).toBeInTheDocument();
+    expect(screen.getByText('por habitante')).toBeInTheDocument();
+    expect(screen.queryByText(/None/)).not.toBeInTheDocument();
+  });
+
+  it('não anuncia teto onde não há limite legal', async () => {
+    await montar(semLimite({ denominador: 'populacao' }));
+    expect(screen.queryByText(/teto 0%/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/indicador gerencial — acompanhamento, não conformidade/),
+    ).toBeInTheDocument();
+  });
+
+  it('percentual sem teto legal continua percentual', async () => {
+    await montar(
+      semLimite({
+        indicador: 'investimento_rcl',
+        rotulo: 'RCL por habitante',
+        denominador: 'rcl',
+        valor_pct: 5.26,
+        valor_rs: 659107711,
+      }),
+    );
+    expect(await screen.findByText('5.26%')).toBeInTheDocument();
+    expect(screen.getByText('sem limite legal aplicável')).toBeInTheDocument();
+  });
+});

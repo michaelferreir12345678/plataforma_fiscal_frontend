@@ -1,6 +1,6 @@
-# Erário — Plataforma de Inteligência Fiscal
+# Prumo — Plataforma de Inteligência Fiscal
 
-Front-end real em **React + Vite + TypeScript** da plataforma Erário: SaaS de
+Front-end real em **React + Vite + TypeScript** da plataforma Prumo: SaaS de
 inteligência fiscal que transforma dados do SICONFI (RREO, RGF, DCA, MSC) em
 painéis, alertas e previsões para o gestor público.
 
@@ -37,7 +37,7 @@ integrado. O `npm run dev` abre o navegador automaticamente.
 ## Estrutura
 
 ```text
-erario-plataforma-fiscal/
+prumo-plataforma-fiscal/
 ├── index.html
 ├── package.json
 ├── vite.config.ts

@@ -4,7 +4,7 @@
  */
 
 const BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
-const TOKEN_KEY = 'erario_token';
+const TOKEN_KEY = 'prumo_token';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);

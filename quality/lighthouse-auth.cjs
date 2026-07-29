@@ -18,7 +18,7 @@ module.exports = async (browser, context) => {
   await page.waitForNetworkIdle({ idleTime: 500, timeout: 15_000 }).catch(() => undefined);
 
   const authenticated = await page.evaluate(() =>
-    Boolean(localStorage.getItem('erario_token')),
+    Boolean(localStorage.getItem('prumo_token')),
   );
   if (!authenticated) {
     await page.waitForSelector('form input[type="password"]');
@@ -33,7 +33,7 @@ module.exports = async (browser, context) => {
     await page.keyboard.press('Backspace');
     await inputs[1].type(password);
     await page.click('form button[type="submit"]');
-    await page.waitForFunction(() => Boolean(localStorage.getItem('erario_token')));
+    await page.waitForFunction(() => Boolean(localStorage.getItem('prumo_token')));
   }
 
   await page.goto(context.url, { waitUntil: 'networkidle0', timeout: 60_000 });

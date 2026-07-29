@@ -1,9 +1,9 @@
 {
-  "name": "erario-plataforma-fiscal",
+  "name": "prumo-plataforma-fiscal",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Erário — Plataforma de Inteligência Fiscal (frontend React + Vite + TypeScript)",
+  "description": "Prumo — Plataforma de Inteligência Fiscal (frontend React + Vite + TypeScript)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

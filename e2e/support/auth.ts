@@ -25,7 +25,7 @@ export async function loginViaUi(page: Page): Promise<void> {
   await form.locator('input[type="password"]').fill(password);
   await form.getByRole('button', { name: 'Entrar' }).click();
 
-  await page.waitForFunction(() => Boolean(localStorage.getItem('erario_token')));
+  await page.waitForFunction(() => Boolean(localStorage.getItem('prumo_token')));
   await expect(page.locator('[data-screen-label="Cockpit Executivo"]')).toBeVisible();
   await waitForFiscalContext(page);
 }

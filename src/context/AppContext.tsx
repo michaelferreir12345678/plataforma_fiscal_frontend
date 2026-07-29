@@ -19,7 +19,7 @@ import {
 import { ApiError, getToken, setToken as persistToken } from '../services/api';
 import { fetchPeriodos } from '../services/backend';
 
-const CHAVE_CONTEXTO = 'erario_contexto';
+const CHAVE_CONTEXTO = 'prumo_contexto';
 const MAX_RECENTES = 5;
 
 export interface EnteSel {

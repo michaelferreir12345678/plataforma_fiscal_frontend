@@ -1,5 +1,5 @@
 /**
- * Tokens de marca do Erário.
+ * Tokens de marca do Prumo.
  * Cores funcionais (risco) são semânticas — não decorativas.
  */
 export const colors = {

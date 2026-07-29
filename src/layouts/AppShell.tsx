@@ -176,10 +176,10 @@ export function AppShell() {
       ? 'Central de Dados'
       : location.pathname === '/admin'
         ? 'Administração'
-        : 'Erário');
+        : 'Prumo');
 
   useEffect(() => {
-    document.title = `${tituloRota} · Erário`;
+    document.title = `${tituloRota} · Prumo`;
   }, [tituloRota]);
 
   return (
@@ -228,7 +228,7 @@ export function AppShell() {
         <Link
           className="app-shell__brand"
           to="/dashboard"
-          aria-label="Erário — ir para o cockpit"
+          aria-label="Prumo — ir para o cockpit"
           style={{ display: 'flex', alignItems: 'center', gap: 10, width: 150 }}
         >
           <div style={{ width: 18, height: 18, position: 'relative' }}>
@@ -236,7 +236,7 @@ export function AppShell() {
             <div style={{ position: 'absolute', left: 0, right: 0, top: 7, height: 7, background: colors.primary }} />
             <div style={{ position: 'absolute', left: 2, right: 2, top: 14, height: 2, background: colors.primary, opacity: 0.35 }} />
           </div>
-          <div style={{ fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em', color: colors.primary }}>erário</div>
+          <div style={{ fontWeight: 600, fontSize: 17, letterSpacing: '-0.01em', color: colors.primary }}>prumo</div>
           <div
             style={{
               fontSize: 11,

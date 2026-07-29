@@ -82,13 +82,13 @@ export function LoginGate({ children }: { children: ReactNode }) {
             <div style={{ position: 'absolute', left: 0, right: 0, top: 3, height: 2, background: colors.orange }} />
             <div style={{ position: 'absolute', left: 0, right: 0, top: 7, height: 7, background: colors.primary }} />
           </div>
-          <div style={{ fontWeight: 600, fontSize: 20, color: colors.primary }}>erário</div>
+          <div style={{ fontWeight: 600, fontSize: 20, color: colors.primary }}>prumo</div>
           <div style={{ fontSize: 11, letterSpacing: '0.12em', color: colors.faint, border: `1px solid ${colors.border}`, borderRadius: 3, padding: '2px 6px' }}>
             BETA
           </div>
         </div>
         <h1 id="login-title" style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600 }}>
-          Acessar o Erário
+          Acessar o Prumo
         </h1>
         <div style={{ fontSize: 12.5, color: colors.muted, lineHeight: 1.5 }}>
           Inteligência fiscal sobre dados reais do SICONFI. Entre para acessar os indicadores do

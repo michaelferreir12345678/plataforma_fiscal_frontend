@@ -9,6 +9,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { colors, font } from '../theme';
+import { useApp } from '../context/AppContext';
 import type { Resource } from '../context/AppContext';
 
 export function Loading({ label = 'Carregando dados reais…' }: { label?: string }) {
@@ -63,23 +64,73 @@ export function Skeleton({
   );
 }
 
-export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorBox({
+  message,
+  onRetry,
+  acao,
+  explicacao,
+  severidade = 'erro',
+}: {
+  message: string;
+  onRetry?: () => void;
+  /** Ação que resolve a causa, quando ela é conhecida (ex.: ir ao período que tem dado). */
+  acao?: ReactNode;
+  /**
+   * Por que o dado não está lá — em linha própria e em tom secundário.
+   *
+   * O fato ("sem RGF para 2026-Q2") e o motivo ("o quadrimestre ainda não venceu") são duas
+   * informações; emendadas num parágrafo só, o gestor lê a primeira e para.
+   */
+  explicacao?: string | null;
+  /**
+   * `ausencia` para o que **não é falha**: dado que a fonte ainda não publicou. Pintar de
+   * vermelho e oferecer "tentar de novo" faz o gestor insistir contra uma parede — o
+   * relatório não vai aparecer porque ninguém o publicou ainda.
+   */
+  severidade?: 'erro' | 'ausencia';
+}) {
+  const ausencia = severidade === 'ausencia';
   return (
     <div
       className="async-state"
-      role="alert"
-      aria-live="assertive"
-      style={{ ...box, borderColor: colors.redSoft, background: colors.redBg, justifyContent: 'space-between' }}
+      role={ausencia ? 'status' : 'alert'}
+      aria-live={ausencia ? 'polite' : 'assertive'}
+      style={{
+        ...box,
+        borderColor: ausencia ? colors.border : colors.redSoft,
+        background: ausencia ? colors.yellowBg : colors.redBg,
+        justifyContent: 'space-between',
+        gap: 14,
+      }}
     >
-      <span style={{ fontSize: 12, color: colors.red, fontFamily: font.mono }}>
-        <span aria-hidden>⚠ </span>
-        {message}
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span
+          style={{
+            fontSize: 12,
+            color: ausencia ? colors.ink : colors.red,
+            fontFamily: ausencia ? 'inherit' : font.mono,
+            lineHeight: 1.55,
+          }}
+        >
+          <span aria-hidden>{ausencia ? 'ⓘ ' : '⚠ '}</span>
+          {message}
+        </span>
+        {explicacao && (
+          <span style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.5, maxWidth: 640 }}>
+            {explicacao}
+          </span>
+        )}
       </span>
-      {onRetry && (
-        <button type="button" onClick={onRetry} aria-label="Tentar carregar novamente" style={botao}>
-          Tentar de novo
-        </button>
-      )}
+      <span style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        {acao}
+        {/* Sem ação conhecida, "tentar de novo" ainda faz sentido — a falha pode ser
+            transitória. Com ação conhecida, repetir a chamada é o caminho errado. */}
+        {onRetry && !acao && (
+          <button type="button" onClick={onRetry} aria-label="Tentar carregar novamente" style={botao}>
+            Tentar de novo
+          </button>
+        )}
+      </span>
     </div>
   );
 }
@@ -139,6 +190,47 @@ export function ContextoIndisponivel({ motivo, ente }: { motivo: string; ente: s
   );
 }
 
+/**
+ * Erro que oferece a saída, quando o backend disse qual é.
+ *
+ * A CAPAG de um exercício em curso não existe porque o Tesouro publica uma vez por ano —
+ * insistir em "tentar de novo" não traz o dado nunca. Quando o backend indica um período
+ * que **tem** dado (extensão `periodo_sugerido` do Problem Details), o botão leva até lá em
+ * vez de convidar o gestor a repetir a mesma consulta.
+ */
+function ErroComSaida<T>({ res }: { res: Resource<T> }) {
+  const { setPeriodo, setPeriodoRgf } = useApp();
+  const sugerido = res.apiError?.periodoSugerido ?? null;
+  const explicacao = res.apiError?.explicacao ?? null;
+
+  // O formato do período diz qual seletor governa: quadrimestre/semestre é RGF, bimestre
+  // é RREO. Trocar o seletor errado deixaria a tela pedindo o mesmo período de novo.
+  const deRgf = sugerido !== null && /-[QS]\d/.test(sugerido);
+  return (
+    <ErrorBox
+      // Explicação sem período alternativo já muda a leitura: diz que a ausência é da fonte,
+      // não nossa. Sem nenhuma das duas, é falha de verdade e continua vermelha.
+      severidade={explicacao || sugerido ? 'ausencia' : 'erro'}
+      message={res.error ?? ''}
+      explicacao={explicacao}
+      // Sem alternativa, "tentar de novo" volta a fazer sentido: a entrega pode ter saído
+      // entre esta consulta e a próxima.
+      onRetry={res.reload}
+      acao={
+        sugerido && (
+          <button
+            type="button"
+            onClick={() => (deRgf ? setPeriodoRgf(sugerido) : setPeriodo(sugerido))}
+            style={{ ...botao, borderColor: colors.primary, color: colors.primary, fontWeight: 600 }}
+          >
+            {res.apiError?.rotuloSugerido ?? `Ir para ${sugerido}`}
+          </button>
+        )
+      }
+    />
+  );
+}
+
 /** Renderiza `children(data)` só quando o recurso carregou; senão skeleton/erro/vazio. */
 export function Async<T>({
   res,
@@ -156,7 +248,7 @@ export function Async<T>({
   // Antes de tudo: se o recurso não se aplica, dizer isso — não girar um esqueleto.
   if (res.indisponivel) return <>{res.indisponivel}</>;
   if (res.loading && !res.data) return <>{skeleton ?? <Skeleton />}</>;
-  if (res.error) return <ErrorBox message={res.error} onRetry={res.reload} />;
+  if (res.error) return <ErroComSaida res={res} />;
   if (!res.data) return <>{skeleton ?? <Skeleton />}</>;
   if (vazio && vazio.quando(res.data)) return <>{vazio.render}</>;
   return <>{children(res.data)}</>;

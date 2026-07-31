@@ -19,8 +19,38 @@ export class ApiError extends Error {
     public status: number,
     public title: string,
     public detail?: string,
+    /**
+     * Campos de extensão do Problem Details (RFC 7807, §3.2). Existem para a tela **agir**
+     * sobre o erro sem interpretar o texto: um botão "ir para o último período com dado"
+     * precisa do período em si, e ler isso de dentro de uma frase seria frágil e quebraria
+     * no primeiro ajuste de redação.
+     */
+    public extras: Record<string, unknown> = {},
   ) {
     super(detail || title);
+  }
+
+  /** Período que o backend indicou como alternativa navegável, quando indicou. */
+  get periodoSugerido(): string | null {
+    const v = this.extras.periodo_sugerido;
+    return typeof v === 'string' && v ? v : null;
+  }
+
+  get rotuloSugerido(): string | null {
+    const v = this.extras.rotulo_sugerido;
+    return typeof v === 'string' && v ? v : null;
+  }
+
+  /**
+   * Por que o dado não está lá — a cadência de publicação do relatório.
+   *
+   * O gestor precisa saber que o RGF do quadrimestre em curso não existe *porque ainda não
+   * venceu o prazo*, e não porque a plataforma deixou de ingerir. Sem isso, a ausência
+   * legítima é lida como falha nossa.
+   */
+  get explicacao(): string | null {
+    const v = this.extras.explicacao;
+    return typeof v === 'string' && v ? v : null;
   }
 }
 
@@ -62,7 +92,7 @@ async function handle<T>(res: Response): Promise<T> {
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(res.status, body.title || `Erro ${res.status}`, body.detail);
+    throw new ApiError(res.status, body.title || `Erro ${res.status}`, body.detail, body);
   }
   return body as T;
 }
@@ -134,7 +164,7 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   if (!res.ok) {
     if (res.status === 401) setToken(null);
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.title || `Erro ${res.status}`, body.detail);
+    throw new ApiError(res.status, body.title || `Erro ${res.status}`, body.detail, body);
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

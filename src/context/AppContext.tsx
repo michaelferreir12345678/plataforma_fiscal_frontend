@@ -235,6 +235,12 @@ export interface Resource<T> {
   loading: boolean;
   error: string | null;
   /**
+   * O erro em si, quando veio do backend. A mensagem sozinha só permite **contar** o
+   * problema; o objeto permite **agir** sobre ele — é daqui que sai o botão "ir para o
+   * último período com dado", usando o campo de extensão em vez de interpretar texto.
+   */
+  apiError: ApiError | null;
+  /**
    * Preenchido quando a chamada **não se aplica** — e não vai se aplicar. É estado
    * distinto de `loading`: o bloco que espera para sempre promete um dado que nunca
    * vem, o que mente mais do que dizer "não há".
@@ -264,22 +270,29 @@ export function useResource<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<ApiError | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (pular) {
       setLoading(true);
       setError(null);
+      setApiError(null);
       setData(null);
       return;
     }
     let vivo = true;
     setLoading(true);
     setError(null);
+    setApiError(null);
     setData(null);
     fetcher()
       .then((d) => vivo && setData(d))
-      .catch((e) => vivo && setError(e?.detail || e?.message || 'Erro ao carregar'))
+      .catch((e) => {
+        if (!vivo) return;
+        setError(e?.detail || e?.message || 'Erro ao carregar');
+        setApiError(e instanceof ApiError ? e : null);
+      })
       .finally(() => vivo && setLoading(false));
     return () => {
       vivo = false;
@@ -291,6 +304,7 @@ export function useResource<T>(
     data,
     loading: indisponivel !== null ? false : loading,
     error,
+    apiError,
     indisponivel,
     reload: () => setTick((t) => t + 1),
   };

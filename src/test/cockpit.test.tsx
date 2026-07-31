@@ -258,7 +258,10 @@ describe('contexto fiscal (ente + período)', () => {
 
     await user.keyboard('{ArrowDown}{Enter}');
     await waitFor(() => expect(screen.getByTestId('periodo')).toHaveTextContent('2024-B5'));
-    expect(trigger).toHaveFocus();
+    // O foco volta ao gatilho num efeito, depois de a lista fechar — asserção síncrona aqui
+    // passava sozinha e falhava sob carga da suíte cheia. `waitFor` não enfraquece a regra:
+    // continua exigindo que o foco pouse no gatilho, só não exige que já tenha pousado.
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });
 

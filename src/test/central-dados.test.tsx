@@ -16,6 +16,7 @@ const FONTE: backend.FonteCatalogo = {
   cadencia: 'bimestral',
   orgao: 'STN',
   url_origem: null,
+  tipo_acesso: 'api_rest',
   escopo: 'nacional',
   parser_versao: '1',
   paginas_impactadas: ['/dashboard', '/receita'],
@@ -78,6 +79,19 @@ describe('Central de Dados — confirmação e polling', () => {
   beforeEach(() => {
     vi.spyOn(backend, 'fetchFontes').mockResolvedValue([FONTE]);
     vi.spyOn(backend, 'fetchIngestJobs').mockResolvedValue([]);
+    // A saúde da fila vem no mesmo `Promise.all` da lista de jobs: sem mock, a chamada
+    // real ficava pendente sob relógio falso e o `Promise.all` nunca resolvia — a lista
+    // não chegava a ser preenchida. Passava só enquanto houvesse um backend local no ar
+    // para responder depressa, o que faz o resultado depender da máquina de quem roda.
+    vi.spyOn(backend, 'fetchSaudeFila').mockResolvedValue({
+      consumidores: 1,
+      consumidores_vivos: 1,
+      aguardando: 0,
+      executando: 1,
+      fila_redis: 0,
+      redis_disponivel: true,
+      detalhe: null,
+    });
   });
 
   afterEach(() => {
@@ -198,9 +212,11 @@ describe('Central de Dados — confirmação e polling', () => {
       </MemoryRouter>,
     );
 
+    // Contar microtasks acopla o teste ao número de elos da cadeia de promessas do
+    // `useResource`: qualquer `.then` a mais no fetcher quebrava aqui sem nada ter
+    // regredido na tela. Avançar o relógio até 0 drena o que estiver pendente.
     await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByRole('progressbar', { name: /Progresso do job job-1/ })).toHaveAttribute('aria-valuenow', '25');
     expect(screen.getByText(/polling ativo/)).toBeInTheDocument();

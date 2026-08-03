@@ -21,6 +21,7 @@ import { RelatoriosPage } from './pages/RelatoriosPage';
 import { AdminPage } from './pages/AdminPage';
 import { CentralDadosPage } from './pages/CentralDadosPage';
 import { FonteProcedenciaPage } from './pages/FonteProcedenciaPage';
+import { OperacaoCreditoPage } from './pages/OperacaoCreditoPage';
 import { RequireSuperuser } from './components/RequireSuperuser';
 import { RequireAdministrar } from './components/RequireAdministrar';
 
@@ -63,6 +64,9 @@ export default function App() {
             </RequireSuperuser>
           }
         />
+        {/* Fundo do drill da dívida. Rota própria: análise fiscal precisa de link
+            para compartilhar, imprimir e anexar a processo. */}
+        <Route path="/divida/operacao/:idPleito" element={<OperacaoCreditoPage />} />
         <Route
           path="/central-dados"
           element={

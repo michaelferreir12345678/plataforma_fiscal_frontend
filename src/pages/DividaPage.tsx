@@ -9,6 +9,8 @@ import { FonteChip } from '../components/FonteChip';
 import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { VirtualizedTable } from '../components/VirtualizedTable';
+import { useNavigate } from 'react-router-dom';
 import { useApp, useResource } from '../context/AppContext';
 import { ApiError } from '../services/api';
 import {
@@ -374,6 +376,16 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
               em cima o que foi contratado depois. Uma barra única respondia "quanto vou
               pagar"; esta responde também "quanto disso eu acabei de assumir". */}
           <Legenda />
+          {temResiduo(data) && (
+            <div style={{ fontSize: 11, color: colors.muted, lineHeight: 1.5 }}>
+              O gráfico mostra os anos que a fonte lista. Há ainda{' '}
+              <strong style={{ fontFamily: font.mono, color: colors.ink }}>
+                {moneySum(data.restante_amortizacao, data.restante_encargos)}
+              </strong>{' '}
+              vencendo após {data.horizonte_ate} — o SADIPEM fecha a série com uma linha
+              &ldquo;Restante a pagar&rdquo;, sem detalhar os anos.
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 178, paddingTop: 8, overflowX: 'auto' }}>
             {data.itens.map((item) => {
               const total = numberValue(item.valor) ?? 0;
@@ -441,6 +453,17 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
             <MiniValue label="Encargos (inclui juros)" value={money(data.total_encargos)} />
             <MiniValue label="Estoque" value={money(data.total_dc)} />
             <MiniValue label="Contratado" value={money(data.total_oc)} />
+          </div>
+          {/* O compromisso inteiro, incluindo o que vence além do horizonte publicado.
+              A fonte fecha a série com uma linha "Restante a pagar" que era descartada:
+              o total exibido ficava menor que a dívida real, e número de dívida para
+              menos é o erro que menos denuncia a si mesmo. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+            <MiniValue
+              label={data.horizonte_ate ? `Após ${data.horizonte_ate}` : 'Restante a pagar'}
+              value={moneySum(data.restante_amortizacao, data.restante_encargos)}
+            />
+            <MiniValue label="Compromisso total" value={money(data.total_com_residual)} />
           </div>
         </>
       )}
@@ -648,6 +671,12 @@ function CoorteCard({ detalhe }: { detalhe: DividaDetalhe }) {
  * Legenda do empilhado. Com duas séries, a identidade nunca pode depender só da cor —
  * quem não distingue as duas matizes fica sem saber qual segmento é qual.
  */
+/** Há resíduo publicado? Zero e ausência são a mesma coisa aqui: nada a declarar. */
+function temResiduo(d: DividaCronograma): boolean {
+  const resto = (numberValue(d.restante_amortizacao) ?? 0) + (numberValue(d.restante_encargos) ?? 0);
+  return resto > 0;
+}
+
 function Legenda() {
   const itens = [
     { cor: colors.primary, texto: 'dívida consolidada (estoque)' },
@@ -668,9 +697,10 @@ function Legenda() {
 /** PVL/CDP do SADIPEM: pedidos de verificação de limites (endpoint novo da 25B). */
 function PvlCard({ cod }: { cod: string }) {
   const res = useResource(() => fetchDividaPvl(cod), [cod]);
+  const navigate = useNavigate();
   return (
     <Card>
-      <SectionLabel note="SADIPEM · pedidos de verificação de limites">
+      <SectionLabel note="SADIPEM · clique numa linha para a ficha completa">
         Operações em tramitação (PVL/CDP)
       </SectionLabel>
       <Async res={res} skeleton={<Skeleton linhas={3} />}>
@@ -679,48 +709,74 @@ function PvlCard({ cod }: { cod: string }) {
             <div style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>{p.observacao}</div>
           ) : (
             <>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <caption className="sr-only">Operações de crédito publicadas no SADIPEM</caption>
-                <thead>
-                  <tr style={{ fontSize: 11, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Operação</th>
-                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Finalidade</th>
-                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Credor</th>
-                    <th scope="col" style={{ textAlign: 'right', padding: '6px 4px' }}>Valor</th>
-                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {p.itens.map((item, i) => (
-                    <tr key={`${item.id_pvl}-${i}`} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
-                      <td style={{ padding: '7px 4px' }}>
+              {/* Virtualizada: um ente grande tem centenas de pleitos, e a tabela inteira
+                  no fluxo da página fazia a rolagem do documento crescer sem fim — o
+                  cartão seguinte ficava a uma tela de distância do anterior. Altura fixa
+                  devolve a página ao tamanho de uma página. */}
+              <VirtualizedTable
+                rows={p.itens}
+                rowKey={(item, i) => `${item.id_pvl}-${i}`}
+                caption="Operações de crédito publicadas no SADIPEM"
+                height={p.itens.length > 8 ? 360 : undefined}
+                rowHeight={46}
+                getRowLabel={(item) =>
+                  `${item.tipo_operacao ?? 'operação'} · ${item.finalidade ?? 'sem finalidade'} · ${money(item.valor)}`
+                }
+                onRowActivate={(item) =>
+                  item.id_pvl && navigate(`/divida/operacao/${encodeURIComponent(item.id_pvl)}`)
+                }
+                columns={[
+                  {
+                    key: 'operacao',
+                    header: 'Operação',
+                    render: (item) => (
+                      <>
                         {item.tipo_operacao ?? '—'}
-                        {/* O número do PVL é o que liga esta linha ao processo no Tesouro:
-                            sem ele a operação aparece na tela sem como ser conferida. */}
+                        {/* O número do PVL liga esta linha ao processo no Tesouro: sem
+                            ele a operação aparece sem como ser conferida. */}
                         <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>
                           {item.num_pvl ?? item.id_pvl ?? ''}
                         </div>
-                      </td>
-                      <td style={{ padding: '7px 4px' }}>{item.finalidade ?? '—'}</td>
-                      <td style={{ padding: '7px 4px' }}>
+                      </>
+                    ),
+                  },
+                  { key: 'finalidade', header: 'Finalidade', render: (item) => item.finalidade ?? '—' },
+                  {
+                    key: 'credor',
+                    header: 'Credor',
+                    render: (item) => (
+                      <>
                         {item.credor ?? '—'}
                         {item.tipo_credor && (
                           <div style={{ fontSize: 11, color: colors.faint }}>{item.tipo_credor}</div>
                         )}
-                      </td>
-                      <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono }}>{money(item.valor)}</td>
-                      <td style={{ padding: '7px 4px', fontSize: 11.5 }}>
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'valor',
+                    header: 'Valor',
+                    align: 'right',
+                    width: 120,
+                    render: (item) => <span style={{ fontFamily: font.mono }}>{money(item.valor)}</span>,
+                  },
+                  {
+                    key: 'situacao',
+                    header: 'Situação',
+                    render: (item) => (
+                      <>
                         {item.status ?? '—'}
                         {item.data_analise && (
                           <div style={{ fontSize: 11, color: colors.faint }}>{item.data_analise}</div>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </>
+                    ),
+                  },
+                ]}
+              />
               <div style={{ fontSize: 11, color: colors.muted, marginTop: 8 }}>
-                Total pleiteado: <strong style={{ fontFamily: font.mono }}>{money(p.total_valor)}</strong>
+                {p.itens.length} operação(ões) · total pleiteado:{' '}
+                <strong style={{ fontFamily: font.mono }}>{money(p.total_valor)}</strong>
               </div>
             </>
           )

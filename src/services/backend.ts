@@ -636,6 +636,13 @@ export interface DividaCronograma {
   total_valor: FiscalDecimal | null;
   total_dc: FiscalDecimal | null;
   total_oc: FiscalDecimal | null;
+  /** O que vence além do horizonte publicado — a linha "Restante a pagar" da fonte. */
+  restante_amortizacao: FiscalDecimal | null;
+  restante_encargos: FiscalDecimal | null;
+  /** Último ano explícito: é o "após" que rotula o residual. */
+  horizonte_ate: number | null;
+  /** Soma dos anos + residual: o compromisso remanescente inteiro. */
+  total_com_residual: FiscalDecimal | null;
   source_ref: SourceRef;
 }
 
@@ -807,6 +814,34 @@ export interface PvlOut {
 }
 
 export const fetchDividaPvl = (ibge: string) => apiGet<PvlOut>(`/entes/${ibge}/divida/pvl`);
+
+export interface CdpSituacao {
+  num_pvl: string | null;
+  num_processo: string | null;
+  data_ref: string | null;
+  situacao: string | null;
+  motivo: string | null;
+}
+
+export interface OperacaoDetalhe {
+  cod_ibge: string;
+  pleito: PvlItem;
+  /** Situação no Cadastro da Dívida Pública, casada pelo pleito exato. */
+  cdp: CdpSituacao[];
+  cronograma: VencimentoItem[];
+  total_amortizacao: FiscalDecimal | null;
+  total_encargos: FiscalDecimal | null;
+  restante_amortizacao: FiscalDecimal | null;
+  restante_encargos: FiscalDecimal | null;
+  horizonte_ate: number | null;
+  /** Por que uma seção está vazia (ou qual o escopo real dela) — nunca espaço em branco. */
+  observacoes: Record<string, string>;
+  source_refs: SourceRef[];
+}
+
+/** Fundo do drill: a operação de crédito inteira, do pedido ao cronograma. */
+export const fetchDividaOperacao = (ibge: string, idPleito: string) =>
+  apiGet<OperacaoDetalhe>(`/entes/${ibge}/divida/operacao/${encodeURIComponent(idPleito)}`);
 
 export const simularOperacaoDivida = (
   ibge: string,

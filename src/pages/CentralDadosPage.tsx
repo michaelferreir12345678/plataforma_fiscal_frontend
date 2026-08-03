@@ -7,7 +7,7 @@
  * progresso anda por polling. Ações custosas (acima do limiar) exigem **confirmação explícita**.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Async } from '../components/AsyncState';
@@ -670,6 +670,47 @@ function JobRow({
 const btnMini: React.CSSProperties = { fontSize: 11, padding: '3px 8px', border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.surface, color: colors.muted };
 
 // ============================ Catálogo ============================
+/**
+ * Selo do tipo de acesso — a forma de obtenção muda o que se pode conferir e o que pode
+ * falhar. Uma API se abre no navegador; um arquivo de catálogo pode ser republicado a
+ * qualquer momento; um PDF de portal municipal depende de o ente manter a página no ar.
+ */
+const ORIGEM_ROTULO: Record<string, { texto: string; tom: string; ajuda: string }> = {
+  api_rest: { texto: 'API', tom: colors.primary, ajuda: 'API REST pública, resposta em JSON.' },
+  api_odata: { texto: 'OData', tom: colors.primary, ajuda: 'API OData — consulta com $filter/$select.' },
+  catalogo_ckan: {
+    texto: 'catálogo → arquivo',
+    tom: colors.orange,
+    ajuda: 'O endereço do arquivo não é fixo: sai do catálogo CKAN a cada publicação.',
+  },
+  arquivo: { texto: 'arquivo', tom: colors.orange, ajuda: 'Planilha ou CSV baixado da fonte.' },
+  raspagem_pdf: {
+    texto: 'PDF do portal',
+    tom: colors.red,
+    ajuda: 'Extração de PDF publicado pelo próprio ente — exige configuração por ente.',
+  },
+};
+
+function SeloOrigem({ tipo }: { tipo: string | null }) {
+  const meta = tipo ? ORIGEM_ROTULO[tipo] : undefined;
+  if (!meta) return <span style={{ color: colors.faint }}>—</span>;
+  return (
+    <span
+      title={meta.ajuda}
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        color: meta.tom,
+        border: `1px solid ${meta.tom}`,
+        borderRadius: 3,
+        padding: '1px 5px',
+      }}
+    >
+      {meta.texto}
+    </span>
+  );
+}
+
 function CatalogoTab() {
   const res = useResource(fetchFontes, []);
   return (
@@ -682,7 +723,7 @@ function CatalogoTab() {
               <caption className="sr-only">Catálogo e estado operacional das fontes de dados</caption>
               <thead>
                 <tr style={{ background: colors.bg, color: colors.muted, textAlign: 'left' }}>
-                  {['Fonte', 'Status', 'Descrição', 'Família', 'Relatório', 'Cadência', 'Última execução', 'Última OK', 'Período recente', 'Defasagem', 'Entes', 'Registros', 'Parser', 'Dependências', 'Páginas'].map((h) => (
+                  {['Fonte', 'Origem', 'Status', 'Descrição', 'Família', 'Relatório', 'Cadência', 'Última execução', 'Última OK', 'Período recente', 'Defasagem', 'Entes', 'Registros', 'Parser', 'Dependências', 'Páginas'].map((h) => (
                     <th key={h} scope="col" style={{ padding: '7px 10px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
                 </tr>
@@ -690,7 +731,20 @@ function CatalogoTab() {
               <tbody>
                 {fs.map((f) => (
                   <tr key={f.fonte} style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
-                    <td style={{ padding: '6px 10px', fontFamily: "'JetBrains Mono', monospace" }}>{f.fonte}</td>
+                    <td style={{ padding: '6px 10px', fontFamily: "'JetBrains Mono', monospace" }}>
+                      {/* O nome leva à procedência: endereços, parâmetros e exemplo real.
+                          É o caminho para conferir a origem sem depender da nossa palavra. */}
+                      <Link
+                        to={`/central-dados/fontes/${f.fonte}`}
+                        style={{ color: colors.primary, textDecoration: 'none' }}
+                        title={`Ver de onde vem o dado de ${f.fonte}`}
+                      >
+                        {f.fonte}
+                      </Link>
+                    </td>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                      <SeloOrigem tipo={f.tipo_acesso} />
+                    </td>
                     <td style={{ padding: '6px 10px', color: f.ativo ? colors.green : colors.faint }}>{f.ativo ? 'ativa' : 'pausada'}</td>
                     <td style={{ padding: '6px 10px', color: colors.muted, maxWidth: 240 }}>{f.descricao ?? '—'}</td>
                     <td style={{ padding: '6px 10px' }}>{f.familia}</td>

@@ -20,6 +20,7 @@ import { PlataformaPage } from './pages/PlataformaPage';
 import { RelatoriosPage } from './pages/RelatoriosPage';
 import { AdminPage } from './pages/AdminPage';
 import { CentralDadosPage } from './pages/CentralDadosPage';
+import { FonteProcedenciaPage } from './pages/FonteProcedenciaPage';
 import { RequireSuperuser } from './components/RequireSuperuser';
 import { RequireAdministrar } from './components/RequireAdministrar';
 
@@ -67,6 +68,16 @@ export default function App() {
           element={
             <RequireAdministrar>
               <CentralDadosPage />
+            </RequireAdministrar>
+          }
+        />
+        {/* Rota própria (e não modal) porque procedência é material de auditoria: precisa
+            de endereço para compartilhar, imprimir e anexar a um processo. */}
+        <Route
+          path="/central-dados/fontes/:fonte"
+          element={
+            <RequireAdministrar>
+              <FonteProcedenciaPage />
             </RequireAdministrar>
           }
         />

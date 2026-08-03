@@ -2363,9 +2363,56 @@ export interface FonteCatalogo {
   defasagem_periodos: number | null;
   entes_cobertos: number;
   registros_cobertos: number;
+  /** Como se chega ao dado (api_rest, api_odata, catalogo_ckan, arquivo, raspagem_pdf). */
+  tipo_acesso: string | null;
 }
 /** Catálogo + observabilidade por fonte. Alimenta o chip/rodapé de status do shell. */
 export const fetchFontes = () => apiGet<FonteCatalogo[]>('/admin/ingestion/fontes');
+
+export interface ProcedenciaParametro {
+  nome: string;
+  exemplo: string;
+  significado: string;
+}
+
+export interface ProcedenciaEndpoint {
+  metodo: string;
+  url: string;
+  formato: string;
+  o_que_traz: string;
+  parametros: ProcedenciaParametro[];
+  /** URL real e clicável que devolve o mesmo dado ingerido. */
+  exemplo: string | null;
+  observacao: string | null;
+}
+
+export interface Procedencia {
+  fonte: string;
+  descricao: string | null;
+  orgao: string | null;
+  familia: string;
+  cadencia: string;
+  acesso: string;
+  acesso_rotulo: string;
+  portal: string;
+  documentacao: string | null;
+  licenca: string;
+  autenticacao: string;
+  como_funciona: string;
+  endpoints: ProcedenciaEndpoint[];
+  paginas_impactadas: string[];
+  dependencias: string[];
+  requer_configuracao: string | null;
+}
+
+/**
+ * Origem completa de uma fonte: endereços, parâmetros explicados e exemplos reais.
+ *
+ * É a contraparte, no plano da ingestão, do `source_ref` que acompanha cada número: o
+ * `source_ref` diz de qual entrega o valor saiu; isto diz de qual endereço a entrega saiu.
+ */
+export const fetchProcedencia = (fonte: string) =>
+  apiGet<Procedencia>(`/admin/ingestion/fontes/${encodeURIComponent(fonte)}/procedencia`);
 
 export interface CoberturaItem {
   fonte: string;

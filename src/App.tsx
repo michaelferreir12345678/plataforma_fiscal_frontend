@@ -22,6 +22,7 @@ import { AdminPage } from './pages/AdminPage';
 import { CentralDadosPage } from './pages/CentralDadosPage';
 import { FonteProcedenciaPage } from './pages/FonteProcedenciaPage';
 import { OperacaoCreditoPage } from './pages/OperacaoCreditoPage';
+import { LinhaBrutaPage } from './pages/LinhaBrutaPage';
 import { RequireSuperuser } from './components/RequireSuperuser';
 import { RequireAdministrar } from './components/RequireAdministrar';
 
@@ -67,6 +68,10 @@ export default function App() {
         {/* Fundo do drill da dívida. Rota própria: análise fiscal precisa de link
             para compartilhar, imprimir e anexar a processo. */}
         <Route path="/divida/operacao/:idPleito" element={<OperacaoCreditoPage />} />
+        {/* Fundo do drill de receita e despesa: a linha do RREO como o ente entregou.
+            Rota própria, como as demais fichas — é material de conferência. */}
+        <Route path="/receita/linha/:codigo" element={<LinhaBrutaPage modulo="receita" />} />
+        <Route path="/despesa/linha/:eixo/:codigo" element={<LinhaBrutaPage modulo="despesa" />} />
         <Route
           path="/central-dados"
           element={

@@ -176,6 +176,9 @@ function Conteudo({
         </div>
         <ArvoreDrill
           carregar={(node) => fetchDrill('despesa', d.cod_ibge, { periodo: d.periodo, node: node ?? undefined, eixo })}
+          linkFundo={(codigo) =>
+            `/despesa/linha/${eixo}/${encodeURIComponent(codigo)}?periodo=${encodeURIComponent(d.periodo)}`
+          }
           deps={[d.cod_ibge, d.periodo, eixo]}
           rotuloRaiz={eixo === 'funcao' ? 'Funções' : 'Categorias'}
           onNivel={setNivelArvore}

@@ -815,6 +815,43 @@ export interface PvlOut {
 
 export const fetchDividaPvl = (ibge: string) => apiGet<PvlOut>(`/entes/${ibge}/divida/pvl`);
 
+export interface LinhaRelatorio {
+  anexo: string | null;
+  /** Descrição publicada pelo ente, como aparece no demonstrativo. */
+  conta: string | null;
+  /** Slug estável do STN — distingue a seção principal da intra-orçamentária. */
+  cod_conta: string | null;
+  coluna: string | null;
+  valor: FiscalDecimal | null;
+  linha_seq: number | null;
+  /** Medida do mart que esta coluna alimentou. `null` = a entrega publica, o modelo não guarda. */
+  medida: string | null;
+}
+
+export interface LinhaBruta {
+  cod_ibge: string;
+  periodo: string;
+  codigo: string;
+  descricao: string | null;
+  medidas: Record<string, FiscalDecimal | null>;
+  linhas: LinhaRelatorio[];
+  /** Soma das colunas por medida — a contraprova contra `medidas`. */
+  conferencia: Record<string, FiscalDecimal>;
+  observacao: string | null;
+  source_ref: SourceRef;
+}
+
+/** Fundo do drill da receita: as linhas do RREO Anexo 01 que produziram o nó. */
+export const fetchReceitaLinha = (ibge: string, periodo: string, origem: string) =>
+  apiGet<LinhaBruta>(`/entes/${ibge}/receita/linha/${encodeURIComponent(origem)}`, { periodo });
+
+/** Fundo do drill da despesa. O eixo importa: função vem do Anexo 02, natureza do 01. */
+export const fetchDespesaLinha = (ibge: string, periodo: string, eixo: string, codigo: string) =>
+  apiGet<LinhaBruta>(
+    `/entes/${ibge}/despesa/linha/${encodeURIComponent(eixo)}/${encodeURIComponent(codigo)}`,
+    { periodo },
+  );
+
 export interface CdpSituacao {
   num_pvl: string | null;
   num_processo: string | null;

@@ -9,6 +9,7 @@
  * componente cuida de breadcrumb (drill UP), filhos (drill DOWN), estados e ordenação.
  * `has_children` evita ida-e-volta desnecessária ao backend.
  */
+import { Link } from 'react-router-dom';
 import { useEffect, useState, type ReactNode } from 'react';
 import { colors, font } from '../theme';
 import { Async, Skeleton } from './AsyncState';
@@ -35,6 +36,14 @@ interface ArvoreDrillProps {
   vazio?: ReactNode;
   /** Notificado a cada nível carregado (o pai exporta o que está visível). */
   onNivel?: (children: DrillChild[], node: string | null) => void;
+  /**
+   * Destino do **fundo do drill** de um nó: a linha do relatório que o originou.
+   *
+   * Separado de `carregar` porque é outra natureza de navegação: descer na árvore troca o
+   * nó exibido; ir à linha sai do agregado e chega ao que o ente entregou. Quem não tem
+   * esse fundo simplesmente não passa a prop, e nenhum link aparece.
+   */
+  linkFundo?: (codigo: string) => string;
 }
 
 export function ArvoreDrill({
@@ -44,6 +53,7 @@ export function ArvoreDrill({
   rotuloRaiz = 'Raiz',
   vazio,
   onNivel,
+  linkFundo,
 }: ArvoreDrillProps) {
   const [node, setNode] = useState<string | null>(null);
   // Trocar ente/período/eixo invalida o nó atual (pode não existir na nova árvore).
@@ -68,6 +78,7 @@ export function ArvoreDrill({
           rotuloRaiz={rotuloRaiz}
           vazio={vazio}
           onNivel={onNivel}
+          linkFundo={linkFundo}
           irPara={setNode}
         />
       )}
@@ -83,6 +94,7 @@ function Nivel({
   rotuloRaiz,
   vazio,
   onNivel,
+  linkFundo,
   irPara,
 }: {
   env: DrillEnvelope;
@@ -90,6 +102,7 @@ function Nivel({
   colunas: ColunaMedida[];
   principal: ColunaMedida;
   rotuloRaiz: string;
+  linkFundo?: (codigo: string) => string;
   vazio?: ReactNode;
   onNivel?: (children: DrillChild[], node: string | null) => void;
   irPara: (node: string | null) => void;
@@ -158,6 +171,15 @@ function Nivel({
                       </button>
                     ) : (
                       <span>{c.descricao}</span>
+                    )}
+                    {linkFundo && (
+                      <Link
+                        to={linkFundo(c.codigo)}
+                        style={{ marginLeft: 8, fontSize: 10.5, color: colors.primary, textDecoration: 'none' }}
+                        title={`Ver as linhas do relatório que produziram ${c.descricao}`}
+                      >
+                        linhas
+                      </Link>
                     )}
                     <div style={{ height: 3, background: colors.borderSoft, borderRadius: 2, marginTop: 5, overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${Math.min(Math.max(share, 0), 100)}%`, background: colors.serieA }} />

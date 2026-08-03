@@ -195,6 +195,9 @@ function Conteudo({
             carregar={(node) =>
               fetchDrill('receita', d.cod_ibge, { periodo: d.periodo, node: node ?? undefined })
             }
+            linkFundo={(codigo) =>
+              `/receita/linha/${encodeURIComponent(codigo)}?periodo=${encodeURIComponent(d.periodo)}`
+            }
             deps={[d.cod_ibge, d.periodo]}
             rotuloRaiz="Categorias econômicas"
             onNivel={setNivelArvore}

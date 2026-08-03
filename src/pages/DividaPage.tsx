@@ -48,6 +48,13 @@ const money = (value: MaybeNumber): string => {
   return parsed == null ? '—' : brl(parsed / 1e6);
 };
 
+/** Soma duas parcelas na mesma escala de `money` (que apresenta em milhões). */
+const moneySum = (a: MaybeNumber, b: MaybeNumber): string => {
+  const x = numberValue(a);
+  const y = numberValue(b);
+  return x == null && y == null ? '—' : money((x ?? 0) + (y ?? 0));
+};
+
 const percent = (value: MaybeNumber, decimals = 2): string => {
   const parsed = numberValue(value);
   return parsed == null ? '—' : pct(parsed, decimals);
@@ -363,18 +370,40 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
         <Empty text="Não há vencimentos publicados para este ente e posição." />
       ) : (
         <>
-          <div aria-hidden="true" style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 178, paddingTop: 8, overflowX: 'auto' }}>
+          {/* Empilhado no corte da própria fonte: embaixo o estoque que já existia,
+              em cima o que foi contratado depois. Uma barra única respondia "quanto vou
+              pagar"; esta responde também "quanto disso eu acabei de assumir". */}
+          <Legenda />
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 178, paddingTop: 8, overflowX: 'auto' }}>
             {data.itens.map((item) => {
-              const value = numberValue(item.valor) ?? 0;
-              const height = maxValue > 0 ? Math.max((value / maxValue) * 100, 4) : 4;
+              const total = numberValue(item.valor) ?? 0;
+              const estoque = (numberValue(item.dc_amortizacao) ?? 0) + (numberValue(item.dc_encargos) ?? 0);
+              const novo = (numberValue(item.oc_amortizacao) ?? 0) + (numberValue(item.oc_encargos) ?? 0);
+              const altura = maxValue > 0 ? Math.max((total / maxValue) * 100, 4) : 4;
+              const fatia = (parte: number) => (total > 0 ? (parte / total) * 100 : 0);
               return (
                 <div
                   key={item.ano}
-                  title={`Principal ${money(item.principal)} · juros ${money(item.juros)} · encargos ${money(item.encargos)} · ${item.operacoes} operação(ões)`}
+                  title={
+                    `${item.ano}: ${money(item.valor)}
+` +
+                    `estoque (dívida consolidada) ${moneySum(item.dc_amortizacao, item.dc_encargos)}
+` +
+                    `contratado (operações) ${moneySum(item.oc_amortizacao, item.oc_encargos)}
+` +
+                    `amortização ${money(item.principal)} · encargos ${money(item.encargos)}`
+                  }
                   style={{ minWidth: 56, flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}
                 >
                   <div style={{ fontFamily: font.mono, fontSize: 11, color: colors.muted }}>{money(item.valor)}</div>
-                  <div style={{ width: '100%', height: `${height}%`, background: colors.primary, borderRadius: '3px 3px 0 0' }} />
+                  <div aria-hidden style={{ width: '100%', height: `${altura}%`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 2 }}>
+                    {/* 2px de respiro entre os segmentos: sem o vão, duas cores adjacentes
+                        leem-se como uma só barra e o corte desaparece. */}
+                    {novo > 0 && (
+                      <div style={{ height: `${fatia(novo)}%`, background: colors.orange, borderRadius: '3px 3px 0 0' }} />
+                    )}
+                    <div style={{ height: `${fatia(estoque) || 100}%`, background: colors.primary, borderRadius: novo > 0 ? 0 : '3px 3px 0 0' }} />
+                  </div>
                   <div style={{ fontSize: 11, color: colors.muted, fontFamily: font.mono }}>{item.ano}</div>
                 </div>
               );
@@ -385,9 +414,10 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
             <thead>
               <tr>
                 <th scope="col">Ano</th>
-                <th scope="col">Principal</th>
-                <th scope="col">Juros</th>
+                <th scope="col">Amortização</th>
                 <th scope="col">Encargos</th>
+                <th scope="col">Dívida consolidada</th>
+                <th scope="col">Operações contratadas</th>
                 <th scope="col">Total</th>
                 <th scope="col">Operações</th>
               </tr>
@@ -397,8 +427,9 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
                 <tr key={item.ano}>
                   <th scope="row">{item.ano}</th>
                   <td>{money(item.principal)}</td>
-                  <td>{money(item.juros)}</td>
                   <td>{money(item.encargos)}</td>
+                  <td>{moneySum(item.dc_amortizacao, item.dc_encargos)}</td>
+                  <td>{moneySum(item.oc_amortizacao, item.oc_encargos)}</td>
                   <td>{money(item.valor)}</td>
                   <td>{item.operacoes}</td>
                 </tr>
@@ -406,10 +437,10 @@ function CronogramaCard({ data }: { data: DividaCronograma }) {
             </tbody>
           </table>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-            <MiniValue label="Principal" value={money(data.total_principal)} />
-            <MiniValue label="Juros" value={money(data.total_juros)} />
-            <MiniValue label="Encargos" value={money(data.total_encargos)} />
-            <MiniValue label="Serviço total" value={money(data.total_valor)} />
+            <MiniValue label="Amortização" value={money(data.total_principal)} />
+            <MiniValue label="Encargos (inclui juros)" value={money(data.total_encargos)} />
+            <MiniValue label="Estoque" value={money(data.total_dc)} />
+            <MiniValue label="Contratado" value={money(data.total_oc)} />
           </div>
         </>
       )}
@@ -613,6 +644,27 @@ function CoorteCard({ detalhe }: { detalhe: DividaDetalhe }) {
   );
 }
 
+/**
+ * Legenda do empilhado. Com duas séries, a identidade nunca pode depender só da cor —
+ * quem não distingue as duas matizes fica sem saber qual segmento é qual.
+ */
+function Legenda() {
+  const itens = [
+    { cor: colors.primary, texto: 'dívida consolidada (estoque)' },
+    { cor: colors.orange, texto: 'operações contratadas (novo)' },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, color: colors.muted }}>
+      {itens.map((i) => (
+        <span key={i.texto} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span aria-hidden style={{ width: 9, height: 9, borderRadius: 2, background: i.cor }} />
+          {i.texto}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** PVL/CDP do SADIPEM: pedidos de verificação de limites (endpoint novo da 25B). */
 function PvlCard({ cod }: { cod: string }) {
   const res = useResource(() => fetchDividaPvl(cod), [cod]);
@@ -632,9 +684,10 @@ function PvlCard({ cod }: { cod: string }) {
                 <thead>
                   <tr style={{ fontSize: 11, color: colors.muted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                     <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Operação</th>
+                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Finalidade</th>
+                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Credor</th>
                     <th scope="col" style={{ textAlign: 'right', padding: '6px 4px' }}>Valor</th>
                     <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Situação</th>
-                    <th scope="col" style={{ textAlign: 'left', padding: '6px 4px' }}>Análise</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -642,12 +695,22 @@ function PvlCard({ cod }: { cod: string }) {
                     <tr key={`${item.id_pvl}-${i}`} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
                       <td style={{ padding: '7px 4px' }}>
                         {item.tipo_operacao ?? '—'}
-                        <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{item.id_pvl ?? ''}</div>
+                        {/* O número do PVL é o que liga esta linha ao processo no Tesouro:
+                            sem ele a operação aparece na tela sem como ser conferida. */}
+                        <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>
+                          {item.num_pvl ?? item.id_pvl ?? ''}
+                        </div>
+                      </td>
+                      <td style={{ padding: '7px 4px' }}>{item.finalidade ?? '—'}</td>
+                      <td style={{ padding: '7px 4px' }}>
+                        {item.credor ?? '—'}
+                        {item.tipo_credor && (
+                          <div style={{ fontSize: 11, color: colors.faint }}>{item.tipo_credor}</div>
+                        )}
                       </td>
                       <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono }}>{money(item.valor)}</td>
-                      <td style={{ padding: '7px 4px' }}>{item.status ?? '—'}</td>
-                      <td style={{ padding: '7px 4px', fontSize: 11 }}>
-                        {item.decisao ?? '—'}
+                      <td style={{ padding: '7px 4px', fontSize: 11.5 }}>
+                        {item.status ?? '—'}
                         {item.data_analise && (
                           <div style={{ fontSize: 11, color: colors.faint }}>{item.data_analise}</div>
                         )}

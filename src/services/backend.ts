@@ -614,9 +614,14 @@ export interface DividaArvore extends DrillEnvelope {
 export interface VencimentoItem {
   ano: number;
   principal: FiscalDecimal | null;
-  juros: FiscalDecimal | null;
+  /** Inclui os juros — o SADIPEM publica encargos sem discriminá-los. */
   encargos: FiscalDecimal | null;
   valor: FiscalDecimal | null;
+  /** Dívida consolidada (estoque) × operações contratadas (assumido de novo). */
+  dc_amortizacao: FiscalDecimal | null;
+  dc_encargos: FiscalDecimal | null;
+  oc_amortizacao: FiscalDecimal | null;
+  oc_encargos: FiscalDecimal | null;
   operacoes: number;
 }
 
@@ -627,9 +632,10 @@ export interface DividaCronograma {
   versao_entrega: string;
   itens: VencimentoItem[];
   total_principal: FiscalDecimal | null;
-  total_juros: FiscalDecimal | null;
   total_encargos: FiscalDecimal | null;
   total_valor: FiscalDecimal | null;
+  total_dc: FiscalDecimal | null;
+  total_oc: FiscalDecimal | null;
   source_ref: SourceRef;
 }
 
@@ -777,10 +783,18 @@ export const fetchDividaCronograma = (ibge: string, periodo: string, asOf?: stri
 /** PVL/CDP do SADIPEM: pedidos de verificação de limites e decisões do Tesouro. */
 export interface PvlItem {
   id_pvl: string | null;
+  /** Identificadores do processo no Tesouro — a âncora documental da operação. */
+  num_pvl: string | null;
+  num_processo: string | null;
   tipo_operacao: string | null;
+  /** Para que serve o dinheiro e quem empresta. */
+  finalidade: string | null;
+  credor: string | null;
+  tipo_credor: string | null;
+  moeda: string | null;
   valor: FiscalDecimal | null;
   status: string | null;
-  decisao: string | null;
+  data_protocolo: string | null;
   data_analise: string | null;
 }
 export interface PvlOut {

@@ -8,6 +8,8 @@ import { ExportButton } from '../components/ExportButton';
 import { useApp, useResource } from '../context/AppContext';
 import { fetchLimites, type LimiteItem } from '../services/backend';
 import { brl, fmt, pct } from '../utils/format';
+import { Termo } from '../components/NotaMetodologica';
+import { humanizar } from '../utils/rotulos';
 
 const ROTULO: Record<string, string> = {
   pessoal_executivo: 'Pessoal · Poder Executivo',
@@ -21,6 +23,7 @@ const ROTULO: Record<string, string> = {
 /** O que é 100% em cada linha — os mínimos não se medem contra a RCL. */
 const BASE_ROTULO: Record<string, string> = {
   rcl: 'RCL (12 meses)',
+  rcl_ajustada: 'RCL Ajustada',
   impostos_transferencias: 'impostos + transferências',
   fundeb: 'receitas do FUNDEB',
 };
@@ -60,7 +63,7 @@ export function LimitesPage() {
               <div style={{ fontSize: 12.5, color: colors.muted, lineHeight: 1.6 }}>
                 Nenhum limite calculado para <strong>{ente.nome}</strong> em <strong>{d.periodo}</strong> ainda.
                 Os indicadores são materializados sob demanda ao abrir cada módulo — abra <strong>Pessoal</strong> (via
-                Despesa) ou aguarde as sprints de Dívida/Saúde/Educação. Todo cálculo é rastreável (source_ref).
+                Despesa) ou os demais limites aparecem conforme o ente publica os anexos correspondentes. Todo cálculo é rastreável (source_ref).
               </div>
             </Card>
           ) : (
@@ -116,7 +119,24 @@ function LimiteRow({ it }: { it: LimiteItem }) {
         </div>
         {/* Desde a Sprint 25C a lista mistura bases: sem dizer qual é, 27% de ASPS e
             47% de pessoal pareceriam a mesma métrica medida contra a RCL. */}
-        <div style={{ fontSize: 11, color: colors.faint }}>de {BASE_ROTULO[it.denominador] ?? it.denominador}</div>
+        <div style={{ fontSize: 11, color: colors.faint }}>
+          {/* **Não é a RCL.** Garantias e operações de crédito se apuram sobre a RCL
+              Ajustada; rotular as duas do mesmo jeito faria o gestor comparar
+              percentuais de bases diferentes como se fossem a mesma coisa. */}
+          de{' '}
+          {it.denominador === 'rcl_ajustada' ? (
+            <Termo sigla="RCL Ajustada">
+              <b>Receita Corrente Líquida Ajustada.</b> A RCL menos as transferências
+              obrigatórias da União relativas às emendas individuais (CF, art. 166-A, §1º).
+              É o denominador legal dos limites de endividamento — garantias e operações de
+              crédito —, definido pela Resolução 43/2001 do Senado. É <b>menor</b> que a RCL:
+              apurar estes limites sobre a RCL cheia infla o denominador e faz o ente
+              aparecer com mais folga do que tem.
+            </Termo>
+          ) : (
+            (BASE_ROTULO[it.denominador] ?? humanizar(it.denominador))
+          )}
+        </div>
         <div style={{ fontSize: 11, color: colors.faint }}>{it.valor_rs != null ? brl(it.valor_rs / 1e6) : '—'}</div>
       </div>
       <div style={{ flex: 1 }}>

@@ -5,6 +5,7 @@
  * dados" de "explicação geral da norma" e sinaliza dado ausente em vez de adivinhar.
  * Falha do provedor (Gemini) degrada com erro claro — nunca uma resposta inventada.
  */
+import { rotuloFaixa } from '../utils/rotulos';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
@@ -98,7 +99,7 @@ function FatoRow({ f }: { f: AssistFato }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {f.faixa && (
-          <span style={{ fontSize: 11, fontWeight: 600, color: faixaCor, background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 3, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{f.faixa}</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: faixaCor, background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 3, padding: '1px 5px', letterSpacing: '0.03em' }}>{rotuloFaixa(f.faixa)}</span>
         )}
         <span style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{fmtSource(f.source_ref)}</span>
         {f.as_of && <span style={{ fontSize: 11, color: colors.faint }}>· as_of {fmtDate(f.as_of)}</span>}

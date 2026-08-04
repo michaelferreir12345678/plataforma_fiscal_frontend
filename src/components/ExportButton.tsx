@@ -93,7 +93,7 @@ export function ExportButton<T>({
       >
         ↓ CSV
       </button>
-      <Link to={destino} style={{ ...botao, textDecoration: 'none' }} title="Relatório institucional (PDF/XLSX) da Sprint 16">
+      <Link to={destino} style={{ ...botao, textDecoration: 'none' }} title="Relatório institucional em PDF ou XLSX">
         relatório completo
       </Link>
     </div>

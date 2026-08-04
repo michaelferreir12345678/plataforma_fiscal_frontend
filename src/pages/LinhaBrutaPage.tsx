@@ -102,7 +102,8 @@ function Conteudo({ d }: { d: LinhaBruta }) {
                   <th scope="col" style={{ textAlign: 'left', padding: '6px 14px 6px 0' }}>Medida</th>
                   <th scope="col" style={{ textAlign: 'right', padding: '6px 14px 6px 0' }}>No painel</th>
                   <th scope="col" style={{ textAlign: 'right', padding: '6px 14px 6px 0' }}>Na entrega</th>
-                  <th scope="col" style={{ textAlign: 'left', padding: '6px 0' }}>—</th>
+                  {/* A coluna contém "confere"/"DIVERGE"; o cabeçalho era um travessão. */}
+                  <th scope="col" style={{ textAlign: 'left', padding: '6px 0' }}>Conferência</th>
                 </tr>
               </thead>
               <tbody>

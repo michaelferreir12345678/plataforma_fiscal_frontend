@@ -29,6 +29,7 @@ import {
   type RapOrgaoItem,
 } from '../services/backend';
 import { fmt } from '../utils/format';
+import { Termo } from '../components/NotaMetodologica';
 
 /** Coage FiscalDecimal (string ou número) para número; null-safe. */
 const n = (v: FiscalDecimal | null | undefined): number | null =>
@@ -108,18 +109,37 @@ export function CaixaPage() {
           const insuf = s.resumo.n_insuficientes;
           return (
             <>
+              {/* O rótulo diz **o que o número é**. "Disponibilidade de caixa líquida"
+                  prometia a posição do ente e entregava só a soma das fontes
+                  superavitárias — a ressalva vivia em 11px, depois do número, e o gestor
+                  lia "tenho R$ X em caixa". O déficit agora aparece ao lado, porque são
+                  os dois lados juntos que descrevem a posição. */}
               <MetricHeader
-                label={`Disponibilidade de caixa líquida · ${s.periodo}`}
+                label={`Disponibilidade das fontes superavitárias · ${s.periodo}`}
                 value={M(s.resumo.total_disp_liquida_apos_positiva)}
                 context={
                   <span>
-                    soma das fontes superavitárias (após inscrição em RPNP) ·{' '}
-                    <b>{s.resumo.n_fontes} fontes</b> · a análise é fonte a fonte (nunca consolidada) ·
-                    fonte {s.source_ref.relatorio} {s.source_ref.anexo} v{s.source_ref.versao_entrega}
+                    após inscrição em{' '}
+                    <Termo sigla="RPNP">
+                      <b>Restos a Pagar Não Processados.</b> Despesa empenhada e não liquidada
+                      até 31/12 — o serviço não foi atestado, mas o compromisso já existe e
+                      consome caixa do exercício seguinte. Inscrevê-la sem disponibilidade
+                      financeira que a lastreie é o que a LRF (art. 42) veda no fim de mandato.
+                    </Termo>{' '}
+                    · <b>{s.resumo.n_fontes} fontes</b> · a análise é fonte a
+                    fonte, nunca consolidada (LRF art. 50, I) · fonte {s.source_ref.relatorio}{' '}
+                    {s.source_ref.anexo} v{s.source_ref.versao_entrega}
                   </span>
                 }
                 right={
                   <div style={{ display: 'flex', gap: 16 }}>
+                    <StatBox
+                      label="Déficit das demais fontes"
+                      value={M(s.resumo.total_disp_liquida_apos_negativa)}
+                      sub="não compensa o superávit: a suficiência é por fonte"
+                      fg={colors.red}
+                      bg={colors.redBg}
+                    />
                     <StatBox
                       label="Fontes com insuficiência"
                       value={String(insuf)}
@@ -193,7 +213,7 @@ export function CaixaPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 12 }}>
                 <RpnpSemLastroCard cod={ente.cod_ibge} periodo={periodoRgf} />
                 <Card>
-                  <SectionLabel note="grupo de fontes → fonte (drill §6.1)">
+                  <SectionLabel note="abra um grupo para ver as fontes que o compõem">
                     Disponibilidade por fonte de recursos
                   </SectionLabel>
                   <ArvoreDrill

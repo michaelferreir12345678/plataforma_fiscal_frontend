@@ -346,12 +346,17 @@ function Painel({
             deps={[detalhe.cod_ibge, detalhe.periodo, dominio]}
             rotuloRaiz={dominio === 'saude' ? 'Função 10 · Saúde' : 'MDE'}
             colunas={[
-              { chave: 'valor_computado', rotulo: 'Computado', barra: true },
+              { chave: 'valor_computado', rotulo: 'Computado (válido)', barra: true },
               { chave: 'empenhado', rotulo: 'Empenhado' },
               { chave: 'liquidado', rotulo: 'Liquidado' },
               { chave: 'pago', rotulo: 'Pago' },
               { chave: 'despesa_aplicada', rotulo: 'Aplicado' },
-              { chave: 'valor_computado_bruto', rotulo: 'Computado' },
+              // A diferença entre as duas colunas **é** a regra do art. 25 da LC 141/2012:
+              // o bruto inclui os restos a pagar não processados sem disponibilidade de
+              // caixa; o válido os expurga. Sob o mesmo cabeçalho, uma parecia erro de
+              // renderização — ou pior, servia para defender o cumprimento no TCE com o
+              // número que não vale.
+              { chave: 'valor_computado_bruto', rotulo: 'Bruto (antes do expurgo de RP sem lastro)' },
             ]}
             vazio={<Vazio texto="Sem detalhamento por subfunção nesta entrega." />}
           />
@@ -469,7 +474,7 @@ function CardProjecao({
               </div>
               {abaixo && (
                 <div style={avisoRisco}>
-                  Trajetória abaixo do piso de {P(item.minimo_pct, 0)}. O motor de alertas (Sprint 15)
+                  Trajetória abaixo do piso de {P(item.minimo_pct, 0)}. O monitor de alertas
                   registra este mesmo risco em <strong>/alertas</strong> enquanto o exercício não fecha —
                   no 6º bimestre ele deixa de ser risco e passa a ser descumprimento apurado.
                 </div>

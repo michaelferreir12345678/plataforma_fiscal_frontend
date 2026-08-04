@@ -350,7 +350,13 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
     });
     renderReceita();
     expect(await screen.findByText('contido no agregado')).toBeInTheDocument();
-    expect(screen.getByText('39,1% do agregado')).toBeInTheDocument();
+    // Participação e divergência viraram **colunas distintas**. Sob um cabeçalho só,
+    // "39,1%" tanto podia ser participação — normal — quanto divergência — grave, e com a
+    // mesma cor de risco aplicada às duas. Este teste travava a versão ambígua.
+    const linha = screen.getByText('contido no agregado').closest('tr')!;
+    expect(within(linha).getByText('39,1%')).toBeInTheDocument();
+    // Numa linha agregada não há divergência a apurar: o RREO não abre aquele repasse.
+    expect(within(linha).getByText('—')).toBeInTheDocument();
     expect(screen.getByText(/comparação por/)).toHaveTextContent('contenção');
   });
 

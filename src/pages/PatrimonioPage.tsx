@@ -271,7 +271,7 @@ function Explorador({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px 8px' }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>Explorador MSC · saldo por conta PCASP</div>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: colors.muted }}>
-          drill lazy · saldo rolled-up (pai = Σ filhos)
+          abre por demanda · saldo consolidado do nó (pai = Σ filhos)
         </span>
       </div>
       {/* seletor de mês (a MSC é mensal) */}

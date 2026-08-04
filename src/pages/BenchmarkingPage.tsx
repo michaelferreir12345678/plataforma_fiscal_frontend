@@ -6,6 +6,7 @@
  * (incluindo os gerenciais: RCL por habitante, investimento e resultado primário sobre a
  * RCL) e a **evolução na coorte** ao longo dos períodos, exportável.
  */
+import { rotuloFaixa, rotuloUnidade } from '../utils/rotulos';
 import { useState, type CSSProperties } from 'react';
 import { colors, font, type RiskLevel } from '../theme';
 import { Card } from '../components/Card';
@@ -300,7 +301,7 @@ function EvolucaoCoorte({
                 contexto={{
                   ente: enteNome,
                   periodo: `${e.pontos[0].periodo}-${e.pontos[e.pontos.length - 1].periodo}`,
-                  fonte: `${e.unidade} · coorte ${e.coorte.rotulo}`,
+                  fonte: `${rotuloUnidade(e.unidade)} · coorte ${e.coorte.rotulo}`,
                 }}
                 modeloRelatorio="benchmark"
               />
@@ -805,7 +806,7 @@ function SortHeader({
 
 function FaixaBadge({ faixa }: { faixa: string | null | undefined }) {
   if (!faixa) return <StatusBadge level="neutro" label="—" />;
-  return <StatusBadge level={FAIXA_NIVEL[faixa.toLowerCase()] ?? 'neutro'} label={faixa} />;
+  return <StatusBadge level={FAIXA_NIVEL[faixa.toLowerCase()] ?? 'neutro'} label={rotuloFaixa(faixa)} />;
 }
 
 function AuditLine({ sources, asOf, compact = false }: { sources: SourceRef[]; asOf: string | null | undefined; compact?: boolean }) {

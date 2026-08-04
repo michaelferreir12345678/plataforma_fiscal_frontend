@@ -127,7 +127,7 @@ export function RelatoriosPage() {
       });
       setSolicitacao(response);
       setDetalhe(null);
-      setMessage(`${response.total_entes} relatório(s) enfileirado(s) com dados reais.`);
+      setMessage(`${response.total_entes} relatório(s) enfileirado(s).`);
       historico.reload();
     } catch (error) {
       setActionError(errorMessage(error));

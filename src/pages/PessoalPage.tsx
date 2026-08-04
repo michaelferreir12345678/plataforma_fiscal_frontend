@@ -17,6 +17,7 @@
  *  9. "E se eu reajustar a folha?" → simulador de impacto (/limites/pessoal_executivo/simular)
  * 10. "Posso confiar / e se não houver dado?" → FonteChip com versão e estado vazio nomeado
  */
+import { rotuloFaixa, rotuloModelo, rotuloUnidade } from '../utils/rotulos';
 import { useState, type FormEvent } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
@@ -82,7 +83,7 @@ export function PessoalPage() {
         )}
       />
 
-      <SeloQualidadePagina />
+      <SeloQualidadePagina periodo={periodoRgf} />
 
       <Async
         res={det}
@@ -149,7 +150,7 @@ function Conteudo({
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 12 }}>
         <Card>
-          <SectionLabel note="poder → órgão (drill §6.1)">Quem puxa a folha</SectionLabel>
+          <SectionLabel note="abra um poder para ver os órgãos">Quem puxa a folha</SectionLabel>
           <ArvoreDrill
             carregar={(node) =>
               fetchPessoalArvore(d.cod_ibge, { periodo: d.periodo, node: node ?? undefined })
@@ -290,7 +291,7 @@ function PorPoderCard({ cod, periodo }: { cod: string; periodo: string }) {
                     <td style={td}>
                       {item.faixa ? (
                         <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: corFaixa(item.faixa) }}>
-                          {item.faixa}
+                          {rotuloFaixa(item.faixa)}
                         </span>
                       ) : (
                         <span style={{ fontSize: 11, color: colors.faint }}>
@@ -378,14 +379,14 @@ function ProjecaoCard({ cod }: { cod: string }) {
   const res = useResource(() => fetchProjecao(cod, { indicador: 'pessoal', horizonte: 4 }), [cod]);
   return (
     <Card>
-      <SectionLabel note="modelo da Sprint 14 · intervalo de confiança sempre visível">
+      <SectionLabel note="projeção estatística · intervalo de confiança sempre visível">
         Para onde a folha vai
       </SectionLabel>
       <Async res={res} skeleton={<Skeleton linhas={4} />}>
         {(p) => (
           <>
             <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8 }}>
-              modelo <strong>{p.modelo}</strong> · unidade {p.unidade} · confiança {P(p.nivel_confianca, 0)}
+              modelo <strong>{rotuloModelo(p.modelo)}</strong> · {rotuloUnidade(p.unidade)} · confiança {P(p.nivel_confianca, 0)}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <caption className="sr-only">Projeção da despesa com pessoal</caption>

@@ -27,6 +27,7 @@ import type {
   RiscoItem,
   TendenciaItem,
 } from '../services/backend';
+import { rotuloFaixa, rotuloModelo } from '../utils/rotulos';
 
 const COR: Record<string, string> = {
   verde: colors.green,
@@ -42,13 +43,14 @@ const FUNDO: Record<string, string> = {
   vermelho: colors.redBg,
   cinza: colors.bg,
 };
-const ROTULO_FAROL: Record<string, string> = {
-  conforme: 'Conforme',
-  alerta: 'Em alerta',
-  prudencial: 'Limite prudencial',
-  critico: 'Limite excedido',
-  sem_dados: 'Sem dados apurados',
-};
+/**
+ * O farol usa a mesma régua de `rotuloFaixa`.
+ *
+ * Havia três vocabulários vivos para a mesma faixa legal — "Limite excedido" aqui,
+ * "Crítico" na carteira, "Acima do teto" na página de limites. Quem navegava entre as
+ * três não tinha como saber que era o mesmo estado.
+ */
+const ROTULO_FAROL = rotuloFaixa;
 
 const num = (v: number | null | undefined, casas = 2) =>
   v === null || v === undefined ? '—' : Number(v).toFixed(casas);
@@ -159,7 +161,7 @@ export function CockpitPage() {
                     Situação
                   </div>
                   <div style={{ fontSize: 17, fontWeight: 600, color: COR[c.resumo.cor] ?? colors.ink, marginTop: 2 }}>
-                    {ROTULO_FAROL[c.resumo.farol] ?? c.resumo.farol}
+                    {ROTULO_FAROL(c.resumo.farol)}
                   </div>
                   <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
                     {c.resumo.indicadores_avaliados} indicador(es) apurado(s)
@@ -363,7 +365,7 @@ function CardTendencia({ t }: { t: TendenciaItem }) {
       />
       <Legenda cruza={Boolean(t.cruzamento_periodo)} />
       <div style={{ fontSize: 11, color: colors.muted }}>
-        {t.historico.length} períodos observados · {t.projecao.length} projetados ({t.modelo})
+        {t.historico.length} períodos observados · {t.projecao.length} projetados ({rotuloModelo(t.modelo)})
       </div>
       {ultimo && (
         <div style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>

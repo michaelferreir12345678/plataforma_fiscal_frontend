@@ -43,6 +43,7 @@ import type {
   MapaUfResponse,
   RankingItem,
 } from '../services/backend';
+import { rotuloFaixa, rotuloIndicador, rotuloUnidade } from '../utils/rotulos';
 
 // faixa/conformidade nomeada pelo backend → tema
 const COR: Record<string, { fill: string; stroke: string; text: string }> = {
@@ -284,7 +285,7 @@ function ConsolidadoTab({
                 contexto={{
                   ente: `Municípios ${uf}`,
                   periodo,
-                  fonte: `ranking ${indicador} · ${ranking.data.unidade}`,
+                  fonte: `ranking ${rotuloIndicador(indicador)} · ${rotuloUnidade(ranking.data.unidade)}`,
                 }}
                 modeloRelatorio="comparativo"
               />
@@ -863,7 +864,8 @@ const loteBtn: React.CSSProperties = {
 };
 
 function GradeCarteira({ linhas, onEscolherEnte }: { linhas: CarteiraEnteRow[]; onEscolherEnte: (e: EnteSel) => void }) {
-  const ROTULO: Record<string, string> = { conforme: 'Conforme', alerta: 'Alerta', prudencial: 'Prudencial', critico: 'Crítico', sem_dados: 'Sem dados' };
+  // Mesma régua do cockpit e da página de limites — ver `rotuloFaixa`.
+  const ROTULO = rotuloFaixa;
   const ind = (e: CarteiraEnteRow, k: string) => e.indicadores.find((i) => i.indicador === k) ?? null;
   if (linhas.length === 0) return <div style={{ padding: '16px', fontSize: 12, color: colors.muted }}>Nenhum ente com dado no período.</div>;
   const abrir = (e: CarteiraEnteRow) =>
@@ -916,7 +918,7 @@ function GradeCarteira({ linhas, onEscolherEnte }: { linhas: CarteiraEnteRow[]; 
         const c = corDe(e.cor);
         return (
           <span style={{ padding: '1px 7px', borderRadius: 2, fontWeight: 600, background: c.fill, color: colors.ink }}>
-            {ROTULO[e.conformidade] ?? e.conformidade}
+            {ROTULO(e.conformidade)}
           </span>
         );
       },
@@ -931,7 +933,7 @@ function GradeCarteira({ linhas, onEscolherEnte }: { linhas: CarteiraEnteRow[]; 
       height={Math.min(460, Math.max(160, linhas.length * 44 + 46))}
       rowHeight={44}
       onRowActivate={abrir}
-      getRowLabel={(e) => `${e.nome ?? e.cod_ibge}, ${ROTULO[e.conformidade] ?? e.conformidade}`}
+      getRowLabel={(e) => `${e.nome ?? e.cod_ibge}, ${ROTULO(e.conformidade)}`}
     />
   );
 }

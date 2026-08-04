@@ -67,12 +67,37 @@ export function SeloQualidade({ checks }: { checks: ChecagemAberta[] | undefined
  * ente/período do contexto e sela — uma linha por página, sem cada tela reimplementar
  * a consulta. Silencioso enquanto não há falha (inclusive enquanto carrega).
  */
-export function SeloQualidadePagina() {
-  const { ente, periodo } = useApp();
+export function SeloQualidadePagina({ periodo: periodoProp }: { periodo?: string } = {}) {
+  const { ente, periodo: periodoRreo } = useApp();
+  // **O período tem de ser o da página.** Sem a prop, o selo consultava sempre o período
+  // RREO — inclusive em Pessoal, Dívida e Caixa, que exibem RGF. O gestor via um selo de
+  // qualidade que atestava outro período que não o da tela.
+  const periodo = periodoProp || periodoRreo;
   const res = useResource(
     () => fetchCockpit(ente.cod_ibge, periodo),
     [ente.cod_ibge, periodo],
   );
+  // **Falha de rede não pode parecer "tudo certo".** `if (!res.data) return null` fazia
+  // erro e ausência de divergência produzirem exatamente a mesma tela: nada. Quem não
+  // consegue verificar precisa saber que não verificou.
+  if (res.error) {
+    return (
+      <div
+        role="status"
+        style={{
+          fontSize: 11,
+          color: colors.muted,
+          border: `1px solid ${colors.borderSoft}`,
+          borderRadius: 4,
+          padding: '3px 9px',
+          alignSelf: 'flex-start',
+        }}
+      >
+        <span aria-hidden>ⓘ </span>
+        não foi possível verificar a qualidade deste dado
+      </div>
+    );
+  }
   if (!res.data) return null;
   return <SeloQualidade checks={res.data.qualidade.checks_abertos} />;
 }

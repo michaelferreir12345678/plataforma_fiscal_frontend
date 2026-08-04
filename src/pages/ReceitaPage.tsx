@@ -232,7 +232,7 @@ function Conteudo({
       </div>
 
       <Card>
-        <SectionLabel note="RREO Anexo 01 × FPM/FUNDEB/ICMS (Sprint 1B)">
+        <SectionLabel note="RREO Anexo 01 × repasses publicados pela União e pelo estado">
           Conciliação de transferências · o repasse informado bate com o recebido?
         </SectionLabel>
         <ConciliacaoCard cod={d.cod_ibge} periodo={d.periodo} enteNome={enteNome} podeAdministrar={podeAdministrar} />
@@ -408,7 +408,11 @@ function ConciliacaoCard({
                   <th scope="col" style={th}>Transferência</th>
                   <th scope="col" style={{ ...th, textAlign: 'right' }}>RREO A01</th>
                   <th scope="col" style={{ ...th, textAlign: 'right' }}>Fonte externa</th>
+                  {/* Duas colunas, porque são duas medidas incompatíveis. Sob um
+                      cabeçalho só, "14,2%" tanto podia ser participação — normal — quanto
+                      divergência — grave. Com a mesma cor de risco aplicada aos dois. */}
                   <th scope="col" style={{ ...th, textAlign: 'right' }}>Divergência</th>
+                  <th scope="col" style={{ ...th, textAlign: 'right' }}>Participação</th>
                   <th scope="col" style={th}>Situação</th>
                 </tr>
               </thead>
@@ -477,17 +481,26 @@ function LinhaConciliacao({ item }: { item: ConciliacaoItem }) {
         {agregado && <div style={{ fontSize: 11, color: colors.faint }}>agregado</div>}
       </td>
       <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono }}>{M(item.externo_acum)}</td>
-      <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono, color: cor }}>
-        {agregado
-          ? item.participacao_no_agregado_pct == null
-            ? '—'
-            : `${fmt(Number(item.participacao_no_agregado_pct), 1)}% do agregado`
-          : item.divergencia_pct == null
-            ? '—'
-            : `${fmt(Number(item.divergencia_pct), 2)}%`}
+      {/* Divergência: só quando há confronto linha a linha. Numa linha agregada não há
+          divergência a apurar — o RREO não abre aquele repasse —, e um traço diz isso
+          melhor que um número emprestado de outra medida. */}
+      <td
+        style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono, color: agregado ? colors.faint : cor }}
+        title={agregado ? 'O RREO não abre este repasse; não há divergência a apurar.' : undefined}
+      >
+        {agregado || item.divergencia_pct == null
+          ? '—'
+          : `${fmt(Number(item.divergencia_pct), 2)}%`}
         {!agregado && item.divergencia_rs != null && (
           <div style={{ fontSize: 11, color: colors.faint }}>{M(item.divergencia_rs)}</div>
         )}
+      </td>
+      {/* Participação no agregado: cor neutra de propósito. É informação de composição,
+          não sinal de risco — pintá-la de laranja gastava o vocabulário das faixas. */}
+      <td style={{ padding: '7px 4px', textAlign: 'right', fontFamily: font.mono, color: colors.muted }}>
+        {item.participacao_no_agregado_pct == null
+          ? '—'
+          : `${fmt(Number(item.participacao_no_agregado_pct), 1)}%`}
       </td>
       <td style={{ padding: '7px 4px' }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: cor, textTransform: 'uppercase', letterSpacing: '0.04em' }}>

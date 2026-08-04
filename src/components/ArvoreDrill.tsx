@@ -112,10 +112,30 @@ function Nivel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env, node]);
 
-  const total = env.children.reduce(
-    (acc, c) => acc + Math.max(numero(c.measures[principal.chave]) ?? 0, 0),
+  /**
+   * Denominador da coluna de participação.
+   *
+   * Era a soma dos filhos com os **negativos zerados por clamp** — e o agregado do próprio
+   * nó, que `env.measures` traz, era descartado. Na árvore de Caixa, onde disponibilidade
+   * negativa é rotina, isso fazia as participações somarem mais de 100% e cada fonte
+   * superavitária aparecer inflada: uma fonte com 21% do total era exibida como 34%.
+   *
+   * O agregado do nó é o denominador correto — é dele que os filhos são parte. A soma dos
+   * filhos só entra quando o nó não publica o agregado.
+   */
+  const agregadoDoNo = numero(env.measures?.[principal.chave] ?? null);
+  const somaDosFilhos = env.children.reduce(
+    (acc, c) => acc + (numero(c.measures[principal.chave]) ?? 0),
     0,
   );
+  const temNegativo = env.children.some((c) => (numero(c.measures[principal.chave]) ?? 0) < 0);
+  const total = agregadoDoNo ?? somaDosFilhos;
+  /**
+   * Com valores negativos entre os filhos, "participação" deixa de ter sentido: a parte
+   * pode exceder o todo e a soma das partes não fecha em 100%. Exibir um número nessas
+   * condições é pior que omiti-lo — o gestor não tem como saber que a régua mudou.
+   */
+  const participacaoAplicavel = total > 0 && !temNegativo;
   const ordenados = [...env.children].sort(
     (a, b) => (numero(b.measures[principal.chave]) ?? 0) - (numero(a.measures[principal.chave]) ?? 0),
   );
@@ -155,7 +175,20 @@ function Nivel({
                   {c.rotulo}
                 </th>
               ))}
-              <th style={{ ...th, textAlign: 'right', width: 52 }}>%</th>
+              {/* "% do nível" e não "%": a participação é sobre o agregado do nó aberto,
+                  não sobre o total da página. Um cabeçalho de uma letra deixava isso por
+                  conta da adivinhação. */}
+              <th
+                scope="col"
+                style={{ ...th, textAlign: 'right', width: 62 }}
+                title={
+                  participacaoAplicavel
+                    ? 'Participação de cada item no agregado do nível aberto.'
+                    : 'Participação não se aplica: há valores negativos neste nível, e a parte pode exceder o todo.'
+                }
+              >
+                % do nível
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -193,7 +226,7 @@ function Nivel({
                     </td>
                   ))}
                   <td style={{ ...td, textAlign: 'right', fontFamily: font.mono, color: colors.muted }}>
-                    {total > 0 ? `${share.toFixed(1)}%` : '—'}
+                    {participacaoAplicavel ? `${share.toFixed(1)}%` : '—'}
                   </td>
                 </tr>
               );

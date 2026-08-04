@@ -3,6 +3,7 @@
  * série multi-exercício, memória de cálculo em diálogo, exportação e a **meta da LDO** —
  * oficial (Anexo 6) ou cadastrada pela organização quando o ente não a publica (§11.5).
  */
+import { NotaMetodologica } from '../components/NotaMetodologica';
 import { useState, type FormEvent } from 'react';
 import { colors } from '../theme';
 import { Card } from '../components/Card';
@@ -147,6 +148,10 @@ export function ResultadoPage() {
                           {M(r.dcl_sprint8)}{' '}
                           {r.concilia_com_sprint8 === null ? '(indisponível)' : r.concilia_com_sprint8 ? '· concilia ✓' : '· diverge ⚠'}
                         </div>
+                        {/* A nota vive aqui, e não numa página de metodologia: é neste
+                            card que a divergência acima × abaixo aparece, e parte dela é
+                            diferença de escopo (com/sem RPPS), não erro do ente. */}
+                        <NotaRpps />
                       </div>
                     )}
                   </Async>
@@ -160,7 +165,7 @@ export function ResultadoPage() {
                 />
               </div>
 
-              {/* Sprint 25B: série, memória, proveniência e exportação */}
+              {/* Série, memória de cálculo, proveniência e exportação. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <FonteChip source={d.source_ref} ultimoPeriodo={ultimoPeriodo} />
                 <div style={{ flex: 1 }} />
@@ -402,6 +407,41 @@ function FormMetaFiscal({
         de relatórios institucionais, e o registro é auditado.
       </div>
     </form>
+  );
+}
+
+/**
+ * A assimetria do RPPS, dita onde ela produz efeito.
+ *
+ * O Anexo 6 publica **duas** apurações do resultado, e a plataforma usa uma para o
+ * primário e outra para o nominal — porque é assim que o demonstrativo as publica. Sem
+ * dizer isso, o gestor vê acima e abaixo da linha não fecharem e conclui que o ente errou
+ * a apuração, quando parte da diferença é de escopo.
+ */
+function NotaRpps() {
+  return (
+    <NotaMetodologica
+      titulo="O que muda com e sem RPPS — e por que os dois aparecem juntos"
+      fundamento="RREO Anexo 6 (Demonstrativo do Resultado Primário e Nominal) · LRF art. 53, III"
+    >
+      <p style={{ margin: 0 }}>
+        O <strong>RPPS</strong> é o Regime Próprio de Previdência Social do ente — o fundo que
+        paga aposentadorias e pensões dos servidores efetivos, com receita própria de
+        contribuições.
+      </p>
+      <p style={{ margin: 0 }}>
+        O Anexo 6 publica duas apurações. <strong>Com RPPS</strong>, entram nas receitas
+        primárias as contribuições previdenciárias e, nas despesas, os benefícios pagos pelo
+        regime. <strong>Sem RPPS</strong>, os dois lados são expurgados. A escolha não é da
+        plataforma: é a do demonstrativo.
+      </p>
+      <p style={{ margin: 0 }}>
+        Aqui o resultado <strong>primário</strong> vem da linha <strong>com</strong> RPPS; o{' '}
+        <strong>nominal</strong> e o cálculo <strong>abaixo da linha</strong>, das linhas{' '}
+        <strong>sem</strong> RPPS. Parte da divergência entre acima e abaixo da linha decorre
+        dessa diferença de escopo — e não de erro de apuração do ente.
+      </p>
+    </NotaMetodologica>
   );
 }
 

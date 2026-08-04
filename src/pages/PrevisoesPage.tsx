@@ -7,7 +7,7 @@
  */
 import { useId, useState } from 'react';
 import { colors, font } from '../theme';
-import { rotuloIndicador } from '../utils/rotulos';
+import { rotuloIndicador, rotuloModelo } from '../utils/rotulos';
 import { Card } from '../components/Card';
 import { PageHeader } from '../components/PageHeader';
 import { SectionLabel } from '../components/SectionLabel';
@@ -184,10 +184,24 @@ function ModelPanel({ data }: { data: ProjecaoResponse }) {
   );
 }
 
+/**
+ * Nome do modelo mais a premissa que ele assume.
+ *
+ * O nome curto vem de `rotuloModelo` — fonte única, para que a mesma projeção não se
+ * chame "Holt-Winters" aqui e "Tendência com sazonalidade" no Cockpit. A frase entre
+ * parênteses diz **o que o modelo supõe**, que é o que decide se ele serve à pergunta:
+ * um run-rate não enxerga sazonalidade, e uma regressão com exógenas depende de as
+ * séries externas continuarem se comportando como se comportaram.
+ */
+const PREMISSA: Record<string, string> = {
+  fechamento: 'repete o ritmo observado até aqui',
+  holt_winters: 'projeta nível e tendência, com o padrão sazonal do próprio ente',
+  regressao_exogenas: 'usa FPM, IPCA e Selic como variáveis explicativas',
+};
+
 function modeloLabel(m: string): string {
-  return (
-    { fechamento: 'Projeção de fechamento (run-rate)', holt_winters: 'Holt-Winters (nível + tendência)', regressao_exogenas: 'Regressão com exógenas (FPM/IPCA/Selic)' } as Record<string, string>
-  )[m] ?? m;
+  const premissa = PREMISSA[m];
+  return premissa ? `${rotuloModelo(m)} — ${premissa}` : rotuloModelo(m);
 }
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -324,7 +338,7 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
               )}
             </div>
             <LimitImpactTable titulo="Impacto nos limites (tetos)" itens={res.impacto_limites} unidade={unidade} />
-            <LimitImpactTable titulo="Impacto nos mínimos (pisos)" itens={res.impacto_minimos} unidade={unidade} />
+            <LimitImpactTable titulo="Impacto nos mínimos (pisos)" sentido="piso" itens={res.impacto_minimos} unidade={unidade} />
           </>
         )}
       </Card>
@@ -332,7 +346,24 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
   );
 }
 
-function LimitImpactTable({ titulo, itens, unidade }: { titulo: string; itens: LimiteImpacto[]; unidade: string }) {
+/**
+ * Impacto projetado sobre os limites.
+ *
+ * `sentido` não é detalhe de redação: sob o título "Impacto nos mínimos (pisos)", cada
+ * linha lia "27,10% / **teto** 15%" — anunciando que a projeção de saúde romperia um teto
+ * de 15%, quando 15% é o piso e 27,10% é cumprimento com folga.
+ */
+function LimitImpactTable({
+  titulo,
+  itens,
+  unidade,
+  sentido = 'teto',
+}: {
+  titulo: string;
+  itens: LimiteImpacto[];
+  unidade: string;
+  sentido?: 'teto' | 'piso';
+}) {
   if (!itens.length) return null;
   const ehPct = isPct(unidade);
   return (
@@ -341,10 +372,10 @@ function LimitImpactTable({ titulo, itens, unidade }: { titulo: string; itens: L
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {itens.map((l) => (
           <div key={l.indicador} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, padding: '4px 8px', borderRadius: 4, background: l.cruza ? colors.redBg : colors.surface, border: `1px solid ${colors.border}` }}>
-            <span style={{ color: colors.ink }}>{l.indicador}</span>
+            <span style={{ color: colors.ink }}>{rotuloIndicador(l.indicador)}</span>
             <span style={{ fontFamily: font.mono, color: l.cruza ? colors.red : colors.muted }}>
               {l.pct_projetado !== null && ehPct
-                ? `${pct(num(l.pct_projetado))} / teto ${fmt(num(l.limite_pct))}%`
+                ? `${pct(num(l.pct_projetado))} / ${sentido === 'piso' ? 'mínimo' : 'teto'} ${fmt(num(l.limite_pct))}%`
                 : `${fmt(num(l.limite_pct))}% → ${brl(num(l.valor_limite_rs) / 1e6)}`}
             </span>
           </div>

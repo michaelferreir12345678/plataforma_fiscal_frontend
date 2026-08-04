@@ -1,3 +1,4 @@
+import { NotaMetodologica } from '../components/NotaMetodologica';
 import { SeloCobertura } from '../components/SeloCobertura';
 import { useState, type CSSProperties, type FormEvent } from 'react';
 import { colors, font } from '../theme';
@@ -119,7 +120,7 @@ export function DividaPage() {
         )}
       />
 
-      <SeloQualidadePagina />
+      <SeloQualidadePagina periodo={periodoRgf} />
       <SeloCobertura pagina="divida" ente={ente.cod_ibge} periodo={periodoRgf} />
 
       <Async res={detalhe}>
@@ -287,7 +288,13 @@ function CapagHeroCard({ hero, memoria }: { hero: CapagHero; memoria: CapagMemor
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
           <div style={eyebrow}>{hero.rotulo}</div>
-          <div style={{ fontSize: 11, color: colors.muted }}>{hero.natureza} · ano-base {hero.ano_ref}</div>
+          {/* Três conceitos distintos que a tela dizia numa palavra só. O exercício da
+              classificação, o ano-base dos dados e a data de publicação **não** coincidem:
+              a nota de um exercício é apurada sobre as contas do anterior, já encerradas. */}
+          <div style={{ fontSize: 11, color: colors.muted }}>
+            {hero.natureza} · classificação de <strong>{hero.ano_ref}</strong> · dados de{' '}
+            <strong>{hero.ano_ref - 1}</strong>
+          </div>
         </div>
         <div style={{ ...heroValue, color: noteColor, fontSize: 44 }}>{hero.nota_final ?? '—'}</div>
       </div>
@@ -309,6 +316,35 @@ function CapagHeroCard({ hero, memoria }: { hero: CapagHero; memoria: CapagMemor
       {hero.metodologia_versao && (
         <div style={{ fontSize: 11, color: colors.faint }}>Metodologia {hero.metodologia_versao}</div>
       )}
+      <NotaMetodologica
+        titulo="Por que o ano da nota não é o ano dos dados"
+        fundamento="Manual de Demonstrativos Fiscais · Portaria STN da CAPAG · fonte: Tesouro Nacional"
+      >
+        <p style={{ margin: 0 }}>
+          A CAPAG é apurada <strong>uma vez por exercício</strong>, sobre as contas do ano
+          anterior já encerradas e homologadas. Três datas diferentes convivem, e confundi-las
+          leva a conclusões erradas sobre a situação atual do ente:
+        </p>
+        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+          <li>
+            <strong>Exercício da classificação: {hero.ano_ref}</strong> — o ano a que a nota se
+            refere.
+          </li>
+          <li>
+            <strong>Ano-base dos dados: {hero.ano_ref - 1}</strong> — o exercício encerrado de
+            onde saem endividamento, poupança corrente e liquidez.
+          </li>
+          <li>
+            <strong>Publicação e vigência</strong> — o Tesouro divulga ao longo do exercício
+            seguinte ao ano-base; a nota vigora até a próxima apuração.
+          </li>
+        </ul>
+        <p style={{ margin: 0 }}>
+          Por isso não existe CAPAG de exercício em curso: enquanto o ano não fecha, não há
+          contas encerradas sobre as quais apurá-la. A nota vigente continua sendo a última
+          publicada.
+        </p>
+      </NotaMetodologica>
       {memoria.observacoes.length > 0 && (
         <div style={{ fontSize: 11, color: colors.faint }}>{memoria.observacoes.join(' · ')}</div>
       )}

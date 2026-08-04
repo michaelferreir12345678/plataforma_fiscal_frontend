@@ -110,7 +110,7 @@ export function AlertasPage() {
                   contexto={{
                     ente: escopo === 'ente' ? ente.nome : 'Carteira',
                     periodo: new Date(data.gerado_em).toLocaleString('pt-BR'),
-                    fonte: 'motor de alertas (Sprint 15) sobre a gold',
+                    fonte: 'motor de alertas sobre os indicadores apurados',
                   }}
                   modeloRelatorio="conformidade"
                 />

@@ -1135,6 +1135,8 @@ export interface SuficienciaResumo {
   n_deficit: number;
   total_rpnp_sem_lastro: FiscalDecimal;
   total_disp_liquida_apos_positiva: FiscalDecimal;
+  /** Soma dos déficits (negativa) — sem ela a tela anuncia o superávit como se fosse o caixa. */
+  total_disp_liquida_apos_negativa: FiscalDecimal;
 }
 export interface SuficienciaMatriz {
   cod_ibge: string;

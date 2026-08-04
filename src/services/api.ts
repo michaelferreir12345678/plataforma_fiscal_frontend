@@ -158,6 +158,18 @@ export async function apiDelete(path: string): Promise<void> {
   await handle<unknown>(res);
 }
 
+/**
+ * DELETE que devolve corpo.
+ *
+ * Nem todo DELETE é 204: arquivar um cenário responde com o registro atualizado, e ler
+ * esse corpo evita um segundo GET só para descobrir o estado que o servidor acabou de
+ * informar. `apiDelete` continua existindo para os 204 de verdade.
+ */
+export async function apiDeleteJson<TResponse>(path: string): Promise<TResponse> {
+  const res = await fetch(montarUrl(path), { method: 'DELETE', headers: authHeaders() });
+  return handle<TResponse>(res);
+}
+
 /** Download autenticado de artefatos binários sem expor o JWT na URL. */
 export async function apiDownload(path: string, filename: string): Promise<void> {
   const res = await fetch(montarUrl(path), { headers: authHeaders() });

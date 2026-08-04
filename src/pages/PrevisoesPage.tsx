@@ -7,7 +7,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import { colors, font } from '../theme';
-import { rotuloIndicador, rotuloModelo } from '../utils/rotulos';
+import { humanizar, rotuloIndicador, rotuloModelo } from '../utils/rotulos';
 import { Card } from '../components/Card';
 import { PageHeader } from '../components/PageHeader';
 import { SectionLabel } from '../components/SectionLabel';
@@ -20,6 +20,7 @@ import {
   fetchComparacaoModelos,
   fetchProjecao,
   fetchCenarios,
+  fetchCenario,
   fetchPremissasCenario,
   type PremissaObservada,
   simularCenario,
@@ -30,6 +31,10 @@ import {
   type PontoProjecao,
   type LimiteImpacto,
   type EspacoFiscal,
+  compararCenarios,
+  arquivarCenario,
+  exportarCenario,
+  type CenarioDetalhe,
 } from '../services/backend';
 
 const INDICADORES: { key: ForecastIndicador; label: string }[] = [
@@ -59,6 +64,18 @@ export function PrevisoesPage() {
     [ente.cod_ibge, indicador, horizonte],
   );
   const cenarios = useResource(() => fetchCenarios(ente.cod_ibge), [ente.cod_ibge]);
+  const [aberto, setAberto] = useState<string | null>(null);
+  // **Limite de 6, imposto pelo backend.** Acima disso a paleta categórica acaba e o
+  // gráfico deixa de ser legível — comparar dez curvas é não comparar nenhuma.
+  const [selecionados, setSelecionados] = useState<string[]>([]);
+  const alternarSelecao = (id: string) =>
+    setSelecionados((atual) =>
+      atual.includes(id)
+        ? atual.filter((x) => x !== id)
+        : atual.length >= 6
+          ? atual
+          : [...atual, id],
+    );
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-screen-label="Previsões e Cenários">
@@ -144,7 +161,22 @@ export function PrevisoesPage() {
               onSaved={cenarios.reload}
             />
 
-            <SavedScenarios res={cenarios} />
+            {/* Reabrir e comparar são as duas coisas que se faz com um cenário salvo;
+                sem elas a lista é uma gaveta que não abre. */}
+            {aberto && <CenarioReaberto id={aberto} onFechar={() => setAberto(null)} />}
+            {selecionados.length >= 2 && (
+              <ComparacaoCenariosPainel
+                ente={ente.cod_ibge}
+                ids={selecionados}
+                onFechar={() => setSelecionados([])}
+              />
+            )}
+            <SavedScenarios
+              res={cenarios}
+              onAbrir={setAberto}
+              selecionados={selecionados}
+              onSelecionar={alternarSelecao}
+            />
           </>
         )}
       </Async>
@@ -579,25 +611,388 @@ function LimitImpactTable({
 // --------------------------------------------------------------------------- //
 // Cenários salvos
 // --------------------------------------------------------------------------- //
-function SavedScenarios({ res }: { res: ReturnType<typeof useResource> }) {
-  const list = (res.data as { id: string; nome: string; indicador: string; criado_em: string }[] | null) ?? [];
-  if (!list.length) return null;
+/**
+ * Cenários salvos: histórico, reabertura e comparação.
+ *
+ * Antes era uma grade de cartões inertes — nome, indicador e data, sem nada para fazer com
+ * eles. Um cenário existe para ser reaberto (*"o que eu decidi em agosto ainda vale?"*) e
+ * confrontado com outro; listar sem essas duas ações é guardar papel numa gaveta que não
+ * abre.
+ */
+function SavedScenarios({
+  res,
+  onAbrir,
+  selecionados,
+  onSelecionar,
+}: {
+  res: ReturnType<typeof useResource>;
+  onAbrir: (id: string) => void;
+  selecionados: string[];
+  onSelecionar: (id: string) => void;
+}) {
+  const list = (res.data as CenarioDetalhe[] | null) ?? [];
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function agir(id: string, acao: () => Promise<unknown>) {
+    setOcupado(id);
+    setErro(null);
+    try {
+      await acao();
+      res.reload();
+    } catch (e) {
+      setErro((e as { detail?: string; message?: string })?.detail || (e as Error)?.message || 'Erro');
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  if (!list.length) {
+    return (
+      <Card>
+        <SectionLabel>Cenários salvos</SectionLabel>
+        <div style={{ fontSize: 12, color: colors.muted, padding: '14px 2px', lineHeight: 1.6 }}>
+          Nenhum cenário salvo para este ente. Simule acima e use <strong>Salvar cenário</strong>{' '}
+          para guardar as premissas — o cenário registra sobre qual entrega foi calculado, e
+          é isso que permite reabri-lo depois sabendo se ainda vale.
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card>
-      <SectionLabel>Cenários salvos · {list.length}</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
-        {list.map((c) => (
-          <div key={c.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 5, padding: 12, borderTop: `3px solid ${colors.orange}` }}>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>{c.nome}</div>
-            <div style={{ fontSize: 11, color: colors.muted, marginTop: 4 }}>
-              {rotuloIndicador(c.indicador)} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
+      <SectionLabel note="marque dois ou mais para comparar">
+        Cenários salvos · {list.length}
+      </SectionLabel>
+      {erro && (
+        <div role="alert" style={{ fontSize: 11, color: colors.red, fontFamily: font.mono, marginTop: 6 }}>
+          ⚠ {erro}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(258px, 1fr))', gap: 10, marginTop: 8 }}>
+        {list.map((c) => {
+          const marcado = selecionados.includes(c.id);
+          const ultima = c.versoes[0];
+          return (
+            <div
+              key={c.id}
+              style={{
+                border: `1px solid ${marcado ? colors.primary : colors.border}`,
+                borderRadius: 5,
+                padding: 12,
+                borderTop: `3px solid ${colors.orange}`,
+                background: marcado ? colors.accentSoft : colors.surface,
+                opacity: ocupado === c.id ? 0.55 : 1,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={marcado}
+                  onChange={() => onSelecionar(c.id)}
+                  aria-label={`Selecionar ${c.nome} para comparação`}
+                  style={{ marginTop: 2 }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>{c.nome}</div>
+                  <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>
+                    {rotuloIndicador(c.indicador)} ·{' '}
+                    <strong>
+                      {c.versao_atual} {c.versao_atual === 1 ? 'versão' : 'versões'}
+                    </strong>{' '}
+                    · {new Date(c.atualizado_em ?? c.criado_em).toLocaleDateString('pt-BR')}
+                  </div>
+                  {/* Versão sem procedência não pode prometer reprodutibilidade que não tem. */}
+                  {ultima && !ultima.procedencia.registrada && (
+                    <div style={{ fontSize: 10.5, color: colors.orange, marginTop: 3, lineHeight: 1.4 }}>
+                      procedência não registrada
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => onAbrir(c.id)} style={acaoLink(colors.primary)}>
+                  reabrir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => agir(c.id, () => exportarCenario(c.id, null, 'csv'))}
+                  style={acaoLink(colors.muted)}
+                >
+                  exportar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => agir(c.id, () => arquivarCenario(c.id, c.arquivado))}
+                  style={acaoLink(colors.muted)}
+                >
+                  {c.arquivado ? 'restaurar' : 'arquivar'}
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Card>
   );
 }
+
+const acaoLink = (cor: string) => ({
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  fontSize: 11,
+  color: cor,
+  cursor: 'pointer',
+  textDecoration: 'underline',
+});
+
+/**
+ * Cenário reaberto: o que foi decidido e o que o dado diz hoje.
+ *
+ * O ponto da tela é **não escolher** entre os dois. Mostrar só o guardado esconde que o
+ * dado mudou; mostrar só o recalculado apaga o registro da decisão. As duas perguntas são
+ * legítimas — "com o que eu decidi" e "isso ainda vale?" — e a segunda só existe se os
+ * dois números estiverem lado a lado.
+ */
+function CenarioReaberto({ id, onFechar }: { id: string; onFechar: () => void }) {
+  const res = useResource(() => fetchCenario(id), [id]);
+  return (
+    <Card>
+      {/* Região nomeada: dá ao leitor de tela um marco navegável para um painel que
+          aparece e some, e ao teste um escopo — os mesmos números existem no gráfico. */}
+      <div role="region" aria-label="Cenário reaberto" data-testid="cenario-reaberto">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+        <SectionLabel note="o guardado e o de hoje, lado a lado">Cenário reaberto</SectionLabel>
+        <button type="button" onClick={onFechar} style={acaoLink(colors.muted)}>
+          fechar
+        </button>
+      </div>
+      <Async res={res}>
+        {(d) => {
+          const div = d.divergencia;
+          const guardado = div.valor_guardado == null ? null : num(div.valor_guardado);
+          const hoje = div.valor_recalculado == null ? null : num(div.valor_recalculado);
+          return (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {d.cenario.nome}{' '}
+                <span style={{ fontSize: 11, color: colors.muted, fontWeight: 400 }}>
+                  · versão {d.versao.versao} de {d.cenario.versao_atual}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 22, marginTop: 10, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={rotuloMini}>Como foi salvo</div>
+                  <div style={{ fontFamily: font.mono, fontSize: 17, fontWeight: 650 }}>
+                    {guardado == null ? '—' : `${fmt(guardado, 2)}%`}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: colors.faint, marginTop: 2 }}>
+                    {d.versao.procedencia.as_of
+                      ? new Date(d.versao.procedencia.as_of).toLocaleString('pt-BR')
+                      : 'data não registrada'}
+                  </div>
+                </div>
+                <div>
+                  <div style={rotuloMini}>Com o dado de hoje</div>
+                  <div
+                    style={{
+                      fontFamily: font.mono,
+                      fontSize: 17,
+                      fontWeight: 650,
+                      color: div.diverge ? colors.orange : colors.ink,
+                    }}
+                  >
+                    {hoje == null ? '—' : `${fmt(hoje, 2)}%`}
+                  </div>
+                  {div.delta != null && (
+                    <div style={{ fontSize: 10.5, color: colors.faint, marginTop: 2 }}>
+                      {num(div.delta) >= 0 ? '+' : '−'}
+                      {fmt(Math.abs(num(div.delta)), 2)} p.p.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* "Não deu para comparar" e "está tudo igual" produziriam a mesma tela se o
+                  componente olhasse só `diverge`. */}
+              <div
+                role="status"
+                style={{
+                  marginTop: 11,
+                  padding: '9px 11px',
+                  borderRadius: 5,
+                  fontSize: 11.5,
+                  lineHeight: 1.55,
+                  background: !div.comparavel
+                    ? colors.neutralBg
+                    : div.diverge
+                      ? colors.orangeBg
+                      : colors.greenBg,
+                  border: `1px solid ${!div.comparavel ? colors.border : div.diverge ? colors.orange : colors.green}`,
+                }}
+              >
+                {!div.comparavel ? (
+                  <>
+                    <strong>Não foi possível comparar.</strong> {div.motivo}
+                  </>
+                ) : div.diverge ? (
+                  <>
+                    <strong>O resultado mudou desde que você salvou.</strong> {div.motivo}
+                  </>
+                ) : (
+                  <>
+                    <strong>O cenário continua valendo.</strong> Recalculado com o dado de hoje,
+                    o resultado é o mesmo.
+                  </>
+                )}
+                {div.entregas_novas.length > 0 && (
+                  <div style={{ marginTop: 5 }}>
+                    Entregas que apareceram depois:{' '}
+                    <span style={{ fontFamily: font.mono }}>{div.entregas_novas.join(', ')}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div style={rotuloMini}>Premissas desta versão</div>
+                <div style={{ fontSize: 11.5, color: colors.ink, marginTop: 4, lineHeight: 1.7 }}>
+                  {Object.entries(d.versao.parametros)
+                    .filter(([k]) => !['salvar', 'nome', 'cenario_id'].includes(k))
+                    .map(([k, v]) => `${humanizar(k)}: ${String(v)}`)
+                    .join(' · ') || 'sem premissas registradas'}
+                </div>
+              </div>
+
+              {d.cenario.versoes.length > 1 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={rotuloMini}>Histórico</div>
+                  <ul style={{ margin: '5px 0 0', paddingLeft: 18, fontSize: 11.5, lineHeight: 1.7 }}>
+                    {d.cenario.versoes.map((v) => (
+                      <li key={v.versao}>
+                        <strong>v{v.versao}</strong> — {v.nome} ·{' '}
+                        {new Date(v.criado_em).toLocaleDateString('pt-BR')}
+                        {!v.procedencia.registrada && (
+                          <span style={{ color: colors.orange }}> · sem procedência</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        }}
+      </Async>
+      </div>
+    </Card>
+  );
+}
+
+const rotuloMini = {
+  fontSize: 10.5,
+  color: colors.faint,
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.05em',
+  fontWeight: 600,
+};
+
+/**
+ * Comparação de cenários salvos.
+ *
+ * O eixo é a **interseção** dos horizontes, e o backend já a calcula: comparar um cenário
+ * de 4 períodos com um de 12 num eixo de 12 deixaria o primeiro terminando no meio do
+ * gráfico, e a leitura natural — "este despenca no fim" — seria falsa.
+ */
+function ComparacaoCenariosPainel({
+  ente,
+  ids,
+  onFechar,
+}: {
+  ente: string;
+  ids: string[];
+  onFechar: () => void;
+}) {
+  const res = useResource(() => compararCenarios(ente, ids), [ente, ids.join(',')]);
+  return (
+    <Card>
+      <div role="region" aria-label="Comparação de cenários" data-testid="comparacao-cenarios">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+        <SectionLabel note="mesma janela de períodos para todos">
+          Comparação de cenários · {ids.length}
+        </SectionLabel>
+        <button type="button" onClick={onFechar} style={acaoLink(colors.muted)}>
+          fechar
+        </button>
+      </div>
+      <Async res={res}>
+        {(d) => (
+          <div style={{ marginTop: 8 }}>
+            {d.aviso && (
+              <div role="status" style={{ fontSize: 11.5, color: colors.orange, marginBottom: 9, lineHeight: 1.5 }}>
+                ⚠ {d.aviso}
+              </div>
+            )}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 420 }}>
+                <caption className="sr-only">Cenários comparados período a período</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" style={thCmp}>Cenário</th>
+                    {d.periodos.map((p) => (
+                      <th key={p} scope="col" style={{ ...thCmp, textAlign: 'right' }}>
+                        {p}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.itens.map((item) => (
+                    <tr key={item.cenario_id} style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
+                      <th scope="row" style={{ ...tdCmp, textAlign: 'left', fontWeight: 500 }}>
+                        {item.encontrado ? (
+                          <>
+                            {item.nome}{' '}
+                            <span style={{ color: colors.faint, fontSize: 10.5 }}>v{item.versao}</span>
+                          </>
+                        ) : (
+                          /* Some da lista faria o gestor comparar duas curvas achando que
+                             são as três que escolheu. */
+                          <span style={{ color: colors.orange }}>{item.motivo_ausencia}</span>
+                        )}
+                      </th>
+                      {d.periodos.map((p) => {
+                        const ponto = item.projecao.find((x) => x.periodo_alvo === p);
+                        return (
+                          <td key={p} style={{ ...tdCmp, textAlign: 'right', fontFamily: font.mono }}>
+                            {ponto ? `${fmt(num(ponto.valor_previsto), 2)}%` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Async>
+      </div>
+    </Card>
+  );
+}
+
+const thCmp = {
+  fontSize: 10.5,
+  color: colors.muted,
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase' as const,
+  padding: '6px 12px 6px 0',
+  textAlign: 'left' as const,
+};
+const tdCmp = { padding: '7px 12px 7px 0' };
 
 // --------------------------------------------------------------------------- //
 // Gráfico de projeção (data-driven: histórico + projeção + banda IC + teto)

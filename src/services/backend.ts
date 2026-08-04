@@ -2,7 +2,15 @@
  * Tipos e fetchers tipados das respostas do backend (schemas Pydantic espelhados).
  * Valores monetários vêm em **reais**; a UI divide por 1e6 para exibir em R$ milhões.
  */
-import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPut } from './api';
+import {
+  apiDelete,
+  apiDeleteJson,
+  apiDownload,
+  apiGet,
+  apiPatch,
+  apiPost,
+  apiPut,
+} from './api';
 
 export type Measures = Record<string, number | null>;
 
@@ -2024,6 +2032,79 @@ export interface CenarioSimularResponse {
   memoria: Record<string, unknown>;
   source_refs: SourceRef[];
 }
+export interface ProcedenciaCenario {
+  as_of: string | null;
+  /** Entregas que alimentaram a série: `{"2025-B6": "1"}`. */
+  versoes_entrega: Record<string, string>;
+  /** As premissas macro vigentes quando o cenário foi salvo. */
+  premissas_observadas: Record<string, { observado: string | null; referencia: string | null; fonte: string | null }>;
+  /** Falso nas versões migradas do formato anterior, que não têm procedência. */
+  registrada: boolean;
+}
+export interface VersaoCenario {
+  versao: number;
+  nome: string;
+  parametros: Record<string, unknown>;
+  modelo: string | null;
+  horizonte: number | null;
+  nota: string | null;
+  procedencia: ProcedenciaCenario;
+  criado_em: string;
+}
+export interface CenarioDetalhe {
+  id: string;
+  ente: string;
+  indicador: string;
+  nome: string;
+  versao_atual: number;
+  arquivado: boolean;
+  criado_em: string;
+  atualizado_em: string | null;
+  versoes: VersaoCenario[];
+}
+export interface DivergenciaCenario {
+  /** `false` significa "não deu para comparar" — diferente de "está tudo igual". */
+  comparavel: boolean;
+  diverge: boolean;
+  motivo: string | null;
+  valor_guardado: FiscalDecimal | null;
+  valor_recalculado: FiscalDecimal | null;
+  delta: FiscalDecimal | null;
+  entregas_novas: string[];
+}
+export interface CenarioAberto {
+  cenario: CenarioDetalhe;
+  versao: VersaoCenario;
+  /** O que foi salvo — a peça que embasou a decisão. */
+  guardado: { projecao?: PontoProjecao[]; cruzamento?: CruzamentoLimite } | null;
+  /** O mesmo cenário rodado agora; `null` quando o recálculo não é possível. */
+  recalculado: CenarioSimularResponse | null;
+  divergencia: DivergenciaCenario;
+}
+export interface CenarioComparadoItem {
+  cenario_id: string;
+  nome: string;
+  versao: number;
+  encontrado: boolean;
+  motivo_ausencia: string | null;
+  indicador: string | null;
+  unidade: string | null;
+  modelo: string | null;
+  parametros: Record<string, unknown>;
+  projecao: PontoProjecao[];
+  valor_final: FiscalDecimal | null;
+  espaco_fiscal: EspacoFiscal | null;
+  criado_em: string | null;
+}
+export interface ComparacaoCenarios {
+  cod_ibge: string;
+  indicador: string | null;
+  /** Interseção dos horizontes — não a união. */
+  periodos: string[];
+  itens: CenarioComparadoItem[];
+  aviso: string | null;
+}
+
 export interface CenarioSalvo {
   id: string;
   ente: string;
@@ -2098,8 +2179,35 @@ export const simularCenario = (
     { indicador },
   );
 
-export const fetchCenarios = (ibge: string) =>
-  apiGet<CenarioSalvo[]>(`/entes/${ibge}/cenarios`);
+export const fetchCenarios = (ibge: string, incluirArquivados = false) =>
+  apiGet<CenarioDetalhe[]>(
+    `/entes/${ibge}/cenarios${incluirArquivados ? '?incluir_arquivados=true' : ''}`,
+  );
+
+/** Reabre o cenário com o guardado e o recalculado lado a lado. */
+export const fetchCenario = (id: string, opts: { versao?: number; recalcular?: boolean } = {}) => {
+  const q = new URLSearchParams();
+  if (opts.versao != null) q.set('versao', String(opts.versao));
+  if (opts.recalcular === false) q.set('recalcular', 'false');
+  const s = q.toString();
+  return apiGet<CenarioAberto>(`/cenarios/${id}${s ? `?${s}` : ''}`);
+};
+
+export const renomearCenario = (id: string, nome: string) =>
+  apiPatch<CenarioDetalhe>(`/cenarios/${id}`, { nome });
+
+/** Arquiva (não apaga). `desarquivar` traz de volta à lista. */
+export const arquivarCenario = (id: string, desarquivar = false) =>
+  apiDeleteJson<CenarioDetalhe>(`/cenarios/${id}?desarquivar=${desarquivar}`);
+
+export const compararCenarios = (ibge: string, cenarioIds: string[]) =>
+  apiPost<ComparacaoCenarios>(`/entes/${ibge}/cenarios/comparar`, { cenario_ids: cenarioIds });
+
+export const exportarCenario = (id: string, versao: number | null, formato: 'csv' | 'json') =>
+  apiDownload(
+    `/cenarios/${id}/exportar?formato=${formato}${versao != null ? `&versao=${versao}` : ''}`,
+    `cenario-v${versao ?? 'atual'}.${formato}`,
+  );
 
 /** Premissas macro **observadas** — o cenário abre ancorado no dado, não em valor de fábrica. */
 export const fetchPremissasCenario = (ibge: string) =>

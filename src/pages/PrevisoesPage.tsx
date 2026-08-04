@@ -5,7 +5,7 @@
  * das três camadas** de modelo — o gestor pergunta "por que esse número e não outro?", e
  * mostrar só o escolhido responde pela metade — e **exportação** da projeção.
  */
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { colors, font } from '../theme';
 import { rotuloIndicador, rotuloModelo } from '../utils/rotulos';
 import { Card } from '../components/Card';
@@ -20,6 +20,8 @@ import {
   fetchComparacaoModelos,
   fetchProjecao,
   fetchCenarios,
+  fetchPremissasCenario,
+  type PremissaObservada,
   simularCenario,
   type ForecastIndicador,
   type ModeloComparado,
@@ -27,6 +29,7 @@ import {
   type CenarioSimularResponse,
   type PontoProjecao,
   type LimiteImpacto,
+  type EspacoFiscal,
 } from '../services/backend';
 
 const INDICADORES: { key: ForecastIndicador; label: string }[] = [
@@ -122,6 +125,8 @@ export function PrevisoesPage() {
               <ModelPanel data={data} />
             </div>
 
+            <AvisoSaneamento memoria={data.memoria} />
+
             <CruzamentoBanner data={data} />
 
             <ComparacaoModelos
@@ -213,6 +218,105 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
+/**
+ * Quanto o cenário consome (ou devolve) da margem até o limite.
+ *
+ * A tela já mostrava o percentual projetado com e sem as premissas. O que faltava era
+ * traduzir a diferença na unidade em que a decisão é tomada: um reajuste não se avalia em
+ * pontos percentuais da RCL, e sim em quanto ele come do que ainda cabe.
+ *
+ * Cala quando o indicador não tem limite legal — sem teto não há margem, e inventar uma
+ * seria pior que a ausência.
+ */
+function ConsumoDaMargem({ base, cenario }: { base: ProjecaoResponse; cenario: ProjecaoResponse }) {
+  const a = base.espaco_fiscal;
+  const b = cenario.espaco_fiscal;
+  if (!a || !b) return null;
+
+  // Margem com sinal: folga positiva, excesso negativo. É a única forma de a subtração
+  // fazer sentido quando o cenário atravessa o limite — de folga para excesso.
+  const comSinal = (e: EspacoFiscal) =>
+    (e.situacao === 'excedido' ? -1 : 1) * num(e.margem_pp);
+  const comSinalRs = (e: EspacoFiscal) =>
+    e.margem_rs == null ? null : (e.situacao === 'excedido' ? -1 : 1) * num(e.margem_rs);
+
+  const deltaPp = comSinal(b) - comSinal(a);
+  const rsA = comSinalRs(a);
+  const rsB = comSinalRs(b);
+  const deltaRs = rsA === null || rsB === null ? null : rsB - rsA;
+  const consome = deltaPp < 0;
+  const atravessa = a.situacao !== b.situacao;
+
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: '9px 12px',
+        borderRadius: 5,
+        background: atravessa ? colors.redBg : colors.neutralBg,
+        border: `1px solid ${atravessa ? colors.red : colors.border}`,
+      }}
+    >
+      <div style={{ fontSize: 10.5, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        {consome ? 'O cenário consome da margem' : 'O cenário devolve margem'}
+      </div>
+      <div style={{ fontSize: 13, marginTop: 3, lineHeight: 1.5 }}>
+        <strong style={{ fontFamily: font.mono, color: consome ? colors.red : colors.green }}>
+          {deltaPp >= 0 ? '+' : '−'}{fmt(Math.abs(deltaPp), 2)} p.p.
+          {deltaRs !== null && ` · ${deltaRs >= 0 ? '+' : '−'}${brl(Math.abs(deltaRs) / 1e6)}`}
+        </strong>{' '}
+        <span style={{ color: colors.muted, fontSize: 11.5 }}>
+          — de {fmt(num(a.margem_pp), 2)} p.p. para {fmt(num(b.margem_pp), 2)} p.p.
+        </span>
+      </div>
+      {atravessa && (
+        <div style={{ fontSize: 11.5, color: colors.red, fontWeight: 600, marginTop: 4 }}>
+          {b.situacao === 'excedido'
+            ? 'Sob estas premissas a projeção passa a exceder o limite.'
+            : 'Sob estas premissas a projeção volta para dentro do limite.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Aviso de que o treino ignorou observação da série — e qual.
+ *
+ * A série de pessoal de um dos entes do acervo tem um ponto de 324,49% da RCL, efeito de
+ * um denominador corrompido na entrega. O modelo consumia esse ponto sem reclamar e
+ * devolvia 2,29% — número igualmente impossível, agora com intervalo de confiança e
+ * aparência de análise. Saneado, projeta 50,24%.
+ *
+ * Excluir sem dizer seria trocar um número errado por outro que ninguém pode auditar. O
+ * valor excluído continua no acervo e nas telas de indicador; o que muda é que a projeção
+ * declara o que deixou de fora.
+ */
+function AvisoSaneamento({ memoria }: { memoria: Record<string, unknown> }) {
+  const san = memoria?.saneamento as
+    | { pontos_excluidos?: number; exclusoes?: { periodo: string; valor: number; motivo: string }[] }
+    | undefined;
+  if (!san?.pontos_excluidos) return null;
+  return (
+    <Card pad={0} style={{ padding: '10px 16px', background: colors.orangeBg }}>
+      <div style={{ fontSize: 11, color: colors.orange, fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+        A projeção ignorou {san.pontos_excluidos} observação(ões) da série
+      </div>
+      <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 11.5, color: colors.ink, lineHeight: 1.6 }}>
+        {(san.exclusoes ?? []).map((e) => (
+          <li key={e.periodo}>
+            <strong>{e.periodo}</strong>: {fmt(e.valor, 2)}% — {e.motivo}
+          </li>
+        ))}
+      </ul>
+      <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 5, lineHeight: 1.5 }}>
+        O valor continua no acervo e nas telas de indicador. Foi excluído apenas do treino,
+        para não contaminar a projeção.
+      </div>
+    </Card>
+  );
+}
+
 // --------------------------------------------------------------------------- //
 // Banner de cruzamento de limite
 // --------------------------------------------------------------------------- //
@@ -239,7 +343,64 @@ function CruzamentoBanner({ data }: { data: ProjecaoResponse }) {
           ? `Projeção cruza o teto em ${c.periodo_cruzamento} (${pct(num(c.valor_no_cruzamento))}) — exige providências da LRF.`
           : 'Projeção permanece dentro do teto ao longo do horizonte.'}
       </div>
+      {/* **A outra metade da resposta.** "Cruza em 2026-B2" não se assina; "há R$ 826
+          milhões de margem" se assina. O ordenador de despesa decide em reais. */}
+      <EspacoFiscalLinha data={data} />
     </Card>
+  );
+}
+
+/**
+ * Quanto ainda cabe — ou quanto falta cortar, e em que prazo a lei manda cortar.
+ *
+ * A margem em pontos percentuais é o que o limite diz; a margem em reais é o que a
+ * decisão exige. As duas juntas, com a base e o período da conversão à vista, para que
+ * ninguém precise confiar no número sem saber sobre o que ele foi calculado.
+ */
+function EspacoFiscalLinha({ data }: { data: ProjecaoResponse }) {
+  const e = data.espaco_fiscal;
+  if (!e) return null;
+  const excedido = e.situacao === 'excedido';
+  const rs = e.margem_rs == null ? null : num(e.margem_rs) / 1e6;
+  const rec = data.reconducao;
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 9, borderTop: `1px solid ${colors.rowBorder}` }}>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'baseline' }}>
+        <div>
+          <div style={{ fontSize: 10.5, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {excedido ? 'Excesso a eliminar' : 'Margem até o limite'}
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 650, fontFamily: font.mono, color: excedido ? colors.red : colors.ink }}>
+            {fmt(num(e.margem_pp), 2)} p.p.
+            {rs !== null && (
+              <span style={{ fontSize: 12.5, fontWeight: 500, color: colors.muted }}> · {brl(rs)}</span>
+            )}
+          </div>
+        </div>
+        <div style={{ fontSize: 10.5, color: colors.faint, lineHeight: 1.5, maxWidth: 420 }}>
+          {e.periodo_alvo ? `na projeção para ${e.periodo_alvo}` : 'na ponta do horizonte'}
+          {rs !== null
+            ? ` · convertido pela ${e.base_nome === 'rcl' ? 'RCL' : e.base_nome} de ${e.base_periodo ?? 'período não identificado'}`
+            : ' · sem base no acervo para converter em reais'}
+        </div>
+      </div>
+
+      {rec?.aplicavel && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: colors.ink, lineHeight: 1.6 }}>
+          <strong>Recondução obrigatória.</strong> Eliminar o excesso em dois quadrimestres,
+          ao menos um terço no primeiro:{' '}
+          <strong>{fmt(num(rec.primeiro_quadrimestre_pp), 2)} p.p.</strong>
+          {rec.primeiro_quadrimestre_rs != null && ` (${brl(num(rec.primeiro_quadrimestre_rs) / 1e6)})`}
+          {' e depois '}
+          <strong>{fmt(num(rec.segundo_quadrimestre_pp), 2)} p.p.</strong>
+          {rec.segundo_quadrimestre_rs != null && ` (${brl(num(rec.segundo_quadrimestre_rs) / 1e6)})`}.
+          <div style={{ fontSize: 10.5, color: colors.faint, marginTop: 3, fontFamily: font.mono }}>
+            {rec.fundamento}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -247,15 +408,37 @@ function CruzamentoBanner({ data }: { data: ProjecaoResponse }) {
 // Painel de cenário ("e se?") — chama o backend, não persiste salvo se salvar
 // --------------------------------------------------------------------------- //
 function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente: string; indicador: ForecastIndicador; unidade: string; horizonte: number; onSaved: () => void }) {
-  const [ipca, setIpca] = useState(4.5);
-  const [selic, setSelic] = useState(10.5);
-  const [fpm, setFpm] = useState(0);
+  // **As premissas partem do observado.** Antes eram 4,5% e 10,5% escritos aqui: dois
+  // números que alguém digitou uma vez e que a tela mostrava com a mesma aparência de um
+  // valor medido. A Selic observada é 14,28% — quem aceitasse o padrão simulava com 3,8
+  // pontos percentuais de erro sem saber que havia um padrão. `null` até o backend
+  // responder; nenhum valor de fábrica ocupa o lugar enquanto isso.
+  const premissas = useResource(() => fetchPremissasCenario(ente), [ente]);
+  const [ipca, setIpca] = useState<number | null>(null);
+  const [selic, setSelic] = useState<number | null>(null);
+  const [fpm, setFpm] = useState<number | null>(null);
   const [crescInd, setCrescInd] = useState(0);
   const [crescRcl, setCrescRcl] = useState(0);
   const [nome, setNome] = useState('Cenário sem título');
   const [res, setRes] = useState<CenarioSimularResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const obs = (chave: string): PremissaObservada | undefined =>
+    premissas.data?.premissas.find((p) => p.chave === chave);
+
+  // Ancoragem única: assim que o observado chega, ele preenche o controle. Reaplicar a
+  // cada render sobrescreveria o que o gestor acabou de digitar.
+  useEffect(() => {
+    if (!premissas.data) return;
+    const valor = (chave: string): number | null => {
+      const p = premissas.data?.premissas.find((x) => x.chave === chave);
+      return p?.observado == null ? null : Number(p.observado);
+    };
+    setIpca((v) => (v === null ? valor('ipca_aa_pct') : v));
+    setSelic((v) => (v === null ? valor('selic_aa_pct') : v));
+    setFpm((v) => (v === null ? valor('fpm_variacao_pct') ?? 0 : v));
+  }, [premissas.data]);
 
   async function run(salvar: boolean) {
     setBusy(true);
@@ -264,9 +447,10 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
       const r = await simularCenario(ente, indicador, {
         nome,
         horizonte,
-        ipca_aa_pct: ipca,
-        selic_aa_pct: selic,
-        fpm_variacao_pct: fpm,
+        // Premissa sem valor não vira zero: zero é uma premissa, "não informado" é outra.
+        ipca_aa_pct: ipca ?? undefined,
+        selic_aa_pct: selic ?? undefined,
+        fpm_variacao_pct: fpm ?? undefined,
         crescimento_indicador_pct: crescInd,
         crescimento_rcl_pct: crescRcl,
         salvar,
@@ -288,9 +472,12 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 12 }}>
       <Card>
         <SectionLabel>Controles de cenário · &quot;e se?&quot;</SectionLabel>
-        <ScenarioSlider label="IPCA (a.a.)" value={ipca} min={0} max={15} step={0.5} suffix="%" onChange={setIpca} />
-        <ScenarioSlider label="Selic (a.a.)" value={selic} min={0} max={20} step={0.25} suffix="%" onChange={setSelic} />
-        <ScenarioSlider label="Variação do FPM" value={fpm} min={-15} max={15} step={0.5} suffix="%" onChange={setFpm} />
+        <PremissaAncorada premissa={obs('ipca_aa_pct')} valor={ipca} onChange={setIpca}
+          label="IPCA (a.a.)" min={0} max={20} step={0.1} />
+        <PremissaAncorada premissa={obs('selic_aa_pct')} valor={selic} onChange={setSelic}
+          label="Selic (a.a.)" min={0} max={25} step={0.25} />
+        <PremissaAncorada premissa={obs('fpm_variacao_pct')} valor={fpm} onChange={setFpm}
+          label="Variação do FPM" min={-20} max={20} step={0.5} />
         <ScenarioSlider label="Crescimento do indicador" value={crescInd} min={-10} max={15} step={0.5} suffix="%" onChange={setCrescInd} />
         <ScenarioSlider label="Crescimento da RCL" value={crescRcl} min={-10} max={15} step={0.5} suffix="%" onChange={setCrescRcl} />
         <input
@@ -337,6 +524,10 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
                 </div>
               )}
             </div>
+            {/* **O que a premissa custa da margem.** A pergunta do gestor não é "qual o
+                percentual projetado" — é "posso fazer isto?". Comparar a margem da base
+                com a do cenário responde em reais, que é a unidade da decisão. */}
+            <ConsumoDaMargem base={res.base} cenario={res.cenario} />
             <LimitImpactTable titulo="Impacto nos limites (tetos)" itens={res.impacto_limites} unidade={unidade} />
             <LimitImpactTable titulo="Impacto nos mínimos (pisos)" sentido="piso" itens={res.impacto_minimos} unidade={unidade} />
           </>
@@ -620,6 +811,96 @@ function ProjectionChart({ data }: { data: ProjecaoResponse }) {
         </tbody>
       </table>
     </figure>
+  );
+}
+
+/**
+ * Um controle de premissa que **diz de onde parte**.
+ *
+ * O slider anterior era um número sem procedência: 4,5% e 10,5% apareciam com a mesma
+ * aparência de qualquer valor informado pelo gestor. Aqui o observado vem do acervo com
+ * data, fonte e número de observações, e o botão "voltar ao observado" existe porque
+ * depois de mexer não havia como saber qual era a âncora.
+ *
+ * Quando a série não sustenta o cálculo, o controle **não sugere**: mostra o motivo e
+ * espera o valor. Uma premissa inventada é indistinguível de uma medida assim que entra
+ * no formulário, e o cenário inteiro herda essa confusão.
+ */
+function PremissaAncorada({
+  premissa,
+  valor,
+  onChange,
+  label,
+  min,
+  max,
+  step,
+}: {
+  premissa?: PremissaObservada;
+  valor: number | null;
+  onChange: (v: number) => void;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+}) {
+  const observado = premissa?.observado == null ? null : Number(premissa.observado);
+  const alterado = observado !== null && valor !== null && Math.abs(valor - observado) > 1e-9;
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: colors.muted }}>{label}</span>
+        <span style={{ fontFamily: font.mono, fontSize: 12, fontWeight: 600 }}>
+          {valor === null ? '—' : `${valor > 0 ? '+' : ''}${fmt(valor, 2)}%`}
+        </span>
+      </div>
+
+      <input
+        type="range"
+        aria-label={label}
+        aria-valuetext={valor === null ? 'não informado' : `${fmt(valor, 2)}%`}
+        min={min}
+        max={max}
+        step={step}
+        value={valor ?? min}
+        disabled={valor === null && !premissa}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: '100%', marginTop: 4 }}
+      />
+
+      {observado !== null ? (
+        <div style={{ fontSize: 10.5, color: colors.faint, lineHeight: 1.5, marginTop: 2 }}>
+          observado <strong style={{ color: colors.muted }}>{fmt(observado, 2)}%</strong>
+          {premissa?.referencia ? ` · até ${premissa.referencia}` : ''}
+          {premissa?.n_observacoes ? ` · ${premissa.n_observacoes} meses` : ''}
+          {premissa?.fonte ? ` · ${premissa.fonte}` : ''}
+          {alterado && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                onClick={() => onChange(observado)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  font: 'inherit',
+                  color: colors.primary,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                voltar ao observado
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div role="note" style={{ fontSize: 10.5, color: colors.orange, lineHeight: 1.5, marginTop: 2 }}>
+          {premissa?.motivo ?? 'Sem observação no acervo — informe a premissa.'}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -1927,6 +1927,48 @@ export interface CruzamentoLimite {
   indicador_limite: string | null;
   esfera: string | null;
 }
+export interface EspacoFiscal {
+  indicador: string;
+  sentido: 'teto' | 'piso';
+  /** `folga` ou `excedido` — a margem é sempre positiva; quem diz o sentido é este campo. */
+  situacao: 'folga' | 'excedido' | 'nao_aplicavel';
+  limite_pct: FiscalDecimal;
+  projetado_pct: FiscalDecimal;
+  margem_pp: FiscalDecimal;
+  /** A mesma margem em reais — é o que se leva à mesa, porque empenho não se assina em p.p. */
+  margem_rs: FiscalDecimal | null;
+  base_rs: FiscalDecimal | null;
+  base_nome: string;
+  /** De qual período a base saiu — observada, ao contrário de `periodo_alvo`. */
+  base_periodo: string | null;
+  periodo_alvo: string | null;
+}
+export interface Reconducao {
+  aplicavel: boolean;
+  excesso_pp: FiscalDecimal;
+  excesso_rs: FiscalDecimal | null;
+  primeiro_quadrimestre_pp: FiscalDecimal;
+  primeiro_quadrimestre_rs: FiscalDecimal | null;
+  segundo_quadrimestre_pp: FiscalDecimal;
+  segundo_quadrimestre_rs: FiscalDecimal | null;
+  fundamento: string;
+}
+export interface PremissaObservada {
+  chave: string;
+  rotulo: string;
+  unidade: string;
+  /** `null` quando a série não sustenta o cálculo — a tela pede o valor, não sugere um. */
+  observado: FiscalDecimal | null;
+  motivo: string | null;
+  referencia: string | null;
+  fonte: string | null;
+  n_observacoes: number | null;
+}
+export interface PremissasResponse {
+  cod_ibge: string;
+  premissas: PremissaObservada[];
+  nota: string;
+}
 export interface ProjecaoResponse {
   cod_ibge: string;
   indicador: string;
@@ -1941,6 +1983,9 @@ export interface ProjecaoResponse {
   historico: PontoHistorico[];
   projecao: PontoProjecao[];
   cruzamento: CruzamentoLimite;
+  /** Quanto ainda cabe até o limite. Ausente quando o indicador não tem limite legal. */
+  espaco_fiscal: EspacoFiscal | null;
+  reconducao: Reconducao | null;
   memoria: Record<string, unknown>;
   source_ref: SourceRef;
 }
@@ -2055,6 +2100,10 @@ export const simularCenario = (
 
 export const fetchCenarios = (ibge: string) =>
   apiGet<CenarioSalvo[]>(`/entes/${ibge}/cenarios`);
+
+/** Premissas macro **observadas** — o cenário abre ancorado no dado, não em valor de fábrica. */
+export const fetchPremissasCenario = (ibge: string) =>
+  apiGet<PremissasResponse>(`/entes/${ibge}/cenario/premissas`);
 
 // --- Alertas & Conformidade (Sprint 15) ---
 export type AlertaSeveridade = 'critico' | 'atencao' | 'informativo';

@@ -1,3 +1,4 @@
+import { SeloCobertura } from '../components/SeloCobertura';
 import { useState, type CSSProperties, type FormEvent } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
@@ -119,6 +120,7 @@ export function DividaPage() {
       />
 
       <SeloQualidadePagina />
+      <SeloCobertura pagina="divida" ente={ente.cod_ibge} periodo={periodoRgf} />
 
       <Async res={detalhe}>
         {(data) => (

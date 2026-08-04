@@ -13,6 +13,7 @@
  *  9. "Este dado ainda vale?" → FonteChip com versão de entrega e selo de defasagem
  * 10. "E se não houver dado?" → estado vazio nomeado, com caminho para a Central de Dados
  */
+import { SeloCobertura } from '../components/SeloCobertura';
 import { useState } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
@@ -66,6 +67,7 @@ export function ReceitaPage() {
       />
 
       <SeloQualidadePagina />
+      <SeloCobertura pagina="receita" ente={ente.cod_ibge} periodo={periodo} />
 
       <Async
         res={det}

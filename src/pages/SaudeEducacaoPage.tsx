@@ -19,6 +19,7 @@
  * A base destes percentuais **não é a RCL** — é a receita de impostos e transferências
  * (e, no FUNDEB, as receitas do fundo). A tela repete isso onde o número aparece.
  */
+import { SeloCobertura } from '../components/SeloCobertura';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
@@ -139,6 +140,7 @@ export function SaudeEducacaoPage() {
       />
 
       <SeloQualidadePagina />
+      <SeloCobertura pagina="saude-educacao" ente={ente.cod_ibge} periodo={periodo} />
 
       <AccessibleTabs
         tabs={[

@@ -11,6 +11,7 @@
  * Também novos aqui: **comparação anual dos balanços** (a série diz a direção que a
  * foto não diz) e exportação.
  */
+import { SeloCobertura } from '../components/SeloCobertura';
 import { useState } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
@@ -89,6 +90,10 @@ export function PatrimonioPage() {
           />
         )}
       />
+
+      {/* O Patrimônio depende de DCA (bem coberta) e MSC (quase ninguém transmite). O
+          selo declara isso em vez de deixar o explorador vazio parecer defeito. */}
+      <SeloCobertura pagina="patrimonio" ente={ente.cod_ibge} />
 
       <Async
         res={det}

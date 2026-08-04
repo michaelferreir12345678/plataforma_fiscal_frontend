@@ -815,6 +815,44 @@ export interface PvlOut {
 
 export const fetchDividaPvl = (ibge: string) => apiGet<PvlOut>(`/entes/${ibge}/divida/pvl`);
 
+export interface CoberturaFonteItem {
+  fonte: string;
+  descricao: string | null;
+  orgao: string | null;
+  entes_com_dado: number;
+  periodo_mais_recente: string | null;
+}
+
+export interface CoberturaIndicadorItem {
+  indicador: string;
+  entes_com_dado: number;
+  periodo_mais_recente: string | null;
+}
+
+export interface CoberturaPagina {
+  pagina: string;
+  ente: {
+    cod_ibge: string;
+    tem_dado: boolean;
+    periodo_mais_recente: string | null;
+    periodo_solicitado: string | null;
+  };
+  /** Denominador que o gestor reconhece: a carteira dele, não o país. */
+  escopo: { entes_no_escopo: number; entes_com_dado: number };
+  fontes: CoberturaFonteItem[];
+  indicadores: CoberturaIndicadorItem[];
+  /** Indicadores com cobertura residual — a ausência é da nossa carga, não do ente. */
+  lacunas: string[];
+  observacao: string | null;
+}
+
+/** Para quantos entes e períodos esta página de fato responde. */
+export const fetchCoberturaPagina = (pagina: string, ibge: string, periodo?: string) =>
+  apiGet<CoberturaPagina>(`/cobertura/pagina/${encodeURIComponent(pagina)}`, {
+    ente: ibge,
+    periodo,
+  });
+
 export interface LinhaRelatorio {
   anexo: string | null;
   /** Descrição publicada pelo ente, como aparece no demonstrativo. */

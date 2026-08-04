@@ -128,8 +128,12 @@ describe('Consolidado UF', () => {
   it('mostra Σnum/Σden e a cobertura honesta (n/184 + períodos mistos)', async () => {
     renderCarteira();
     // consolidado ponderado: 45,32% (não uma média), com a memória Σ/Σ visível
-    expect(await screen.findByText('45.32%')).toBeInTheDocument();
-    expect(screen.getByText(/Σ R\$ 19\.40 bi \/ Σ R\$ 42\.80 bi/)).toBeInTheDocument();
+    // pt-BR: vírgula decimal. O fixture manda '45.32' (JSON do backend, Decimal como
+    // string); a tela renderiza '45,32%'. Estes testes travavam a formatação en-US —
+    // `toFixed` produzia ponto, que em pt-BR é separador de milhar, e o consolidado de
+    // uma UF inteira ficava ambíguo em três ordens de grandeza.
+    expect(await screen.findByText('45,32%')).toBeInTheDocument();
+    expect(screen.getByText(/Σ R\$ 19,40 bi \/ Σ R\$ 42,80 bi/)).toBeInTheDocument();
     // cobertura honesta do indicador
     expect(screen.getByText('168/184')).toBeInTheDocument();
     expect(screen.getByText('PERÍODOS MISTOS')).toBeInTheDocument();
@@ -140,7 +144,11 @@ describe('Consolidado UF', () => {
   it('o clique no ranking troca o ente do contexto (drill território→ente)', async () => {
     renderCarteira();
     // o contexto começa em Fortaleza (ente inicial)
-    expect(await screen.findByText('45.32%')).toBeInTheDocument();
+    // pt-BR: vírgula decimal. O fixture manda '45.32' (JSON do backend, Decimal como
+    // string); a tela renderiza '45,32%'. Estes testes travavam a formatação en-US —
+    // `toFixed` produzia ponto, que em pt-BR é separador de milhar, e o consolidado de
+    // uma UF inteira ficava ambíguo em três ordens de grandeza.
+    expect(await screen.findByText('45,32%')).toBeInTheDocument();
     const alvo = await screen.findByText('Juazeiro do Norte');
     await userEvent.click(alvo);
     await waitFor(() => expect(screen.getByTestId('ente')).toHaveTextContent('Juazeiro do Norte'));
@@ -160,7 +168,7 @@ describe('abas', () => {
     } as never);
 
     renderCarteira();
-    await screen.findByText('45.32%'); // consolidado carregou
+    await screen.findByText('45,32%'); // consolidado carregou (pt-BR: vírgula decimal)
     await userEvent.click(screen.getByRole('tab', { name: 'Minha carteira' }));
     // botão de lote é exclusivo da aba da carteira; a grade traz o ente do escopo
     expect(await screen.findByText('Gerar relatório do escopo')).toBeInTheDocument();

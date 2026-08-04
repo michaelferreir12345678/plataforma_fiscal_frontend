@@ -13,6 +13,7 @@
  * nunca como zero. Clicar num município (ranking ou mapa) **troca o ente do contexto** e
  * abre o cockpit — o drill do território para o ente.
  */
+import { fmt as fmtNum } from '../utils/format';
 import { useId, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
@@ -56,15 +57,21 @@ const corDe = (n: string | null | undefined) => COR[n ?? 'cinza'] ?? COR.cinza;
 const num = (v: number | string | null | undefined): number | null =>
   v === null || v === undefined ? null : Number(v);
 
+/**
+ * Formatação pt-BR. `toFixed` produz **ponto** decimal — e em pt-BR ponto é separador de
+ * milhar: "R$ 1234.56 bi" é ambíguo em três ordens de grandeza, justamente no consolidado
+ * de uma UF inteira. As demais 22 páginas usam `fmt`; esta era a exceção, e ainda era
+ * inconsistente consigo mesma (a última linha de `brl` já usava `toLocaleString`).
+ */
 function pct(v: number | string | null | undefined, casas = 2): string {
   const n = num(v);
-  return n === null ? '—' : `${n.toFixed(casas)}%`;
+  return n === null ? '—' : fmtNum(n, casas) + '%';
 }
 function brl(v: number | string | null | undefined): string {
   const n = num(v);
   if (n === null) return '—';
-  if (Math.abs(n) >= 1e9) return `R$ ${(n / 1e9).toFixed(2)} bi`;
-  if (Math.abs(n) >= 1e6) return `R$ ${(n / 1e6).toFixed(1)} mi`;
+  if (Math.abs(n) >= 1e9) return `R$ ${fmtNum(n / 1e9, 2)} bi`;
+  if (Math.abs(n) >= 1e6) return `R$ ${fmtNum(n / 1e6, 1)} mi`;
   return `R$ ${n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
 }
 

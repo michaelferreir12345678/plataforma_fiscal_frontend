@@ -286,11 +286,14 @@ function CardCritico({ k }: { k: CriticoItem }) {
       ) : temLimite && !porHabitante ? (
         <RadialMeter
           atualPct={Number(k.valor_pct)}
-          /* As faixas legais (90%/95%/100% do teto) vêm do domínio, não da UI. */
-          alerta={teto * 0.9}
-          prud={teto * 0.95}
-          max={teto}
-          gaugeMax={teto * 1.2}
+          sentido={k.sentido === 'piso' ? 'piso' : 'teto'}
+          /* As faixas vêm do domínio, não da UI — e mudam com o sentido: num teto são
+             90%/95%/100% dele; num piso, o mínimo e as margens acima dele. Tratar piso
+             como teto pintava de vermelho quem **cumpre** a obrigação constitucional. */
+          alerta={k.sentido === 'piso' ? teto : teto * 0.9}
+          prud={k.sentido === 'piso' ? teto * 1.05 : teto * 0.95}
+          max={k.sentido === 'piso' ? teto * 1.1 : teto}
+          gaugeMax={k.sentido === 'piso' ? Math.max(teto * 1.6, Number(k.valor_pct) * 1.1) : teto * 1.2}
           size={150}
         />
       ) : (

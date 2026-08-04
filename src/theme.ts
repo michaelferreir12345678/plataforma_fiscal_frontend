@@ -106,6 +106,23 @@ export const riskColor: Record<RiskLevel, { color: string; bg: string; soft: str
   neutro: { color: colors.neutral, bg: colors.neutralBg, soft: colors.neutralSoft, label: 'Neutro' },
 };
 
+/**
+ * Classifica um % sobre **piso** — mínimo constitucional (semântica INVERTIDA).
+ *
+ * Num teto, subir é ruim; num piso, subir é bom. Aplicar `classifyCeiling` a um mínimo
+ * pinta de vermelho quem **cumpre** a obrigação: um município que aplica 27% em saúde,
+ * onde o piso é 15%, apareceria como "Acima do teto" — a leitura exatamente oposta.
+ *
+ * As faixas espelham as do teto: abaixo do piso é a violação; até 5% acima é a margem
+ * apertada (equivalente ao prudencial); até 10% acima é atenção; daí para cima é folga.
+ */
+export function classifyFloor(value: number, piso: number): RiskLevel {
+  if (value < piso) return 'maximo'; // abaixo do mínimo: é o estado grave deste sentido
+  if (value < piso * 1.05) return 'prudencial';
+  if (value < piso * 1.1) return 'atencao';
+  return 'folga';
+}
+
 /** Classifica um % sobre teto nas faixas da LRF (semântica de TETO). */
 export function classifyCeiling(value: number, alerta: number, prud: number, max: number): RiskLevel {
   if (value >= max) return 'maximo';

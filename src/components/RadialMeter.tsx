@@ -1,4 +1,4 @@
-import { colors, classifyCeiling } from '../theme';
+import { colors, classifyCeiling, classifyFloor } from '../theme';
 import { arcPath, pointAt, pct, fmt } from '../utils/format';
 import { riskColor } from '../theme';
 
@@ -9,6 +9,13 @@ interface RadialMeterProps {
   max: number;
   gaugeMax: number;
   size?: number;
+  /**
+   * Sentido do limite. **Não é detalhe de estilo:** num teto, subir é ruim; num piso,
+   * subir é bom. O medidor tratava tudo como teto e pintava de vermelho quem cumpre o
+   * mínimo — um município com 27% em saúde (piso 15%) lia "Acima do teto", enquanto a
+   * legenda logo abaixo dizia, correta, "12 p.p. acima do mínimo".
+   */
+  sentido?: 'teto' | 'piso';
 }
 
 /**
@@ -31,7 +38,16 @@ function tamanhoDaLeitura(texto: string, size: number): number {
  * Medidor de faixa LRF (componente-assinatura).
  * Trilho com bandas folga/alerta/prudencial/máximo + ponteiro e leitura central.
  */
-export function RadialMeter({ atualPct, alerta, prud, max, gaugeMax, size = 240 }: RadialMeterProps) {
+export function RadialMeter({
+  atualPct,
+  alerta,
+  prud,
+  max,
+  gaugeMax,
+  size = 240,
+  sentido = 'teto',
+}: RadialMeterProps) {
+  const piso = sentido === 'piso';
   const cx = 120;
   const cy = 120;
   const r = 88;
@@ -40,10 +56,17 @@ export function RadialMeter({ atualPct, alerta, prud, max, gaugeMax, size = 240 
   const sweep = 270;
   const pctToDeg = (p: number) => start + sweep * (p / gaugeMax);
 
-  const level = classifyCeiling(atualPct, alerta, prud, max);
+  const level = piso ? classifyFloor(atualPct, max) : classifyCeiling(atualPct, alerta, prud, max);
   const color = riskColor[level].color;
-  const statusLabel =
-    level === 'maximo'
+  const statusLabel = piso
+    ? level === 'maximo'
+      ? 'Abaixo do mínimo'
+      : level === 'prudencial'
+        ? 'No limite do mínimo'
+        : level === 'atencao'
+          ? 'Pouco acima do mínimo'
+          : 'Cumpre o mínimo'
+    : level === 'maximo'
       ? 'Acima do teto'
       : level === 'prudencial'
         ? 'Faixa Prudencial'
@@ -81,10 +104,34 @@ export function RadialMeter({ atualPct, alerta, prud, max, gaugeMax, size = 240 
         style={{ width: '100%', height: '100%' }}
       >
         <path d={arcPath(cx, cy, r, start, end)} stroke={colors.borderSoft} strokeWidth={14} fill="none" strokeLinecap="round" />
-        <path d={arcPath(cx, cy, r, start, folgaEnd)} stroke={colors.greenSoft} strokeWidth={14} fill="none" />
-        <path d={arcPath(cx, cy, r, folgaEnd, alertaEnd)} stroke={colors.yellowSoft} strokeWidth={14} fill="none" />
-        <path d={arcPath(cx, cy, r, alertaEnd, prudEnd)} stroke={colors.orangeSoft} strokeWidth={14} fill="none" />
-        <path d={arcPath(cx, cy, r, prudEnd, end)} stroke={colors.redSoft} strokeWidth={14} fill="none" />
+        {/* As bandas seguem o sentido do limite. Num teto o vermelho fica no fim do
+            trilho (ultrapassar é a violação); num piso ele fica no começo — a violação é
+            ficar **abaixo**, e um trilho com o vermelho no lugar errado ensina o oposto
+            do que a regra diz, mesmo com a cor do ponteiro correta. */}
+        <path
+          d={arcPath(cx, cy, r, start, folgaEnd)}
+          stroke={piso ? colors.redSoft : colors.greenSoft}
+          strokeWidth={14}
+          fill="none"
+        />
+        <path
+          d={arcPath(cx, cy, r, folgaEnd, alertaEnd)}
+          stroke={piso ? colors.orangeSoft : colors.yellowSoft}
+          strokeWidth={14}
+          fill="none"
+        />
+        <path
+          d={arcPath(cx, cy, r, alertaEnd, prudEnd)}
+          stroke={piso ? colors.yellowSoft : colors.orangeSoft}
+          strokeWidth={14}
+          fill="none"
+        />
+        <path
+          d={arcPath(cx, cy, r, prudEnd, end)}
+          stroke={piso ? colors.greenSoft : colors.redSoft}
+          strokeWidth={14}
+          fill="none"
+        />
         <path d={arcPath(cx, cy, r, start, valEnd)} stroke={color} strokeWidth={16} fill="none" strokeLinecap="round" />
         <circle cx={cx} cy={cy} r={78} fill="none" stroke={colors.borderSoft} strokeWidth={1} />
         {[tAlerta, tPrud, tMax].map((t, i) => (

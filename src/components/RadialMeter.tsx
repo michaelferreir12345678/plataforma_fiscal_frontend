@@ -56,7 +56,12 @@ export function RadialMeter({
   const sweep = 270;
   const pctToDeg = (p: number) => start + sweep * (p / gaugeMax);
 
-  const level = piso ? classifyFloor(atualPct, max) : classifyCeiling(atualPct, alerta, prud, max);
+  // Num piso, `alerta` é quem carrega o mínimo legal real (ver CockpitPage: para
+  // `sentido='piso'`, `alerta = teto`, sem multiplicação nenhuma). `max` aqui é só a
+  // posição visual do último traço do mostrador (teto*1,1) — não é o piso. Passá-lo a
+  // `classifyFloor`, que já multiplica por 1,05/1,10 internamente, remultiplicava a
+  // tolerância (110% do mínimo virava o limiar "abaixo do mínimo", não 100%) — A16.
+  const level = piso ? classifyFloor(atualPct, alerta) : classifyCeiling(atualPct, alerta, prud, max);
   const color = riskColor[level].color;
   const statusLabel = piso
     ? level === 'maximo'

@@ -28,6 +28,15 @@ describe('classificação por sentido do limite', () => {
     expect(classifyFloor(14.9, 15)).toBe('maximo');
   });
 
+  it('exatamente no piso legal NÃO é "abaixo do mínimo" (A16)', () => {
+    // Saúde a 15,00% com piso de 15%: é o próprio mínimo, cumprido. `RadialMeter`
+    // recebia `max = teto*1.1` (16,5) como "piso" e `classifyFloor` multiplicava de
+    // novo por 1,05/1,10 — o limiar de violação virava 110% do mínimo, não 100%, e um
+    // ente exatamente adequado aparecia "Abaixo do mínimo" no cockpit.
+    expect(classifyFloor(15, 15)).not.toBe('maximo');
+    expect(classifyFloor(15, 15)).toBe('prudencial'); // no limite do mínimo, não abaixo
+  });
+
   it('as margens acima do piso são graduadas', () => {
     expect(classifyFloor(15.4, 15)).toBe('prudencial'); // no limite do mínimo
     expect(classifyFloor(16, 15)).toBe('atencao'); // pouco acima
@@ -54,6 +63,20 @@ describe('leitura do medidor', () => {
       <RadialMeter atualPct={12} sentido="piso" alerta={15} prud={15.75} max={16.5} gaugeMax={30} />,
     );
     expect(screen.getByText('Abaixo do mínimo')).toBeInTheDocument();
+  });
+
+  it('exatamente no piso legal (15,00%) não lê "Abaixo do mínimo" (A16)', () => {
+    // Props tal como CockpitPage.tsx as monta para sentido='piso': alerta=teto (15),
+    // prud=teto*1.05 (15.75), max=teto*1.1 (16.5) — o `max` pré-multiplicado é só a
+    // posição do traço final do mostrador, não o piso. Um ente exatamente no mínimo
+    // (15,00%, que o backend classifica 'adequado') tinha esse `max` reaproveitado como
+    // "piso" dentro de `classifyFloor`, que multiplicava de novo — o limiar de "abaixo
+    // do mínimo" virava 16,5 (110% do real) em vez de 15.
+    render(
+      <RadialMeter atualPct={15} sentido="piso" alerta={15} prud={15.75} max={16.5} gaugeMax={30} />,
+    );
+    expect(screen.queryByText('Abaixo do mínimo')).not.toBeInTheDocument();
+    expect(screen.getByText('No limite do mínimo')).toBeInTheDocument();
   });
 
   it('sem `sentido`, o comportamento antigo é preservado (teto)', () => {

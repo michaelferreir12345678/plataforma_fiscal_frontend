@@ -88,6 +88,7 @@ export interface DependenciaResumo {
 export interface ReceitaDetalhe {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   totais: Measures;
   realizacao_pct: number | null;
@@ -115,6 +116,7 @@ export interface InconsistenciaAgregacao {
 export interface ReceitaMemoria {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   medidas: string[];
   totais: Measures;
@@ -135,6 +137,7 @@ export interface TransferenciaTop {
 export interface ReceitaDependencia {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   resumo: DependenciaResumo;
   maiores_transferencias: TransferenciaTop[];
@@ -153,6 +156,7 @@ export interface RealizacaoItem {
 export interface ReceitaRealizacao {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   total: RealizacaoItem;
   por_categoria: RealizacaoItem[];
@@ -187,6 +191,7 @@ export interface ConciliacaoItem {
 export interface ReceitaConciliacao {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   itens: ConciliacaoItem[];
   tolerancia_pct: number;
@@ -205,6 +210,7 @@ export interface SerieDespesaItem {
 export interface DespesaDetalhe {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   eixo: string;
   totais: Measures;
@@ -234,6 +240,7 @@ export interface ViolacaoEstagio {
 export interface DespesaMemoria {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   medidas: string[];
   totais_funcao: Measures;
@@ -275,6 +282,7 @@ export interface EstagioItem {
 export interface DespesaEstagios {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   eixo: string;
   totais: Measures;
@@ -299,6 +307,7 @@ export interface ExecucaoEstagio {
 export interface DespesaExecucao {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   eixo: string;
   bimestre: number;
@@ -318,6 +327,7 @@ export interface RigidezComponente {
 export interface DespesaRigidez {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   despesa_total: number;
   rigida: number;
@@ -376,6 +386,7 @@ export interface LimiteItem {
 export interface LimitesResponse {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   itens: LimiteItem[];
   source_ref: SourceRef;
 }
@@ -394,6 +405,7 @@ export interface PoderItem {
 export interface PorPoderOut {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   esfera: string | null;
   rpps: boolean;
   consolidado: PoderItem;
@@ -419,6 +431,7 @@ export interface SeriePessoalItem {
 export interface PessoalDetalhe {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   /** Período RREO correspondente: base da RCL e do limite (Q1→B2, Q2→B4, Q3→B6). */
   periodo_rreo: string | null;
   versao_entrega: string;
@@ -447,6 +460,7 @@ export interface ExclusaoItem {
 export interface PessoalMemoria {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   rpps: boolean;
   despesa_bruta: FiscalDecimal | null;
@@ -690,54 +704,71 @@ export interface SimulacaoOperacao {
 // --- fetchers ---
 export const fetchEnte = (ibge: string) => apiGet<EnteOut>(`/entes/${ibge}`);
 
-export const fetchReceita = (ibge: string, periodo: string) =>
-  apiGet<ReceitaDetalhe>(`/entes/${ibge}/receita`, { periodo });
+export const fetchReceita = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<ReceitaDetalhe>(`/entes/${ibge}/receita`, { periodo, as_of: asOf });
 
-export const fetchDespesa = (ibge: string, periodo: string, eixo = 'funcao') =>
-  apiGet<DespesaDetalhe>(`/entes/${ibge}/despesa`, { periodo, eixo });
+export const fetchDespesa = (ibge: string, periodo: string, eixo = 'funcao', asOf?: string | null) =>
+  apiGet<DespesaDetalhe>(`/entes/${ibge}/despesa`, { periodo, eixo, as_of: asOf });
 
 export const fetchDrill = (
   recurso: 'receita' | 'despesa',
   ibge: string,
-  params: { periodo: string; node?: string; eixo?: string },
-) => apiGet<DrillEnvelope>(`/entes/${ibge}/${recurso}/arvore`, params);
+  params: { periodo: string; node?: string; eixo?: string; asOf?: string | null },
+) =>
+  apiGet<DrillEnvelope>(`/entes/${ibge}/${recurso}/arvore`, {
+    periodo: params.periodo,
+    node: params.node,
+    eixo: params.eixo,
+    as_of: params.asOf,
+  });
 
 // --- Receita (Sprint 25A: fim dos endpoints ociosos da auditoria §6) ---
-export const fetchReceitaMemoria = (ibge: string, periodo: string) =>
-  apiGet<ReceitaMemoria>(`/entes/${ibge}/receita/memoria`, { periodo });
+export const fetchReceitaMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<ReceitaMemoria>(`/entes/${ibge}/receita/memoria`, { periodo, as_of: asOf });
 
-export const fetchReceitaDependencia = (ibge: string, periodo: string) =>
-  apiGet<ReceitaDependencia>(`/entes/${ibge}/receita/dependencia`, { periodo });
+export const fetchReceitaDependencia = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<ReceitaDependencia>(`/entes/${ibge}/receita/dependencia`, { periodo, as_of: asOf });
 
-export const fetchReceitaRealizacao = (ibge: string, periodo: string) =>
-  apiGet<ReceitaRealizacao>(`/entes/${ibge}/receita/realizacao`, { periodo });
+export const fetchReceitaRealizacao = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<ReceitaRealizacao>(`/entes/${ibge}/receita/realizacao`, { periodo, as_of: asOf });
 
 /** Contraprova RREO × FPM/FUNDEB/ICMS (Sprint 1B): divergência = qualidade de dado. */
-export const fetchReceitaConciliacao = (ibge: string, periodo: string) =>
-  apiGet<ReceitaConciliacao>(`/entes/${ibge}/receita/transferencias/conciliacao`, { periodo });
+export const fetchReceitaConciliacao = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<ReceitaConciliacao>(`/entes/${ibge}/receita/transferencias/conciliacao`, {
+    periodo,
+    as_of: asOf,
+  });
 
 // --- Despesa ---
-export const fetchDespesaMemoria = (ibge: string, periodo: string) =>
-  apiGet<DespesaMemoria>(`/entes/${ibge}/despesa/memoria`, { periodo });
+export const fetchDespesaMemoria = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<DespesaMemoria>(`/entes/${ibge}/despesa/memoria`, { periodo, as_of: asOf });
 
-export const fetchDespesaEstagios = (ibge: string, periodo: string, eixo = 'funcao') =>
-  apiGet<DespesaEstagios>(`/entes/${ibge}/despesa/estagios`, { periodo, eixo });
+export const fetchDespesaEstagios = (
+  ibge: string,
+  periodo: string,
+  eixo = 'funcao',
+  asOf?: string | null,
+) => apiGet<DespesaEstagios>(`/entes/${ibge}/despesa/estagios`, { periodo, eixo, as_of: asOf });
 
 /** Eixo natureza por padrão: é o Anexo (01) que publica o estágio "pago". */
-export const fetchDespesaExecucao = (ibge: string, periodo: string, eixo = 'natureza') =>
-  apiGet<DespesaExecucao>(`/entes/${ibge}/despesa/execucao`, { periodo, eixo });
+export const fetchDespesaExecucao = (
+  ibge: string,
+  periodo: string,
+  eixo = 'natureza',
+  asOf?: string | null,
+) => apiGet<DespesaExecucao>(`/entes/${ibge}/despesa/execucao`, { periodo, eixo, as_of: asOf });
 
-export const fetchDespesaRigidez = (ibge: string, periodo: string) =>
-  apiGet<DespesaRigidez>(`/entes/${ibge}/despesa/rigidez`, { periodo });
+export const fetchDespesaRigidez = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<DespesaRigidez>(`/entes/${ibge}/despesa/rigidez`, { periodo, as_of: asOf });
 
 export const fetchDashboard = (ibge: string, periodo: string) =>
   apiGet<DashboardResponse>(`/entes/${ibge}/dashboard`, { periodo });
 
-export const fetchLimites = (ibge: string, periodo: string) =>
-  apiGet<LimitesResponse>(`/entes/${ibge}/limites`, { periodo });
+export const fetchLimites = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<LimitesResponse>(`/entes/${ibge}/limites`, { periodo, as_of: asOf });
 
-export const fetchPessoalPorPoder = (ibge: string, periodo: string) =>
-  apiGet<PorPoderOut>(`/entes/${ibge}/pessoal/por-poder`, { periodo });
+export const fetchPessoalPorPoder = (ibge: string, periodo: string, asOf?: string | null) =>
+  apiGet<PorPoderOut>(`/entes/${ibge}/pessoal/por-poder`, { periodo, as_of: asOf });
 
 export const fetchPessoal = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<PessoalDetalhe>(`/entes/${ibge}/pessoal`, { periodo, as_of: asOf });
@@ -877,6 +908,7 @@ export interface LinhaRelatorio {
 export interface LinhaBruta {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   codigo: string;
   descricao: string | null;
   medidas: Record<string, FiscalDecimal | null>;
@@ -888,14 +920,28 @@ export interface LinhaBruta {
 }
 
 /** Fundo do drill da receita: as linhas do RREO Anexo 01 que produziram o nó. */
-export const fetchReceitaLinha = (ibge: string, periodo: string, origem: string) =>
-  apiGet<LinhaBruta>(`/entes/${ibge}/receita/linha/${encodeURIComponent(origem)}`, { periodo });
+export const fetchReceitaLinha = (
+  ibge: string,
+  periodo: string,
+  origem: string,
+  asOf?: string | null,
+) =>
+  apiGet<LinhaBruta>(`/entes/${ibge}/receita/linha/${encodeURIComponent(origem)}`, {
+    periodo,
+    as_of: asOf,
+  });
 
 /** Fundo do drill da despesa. O eixo importa: função vem do Anexo 02, natureza do 01. */
-export const fetchDespesaLinha = (ibge: string, periodo: string, eixo: string, codigo: string) =>
+export const fetchDespesaLinha = (
+  ibge: string,
+  periodo: string,
+  eixo: string,
+  codigo: string,
+  asOf?: string | null,
+) =>
   apiGet<LinhaBruta>(
     `/entes/${ibge}/despesa/linha/${encodeURIComponent(eixo)}/${encodeURIComponent(codigo)}`,
-    { periodo },
+    { periodo, as_of: asOf },
   );
 
 export interface CdpSituacao {
@@ -970,6 +1016,7 @@ export interface MetaResumo {
 export interface ResultadoDetalhe {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   valores: ResultadoValores;
   meta: MetaResumo;
@@ -1020,6 +1067,7 @@ export interface CascataPasso {
 export interface CascataResultado {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   acima_da_linha: CascataPasso[];
   abaixo_da_linha: CascataPasso[];
@@ -1033,6 +1081,7 @@ export interface ReconAjuste {
 export interface ReconciliacaoResultado {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   nominal_acima: FiscalDecimal | null;
   nominal_abaixo: FiscalDecimal | null;
@@ -1054,6 +1103,7 @@ export interface ReconciliacaoResultado {
 export interface MemoriaResultado {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   valores: ResultadoValores;
   ajustes: { codigo: string; descricao: string; valor: FiscalDecimal }[];
@@ -1070,6 +1120,7 @@ export interface MemoriaResultado {
 export interface MetaResultado {
   cod_ibge: string;
   periodo: string;
+  as_of: string | null;
   versao_entrega: string;
   resumo: MetaResumo;
   bimestre: number;
@@ -1998,6 +2049,13 @@ export interface ProjecaoResponse {
   source_ref: SourceRef;
 }
 
+/** Nova operação de crédito hipotética — impacto no teto de DCL, sem persistir o contrato. */
+export interface NovoContratoDivida {
+  principal_rs: number;
+  prazo_meses: number;
+  carencia_meses?: number;
+  taxa_aa_pct?: number;
+}
 export interface CenarioSimularInput {
   nome?: string;
   horizonte?: number;
@@ -2007,7 +2065,14 @@ export interface CenarioSimularInput {
   fpm_variacao_pct?: number | null;
   crescimento_indicador_pct?: number | null;
   crescimento_rcl_pct?: number | null;
+  /** Separado do choque de FPM (Sprint G1) — aplica-se à projeção de RCL/receita. */
+  fundeb_variacao_pct?: number | null;
+  /** Reajuste/variação de folha, distinto do choque genérico — só vale para 'pessoal'. */
+  reajuste_folha_pct?: number | null;
+  /** Simulador estruturado de dívida — só vale para o indicador 'divida'. */
+  novo_contrato_divida?: NovoContratoDivida | null;
   salvar?: boolean;
+  cenario_id?: string | null;
 }
 export interface LimiteImpacto {
   indicador: string;
@@ -2019,9 +2084,25 @@ export interface LimiteImpacto {
   faixa: string | null;
   cruza: boolean;
 }
+/** Impacto do contrato hipotético no teto de 120%/200% da RCL (DCL). */
+export interface ImpactoContratoDivida {
+  principal_rs: FiscalDecimal;
+  prazo_meses: number;
+  carencia_meses: number;
+  taxa_aa_pct: FiscalDecimal;
+  pct_rcl_adicional: FiscalDecimal | null;
+  pct_rcl_resultante: FiscalDecimal | null;
+  teto_pct: FiscalDecimal;
+  faixa: string | null;
+  cruza: boolean;
+  base_rs: FiscalDecimal | null;
+  base_periodo: string | null;
+  fundamento: string;
+}
 export interface CenarioSimularResponse {
   persistido: boolean;
   cenario_id: string | null;
+  versao: number | null;
   cod_ibge: string;
   indicador: string;
   horizonte: number;
@@ -2029,6 +2110,7 @@ export interface CenarioSimularResponse {
   cenario: ProjecaoResponse;
   impacto_limites: LimiteImpacto[];
   impacto_minimos: LimiteImpacto[];
+  impacto_contrato_divida: ImpactoContratoDivida | null;
   memoria: Record<string, unknown>;
   source_refs: SourceRef[];
 }
@@ -2050,6 +2132,8 @@ export interface VersaoCenario {
   nota: string | null;
   procedencia: ProcedenciaCenario;
   criado_em: string;
+  /** E-mail de quem gravou esta versão; `null` sem registro de autoria (Sprint G1). */
+  criado_por: string | null;
 }
 export interface CenarioDetalhe {
   id: string;
@@ -2058,6 +2142,8 @@ export interface CenarioDetalhe {
   nome: string;
   versao_atual: number;
   arquivado: boolean;
+  /** E-mail de quem criou o cenário (Sprint G1). */
+  criado_por: string | null;
   criado_em: string;
   atualizado_em: string | null;
   versoes: VersaoCenario[];
@@ -2199,6 +2285,14 @@ export const renomearCenario = (id: string, nome: string) =>
 /** Arquiva (não apaga). `desarquivar` traz de volta à lista. */
 export const arquivarCenario = (id: string, desarquivar = false) =>
   apiDeleteJson<CenarioDetalhe>(`/cenarios/${id}?desarquivar=${desarquivar}`);
+
+/** Copia o cenário para um cabeçalho novo e independente (Sprint G1). */
+export const duplicarCenario = (id: string, nome?: string) =>
+  apiPost<CenarioDetalhe, { nome?: string }>(`/cenarios/${id}/duplicar`, { nome });
+
+/** Apaga o cenário e todo o histórico de versões — irreversível, distinto de arquivar. */
+export const excluirCenarioDefinitivo = (id: string) =>
+  apiDelete(`/cenarios/${id}/definitivo`);
 
 export const compararCenarios = (ibge: string, cenarioIds: string[]) =>
   apiPost<ComparacaoCenarios>(`/entes/${ibge}/cenarios/comparar`, { cenario_ids: cenarioIds });
@@ -2525,6 +2619,7 @@ export const fetchCockpit = (ibge: string, periodo: string, asOf?: string | null
 export type Capacidade =
   | 'ver'
   | 'exportar'
+  | 'editar'
   | 'config_alerta'
   | 'gerar_relatorio'
   | 'usar_ia'
@@ -2613,6 +2708,7 @@ export const criarPapel = (body: PapelCreate) => apiPost<PapelOut, PapelCreate>(
 export const CAPACIDADES: { cap: Capacidade; label: string }[] = [
   { cap: 'ver', label: 'Visualizar painéis' },
   { cap: 'exportar', label: 'Exportar dados' },
+  { cap: 'editar', label: 'Editar (renomear/arquivar cenários)' },
   { cap: 'gerar_relatorio', label: 'Gerar relatórios' },
   { cap: 'config_alerta', label: 'Configurar alertas' },
   { cap: 'usar_ia', label: 'Usar Assistente de IA' },

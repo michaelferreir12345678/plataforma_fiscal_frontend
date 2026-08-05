@@ -186,7 +186,7 @@ export function CaixaPage() {
 
               {/* Sprint 25B: RP sem lastro dedicado, árvore por fonte, série e memória */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <FonteChip source={s.source_ref} ultimoPeriodo={ultimoPeriodo} />
+                <FonteChip source={s.source_ref} asOf={s.as_of} ultimoPeriodo={ultimoPeriodo} />
                 <div style={{ flex: 1 }} />
                 <MemoriaCaixaDialog cod={ente.cod_ibge} periodo={periodoRgf} />
                 <ExportButton

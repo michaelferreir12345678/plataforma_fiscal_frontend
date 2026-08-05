@@ -124,10 +124,10 @@ export function PatrimonioPage() {
             <AvisoCobertura d={d} podeAdministrar={podeAdministrar} />
             <Header d={d} enteNome={ente.nome} />
             <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: 12, alignItems: 'start' }}>
-              <Explorador cod={cod} ano={d.ano} temMsc={d.tem_msc} mesesMsc={d.meses_msc} />
+              <Explorador cod={cod} ano={d.ano} temMsc={d.tem_msc} mesesMsc={d.meses_msc} asOf={d.as_of} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Conciliacao cod={cod} ano={d.ano} />
-                <Balancos cod={cod} ano={d.ano} enteNome={ente.nome} />
+                <Conciliacao cod={cod} ano={d.ano} asOf={d.as_of} />
+                <Balancos cod={cod} ano={d.ano} enteNome={ente.nome} asOf={d.as_of} />
               </div>
             </div>
             <ComparacaoAnual cod={cod} enteNome={ente.nome} />
@@ -247,23 +247,25 @@ function Explorador({
   ano,
   temMsc,
   mesesMsc,
+  asOf,
 }: {
   cod: string;
   ano: number;
   temMsc: boolean;
   mesesMsc: string[];
+  asOf: string | null;
 }) {
   const [node, setNode] = useState<string | undefined>();
   const [mes, setMes] = useState<string | undefined>();
   const periodo = mes ?? (temMsc ? mesesMsc[mesesMsc.length - 1] : String(ano));
 
   const arv = useResource(
-    () => fetchMscArvore(cod, { node, periodo }),
-    [cod, node, periodo],
+    () => fetchMscArvore(cod, { node, periodo, asOf }),
+    [cod, node, periodo, asOf],
   );
 
   if (!temMsc) {
-    return <BalancoTree cod={cod} ano={ano} />;
+    return <BalancoTree cod={cod} ano={ano} asOf={asOf} />;
   }
 
   return (
@@ -322,12 +324,13 @@ function Explorador({
             />
             <div style={{ padding: '8px 16px', fontSize: 11, color: colors.faint }}>
               fonte {tree.source_ref?.relatorio} {tree.source_ref?.anexo} · v{tree.source_ref?.versao_entrega}
+              {tree.as_of && <> · as_of {tree.as_of}</>}
             </div>
           </div>
         )}
       </Async>
 
-      {node && <MatrizConta cod={cod} codigo={node} ano={ano} />}
+      {node && <MatrizConta cod={cod} codigo={node} ano={ano} asOf={asOf} />}
     </Card>
   );
 }
@@ -405,8 +408,21 @@ function MscChildrenTable({
 }
 
 // --- matriz mensal de uma conta (12 meses) ---
-function MatrizConta({ cod, codigo, ano }: { cod: string; codigo: string; ano: number }) {
-  const mat = useResource(() => fetchMscConta(cod, codigo, ano), [cod, codigo, ano]);
+function MatrizConta({
+  cod,
+  codigo,
+  ano,
+  asOf,
+}: {
+  cod: string;
+  codigo: string;
+  ano: number;
+  asOf: string | null;
+}) {
+  const mat = useResource(
+    () => fetchMscConta(cod, codigo, ano, asOf),
+    [cod, codigo, ano, asOf],
+  );
   return (
     <div style={{ borderTop: `1px solid ${colors.border}`, background: colors.surfaceAlt, padding: '12px 16px' }}>
       <Async res={mat}>
@@ -439,6 +455,7 @@ function MatrizConta({ cod, codigo, ano }: { cod: string; codigo: string; ano: n
                 abertura {M(m.saldo_abertura)} · encerramento {M(m.saldo_encerramento)} · variação no exercício{' '}
                 <b style={{ color: (n(m.variacao_exercicio) ?? 0) < 0 ? colors.red : colors.green }}>{M(m.variacao_exercicio)}</b>
                 {' · '}fonte {m.source_ref.relatorio} v{m.source_ref.versao_entrega}
+                {m.as_of && <> · as_of {m.as_of}</>}
               </div>
             </div>
           );
@@ -449,8 +466,11 @@ function MatrizConta({ cod, codigo, ano }: { cod: string; codigo: string; ano: n
 }
 
 // --- conciliação ---
-function Conciliacao({ cod, ano }: { cod: string; ano: number }) {
-  const conc = useResource(() => fetchMscConciliacao(cod, ano), [cod, ano]);
+function Conciliacao({ cod, ano, asOf }: { cod: string; ano: number; asOf: string | null }) {
+  const conc = useResource(
+    () => fetchMscConciliacao(cod, ano, asOf),
+    [cod, ano, asOf],
+  );
   return (
     <Card>
       <SectionLabel note="pai = Σ filhos · Ativo = Passivo+PL · MSC ↔ DCA">
@@ -477,7 +497,10 @@ function Conciliacao({ cod, ano }: { cod: string; ano: number }) {
             {c.checks.map((ch) => (
               <CheckRow key={ch.chave} ch={ch} />
             ))}
-            <div style={{ fontSize: 11, color: colors.faint, lineHeight: 1.4, marginTop: 2 }}>{c.observacao}</div>
+            <div style={{ fontSize: 11, color: colors.faint, lineHeight: 1.4, marginTop: 2 }}>
+              {c.observacao}
+              {c.as_of && <> · as_of {c.as_of}</>}
+            </div>
           </div>
         )}
       </Async>
@@ -622,9 +645,22 @@ function ComparacaoAnual({ cod, enteNome }: { cod: string; enteNome: string }) {
 }
 
 // --- balanços (DCA) ---
-function Balancos({ cod, ano, enteNome }: { cod: string; ano: number; enteNome: string }) {
+function Balancos({
+  cod,
+  ano,
+  enteNome,
+  asOf,
+}: {
+  cod: string;
+  ano: number;
+  enteNome: string;
+  asOf: string | null;
+}) {
   const [tipo, setTipo] = useState('patrimonial');
-  const bal = useResource(() => fetchBalanco(cod, tipo, ano), [cod, tipo, ano]);
+  const bal = useResource(
+    () => fetchBalanco(cod, tipo, ano, asOf),
+    [cod, tipo, ano, asOf],
+  );
   return (
     <Card pad={0}>
       <div style={{ padding: '14px 16px 8px' }}>
@@ -656,6 +692,7 @@ function Balancos({ cod, ano, enteNome }: { cod: string; ano: number; enteNome: 
             <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 11, color: colors.faint }}>
                 {b.linhas.length} linhas · fonte DCA {b.anexo} v{b.versao_entrega}
+                {b.as_of && <> · as_of {b.as_of}</>}
               </span>
               <div style={{ marginLeft: 'auto' }}>
                 <ExportButton
@@ -702,8 +739,11 @@ function BalancoRow({ l }: { l: BalancoLinha }) {
 }
 
 // --- balanço patrimonial como árvore (para entes sem MSC, ex.: Fortaleza) ---
-function BalancoTree({ cod, ano }: { cod: string; ano: number }) {
-  const bal = useResource(() => fetchBalanco(cod, 'patrimonial', ano), [cod, ano]);
+function BalancoTree({ cod, ano, asOf }: { cod: string; ano: number; asOf: string | null }) {
+  const bal = useResource(
+    () => fetchBalanco(cod, 'patrimonial', ano, asOf),
+    [cod, ano, asOf],
+  );
   return (
     <Card pad={0}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px 8px' }}>
@@ -727,6 +767,7 @@ function BalancoTree({ cod, ano }: { cod: string; ano: number }) {
               ))}
               <div style={{ padding: '8px 16px', fontSize: 11, color: colors.faint }}>
                 {b.linhas.length} contas · fonte DCA {b.anexo} v{b.versao_entrega}
+                {b.as_of && <> · as_of {b.as_of}</>}
               </div>
             </div>
           );

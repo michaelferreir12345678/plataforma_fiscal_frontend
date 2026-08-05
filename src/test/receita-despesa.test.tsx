@@ -156,6 +156,7 @@ function arvoreFake(node: string | null): backend.DrillEnvelope {
 const CONCILIACAO: backend.ReceitaConciliacao = {
   cod_ibge: '2304400',
   periodo: '2024-B6',
+  as_of: null,
   versao_entrega: '1',
   tolerancia_pct: 1,
   observacao: 'Divergência sinalizada como qualidade de dado: o valor oficial do RREO permanece inalterado.',
@@ -261,6 +262,7 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchReceitaRealizacao').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       total: { codigo: 'total', descricao: 'Total', previsto_atualizado: 10_000_000, arrecadado_acum: 8_000_000, realizacao_pct: 80 },
       por_categoria: [
@@ -271,6 +273,7 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchReceitaDependencia').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       resumo: { propria: 3_000_000, transferida: 5_000_000, total: 8_000_000, pct_propria: 37.5, pct_transferida: 62.5 },
       maiores_transferencias: [
@@ -283,6 +286,7 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchReceitaMemoria').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       medidas: ['previsto_inicial', 'arrecadado_acum'],
       totais: { previsto_inicial: 9_000_000, previsto_atualizado: 10_000_000, arrecadado_acum: 8_000_000 },
@@ -405,6 +409,7 @@ describe('Despesa — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchDespesaEstagios').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       eixo: 'funcao',
       totais: { dotacao_atualizada: 10_000_000, empenhado: 7_000_000, liquidado: 6_000_000, pago: 5_000_000, inscrito_rap: 900_000 },
@@ -423,6 +428,7 @@ describe('Despesa — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchDespesaExecucao').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       eixo: 'natureza',
       bimestre: 6,
@@ -435,6 +441,7 @@ describe('Despesa — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchDespesaRigidez').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       despesa_total: 7_000_000,
       rigida: 4_000_000,
@@ -450,6 +457,7 @@ describe('Despesa — enriquecimento gerencial (Sprint 25A)', () => {
     vi.spyOn(backend, 'fetchDespesaMemoria').mockResolvedValue({
       cod_ibge: '2304400',
       periodo: '2024-B6',
+      as_of: null,
       versao_entrega: '1',
       medidas: ['empenhado', 'pago'],
       totais_funcao: { empenhado: 7_000_000 },

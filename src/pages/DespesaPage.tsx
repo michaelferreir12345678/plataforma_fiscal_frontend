@@ -85,7 +85,7 @@ export function DespesaPage() {
         }}
       >
         {(d) => (
-          <Conteudo key={`${d.cod_ibge}-${d.periodo}`} d={d} enteNome={ente.nome} ultimoPeriodo={ultimoPeriodo} />
+          <Conteudo key={`${d.cod_ibge}-${d.periodo}-${d.as_of}`} d={d} enteNome={ente.nome} ultimoPeriodo={ultimoPeriodo} />
         )}
       </Async>
     </div>
@@ -135,13 +135,13 @@ function Conteudo({
             )}
           </span>
         }
-        right={<CascataCard cod={d.cod_ibge} periodo={d.periodo} empenhadoFuncao={emp} />}
+        right={<CascataCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} empenhadoFuncao={emp} />}
       />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <FonteChip source={d.source_ref} ultimoPeriodo={ultimoPeriodo} />
+        <FonteChip source={d.source_ref} asOf={d.as_of} ultimoPeriodo={ultimoPeriodo} />
         <div style={{ flex: 1 }} />
-        <MemoriaDespesaDialog cod={d.cod_ibge} periodo={d.periodo} />
+        <MemoriaDespesaDialog cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
         <ExportButton
           nome={`Despesa — por ${eixo}`}
           linhas={nivelArvore}
@@ -158,8 +158,8 @@ function Conteudo({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <ExecucaoCard cod={d.cod_ibge} periodo={d.periodo} />
-        <RigidezCard cod={d.cod_ibge} periodo={d.periodo} />
+        <ExecucaoCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
+        <RigidezCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
       </div>
 
       <Card>
@@ -175,11 +175,19 @@ function Conteudo({
           </div>
         </div>
         <ArvoreDrill
-          carregar={(node) => fetchDrill('despesa', d.cod_ibge, { periodo: d.periodo, node: node ?? undefined, eixo })}
-          linkFundo={(codigo) =>
-            `/despesa/linha/${eixo}/${encodeURIComponent(codigo)}?periodo=${encodeURIComponent(d.periodo)}`
+          carregar={(node) =>
+            fetchDrill('despesa', d.cod_ibge, {
+              periodo: d.periodo,
+              node: node ?? undefined,
+              eixo,
+              asOf: d.as_of,
+            })
           }
-          deps={[d.cod_ibge, d.periodo, eixo]}
+          linkFundo={(codigo) =>
+            `/despesa/linha/${eixo}/${encodeURIComponent(codigo)}?periodo=${encodeURIComponent(d.periodo)}` +
+            (d.as_of ? `&as_of=${encodeURIComponent(d.as_of)}` : '')
+          }
+          deps={[d.cod_ibge, d.periodo, eixo, d.as_of]}
           rotuloRaiz={eixo === 'funcao' ? 'Funções' : 'Categorias'}
           onNivel={setNivelArvore}
           colunas={[
@@ -221,13 +229,18 @@ function Conteudo({
 function CascataCard({
   cod,
   periodo,
+  asOf,
   empenhadoFuncao,
 }: {
   cod: string;
   periodo: string;
+  asOf: string | null;
   empenhadoFuncao: number;
 }) {
-  const res = useResource(() => fetchDespesaEstagios(cod, periodo, 'natureza'), [cod, periodo]);
+  const res = useResource(
+    () => fetchDespesaEstagios(cod, periodo, 'natureza', asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <div>
       <div style={{ fontSize: 11, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>
@@ -293,7 +306,7 @@ function CascataCard({
                 <div style={{ fontSize: 11, color: colors.yellowText, lineHeight: 1.45 }}>{e.observacao}</div>
               )}
               <DiferencaEixos empenhadoFuncao={empenhadoFuncao} empenhadoNatureza={numero(e.totais.empenhado)} />
-              <FonteChip source={e.source_ref} nota="estágios da despesa (eixo natureza)" />
+              <FonteChip source={e.source_ref} asOf={e.as_of} nota="estágios da despesa (eixo natureza)" />
             </div>
           );
         }}
@@ -326,8 +339,11 @@ function DiferencaEixos({
   );
 }
 
-function ExecucaoCard({ cod, periodo }: { cod: string; periodo: string }) {
-  const res = useResource(() => fetchDespesaExecucao(cod, periodo), [cod, periodo]);
+function ExecucaoCard({ cod, periodo, asOf }: { cod: string; periodo: string; asOf: string | null }) {
+  const res = useResource(
+    () => fetchDespesaExecucao(cod, periodo, 'natureza', asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <Card>
       <SectionLabel note="executado ÷ dotação × esperado no calendário">Ritmo de execução</SectionLabel>
@@ -358,7 +374,7 @@ function ExecucaoCard({ cod, periodo }: { cod: string; periodo: string }) {
               Ritmo abaixo do calendário sinaliza subexecução (ou empenho concentrado no fim do
               exercício, que empurra despesa para restos a pagar).
             </div>
-            <FonteChip source={e.source_ref} nota="ritmo × calendário" />
+            <FonteChip source={e.source_ref} asOf={e.as_of} nota="ritmo × calendário" />
           </>
         )}
       </Async>
@@ -384,8 +400,11 @@ function LinhaExecucao({ s }: { s: ExecucaoEstagio }) {
   );
 }
 
-function RigidezCard({ cod, periodo }: { cod: string; periodo: string }) {
-  const res = useResource(() => fetchDespesaRigidez(cod, periodo), [cod, periodo]);
+function RigidezCard({ cod, periodo, asOf }: { cod: string; periodo: string; asOf: string | null }) {
+  const res = useResource(
+    () => fetchDespesaRigidez(cod, periodo, asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <Card>
       <SectionLabel note="pessoal, juros e amortização = rígida">Rigidez orçamentária</SectionLabel>
@@ -422,7 +441,7 @@ function RigidezCard({ cod, periodo }: { cod: string; periodo: string }) {
                 ))}
               </tbody>
             </table>
-            <FonteChip source={r.source_ref} nota="rigidez por grupo de natureza (GND)" />
+            <FonteChip source={r.source_ref} asOf={r.as_of} nota="rigidez por grupo de natureza (GND)" />
           </>
         )}
       </Async>
@@ -456,13 +475,21 @@ function BotaoEixo({ ativo, onClick, rotulo }: { ativo: boolean; onClick: () => 
   );
 }
 
-function MemoriaDespesaDialog({ cod, periodo }: { cod: string; periodo: string }) {
+function MemoriaDespesaDialog({
+  cod,
+  periodo,
+  asOf,
+}: {
+  cod: string;
+  periodo: string;
+  asOf: string | null;
+}) {
   return (
     <MemoriaDialog
       titulo="Memória de cálculo · Despesa"
       subtitulo={`${cod} · ${periodo}`}
-      carregar={() => fetchDespesaMemoria(cod, periodo)}
-      deps={[cod, periodo]}
+      carregar={() => fetchDespesaMemoria(cod, periodo, asOf)}
+      deps={[cod, periodo, asOf]}
     >
       {(m) => (
         <div>
@@ -512,7 +539,7 @@ function MemoriaDespesaDialog({ cod, periodo }: { cod: string; periodo: string }
               </tbody>
             </table>
           )}
-          <FonteChip source={m.source_ref} />
+          <FonteChip source={m.source_ref} asOf={m.as_of} />
         </div>
       )}
     </MemoriaDialog>

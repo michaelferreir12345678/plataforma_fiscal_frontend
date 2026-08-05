@@ -16,6 +16,7 @@ import * as backend from '../services/backend';
 const BASE: backend.LinhaBruta = {
   cod_ibge: '2304400',
   periodo: '2025-B6',
+  as_of: null,
   codigo: 'ReceitasCorrentes',
   descricao: 'Receitas Correntes',
   medidas: { previsto_inicial: 12_916_221_147, arrecadado_acum: 13_123_460_686.18 },

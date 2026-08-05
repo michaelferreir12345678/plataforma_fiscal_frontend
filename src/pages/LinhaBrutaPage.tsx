@@ -47,13 +47,17 @@ export function LinhaBrutaPage({ modulo }: { modulo: 'receita' | 'despesa' }) {
   const [params] = useSearchParams();
   const { ente, periodo } = useApp();
   const periodoAlvo = params.get('periodo') || periodo;
+  // Pinado no as_of que a página de origem (Receita/Despesa) já tinha resolvido — para
+  // que o fundo do drill não misture versão com o topo se uma retificação chegar entre
+  // os dois carregamentos (§6.5).
+  const asOf = params.get('as_of');
 
   const res = useResource(
     () =>
       modulo === 'receita'
-        ? fetchReceitaLinha(ente.cod_ibge, periodoAlvo, codigo)
-        : fetchDespesaLinha(ente.cod_ibge, periodoAlvo, eixo, codigo),
-    [ente.cod_ibge, periodoAlvo, modulo, eixo, codigo],
+        ? fetchReceitaLinha(ente.cod_ibge, periodoAlvo, codigo, asOf)
+        : fetchDespesaLinha(ente.cod_ibge, periodoAlvo, eixo, codigo, asOf),
+    [ente.cod_ibge, periodoAlvo, modulo, eixo, codigo, asOf],
     { pular: !periodoAlvo },
   );
 
@@ -189,7 +193,8 @@ function Conteudo({ d }: { d: LinhaBruta }) {
           <span style={{ fontFamily: font.mono, color: colors.ink }}>
             {d.source_ref.versao_entrega}
           </span>{' '}
-          de {d.source_ref.relatorio} · {d.source_ref.anexo}.{' '}
+          de {d.source_ref.relatorio} · {d.source_ref.anexo}
+          {d.as_of && <> · as_of {d.as_of}</>}.{' '}
           <Link to="/central-dados/fontes/siconfi_rreo" style={{ color: colors.primary }}>
             ver o endpoint de origem
           </Link>

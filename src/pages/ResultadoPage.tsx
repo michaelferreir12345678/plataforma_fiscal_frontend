@@ -50,20 +50,25 @@ export function ResultadoPage() {
   const ultimoPeriodo = periodosRreo.length ? periodosRreo[periodosRreo.length - 1] : null;
   const pular = { pular: !periodo };
   const det = useResource(() => fetchResultado(ente.cod_ibge, periodo), [ente.cod_ibge, periodo], pular);
+  // Sub-cards "pinados" no as_of que o cabeçalho já resolveu (§6.5, padrão de Dívida):
+  // só disparam depois que `det` chega, e usam exatamente a mesma versão — uma
+  // retificação no meio do carregamento não pode misturar versões na mesma tela.
+  const asOf = det.data?.as_of ?? null;
+  const subPular = { pular: !periodo || !det.data };
   const cas = useResource(
-    () => fetchResultadoCascata(ente.cod_ibge, periodo),
-    [ente.cod_ibge, periodo],
-    pular,
+    () => fetchResultadoCascata(ente.cod_ibge, periodo, asOf),
+    [ente.cod_ibge, periodo, asOf],
+    subPular,
   );
   const rec = useResource(
-    () => fetchResultadoReconciliacao(ente.cod_ibge, periodo),
-    [ente.cod_ibge, periodo],
-    pular,
+    () => fetchResultadoReconciliacao(ente.cod_ibge, periodo, asOf),
+    [ente.cod_ibge, periodo, asOf],
+    subPular,
   );
   const meta = useResource(
-    () => fetchResultadoMeta(ente.cod_ibge, periodo),
-    [ente.cod_ibge, periodo],
-    pular,
+    () => fetchResultadoMeta(ente.cod_ibge, periodo, asOf),
+    [ente.cod_ibge, periodo, asOf],
+    subPular,
   );
 
   return (
@@ -167,9 +172,9 @@ export function ResultadoPage() {
 
               {/* Série, memória de cálculo, proveniência e exportação. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <FonteChip source={d.source_ref} ultimoPeriodo={ultimoPeriodo} />
+                <FonteChip source={d.source_ref} asOf={d.as_of} ultimoPeriodo={ultimoPeriodo} />
                 <div style={{ flex: 1 }} />
-                <MemoriaResultadoDialog cod={d.cod_ibge} periodo={d.periodo} />
+                <MemoriaResultadoDialog cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
                 <ExportButton
                   nome="Resultado fiscal — série"
                   linhas={d.serie}
@@ -445,13 +450,21 @@ function NotaRpps() {
   );
 }
 
-function MemoriaResultadoDialog({ cod, periodo }: { cod: string; periodo: string }) {
+function MemoriaResultadoDialog({
+  cod,
+  periodo,
+  asOf,
+}: {
+  cod: string;
+  periodo: string;
+  asOf: string | null;
+}) {
   return (
     <MemoriaDialog
       titulo="Memória de cálculo · Resultado fiscal"
       subtitulo={`${cod} · ${periodo}`}
-      carregar={() => fetchResultadoMemoria(cod, periodo)}
-      deps={[cod, periodo]}
+      carregar={() => fetchResultadoMemoria(cod, periodo, asOf)}
+      deps={[cod, periodo, asOf]}
     >
       {(m) => (
         <div>
@@ -473,7 +486,7 @@ function MemoriaResultadoDialog({ cod, periodo }: { cod: string; periodo: string
               <LinhaMemoria key={medida} rotulo={medida}>{origem}</LinhaMemoria>
             ))}
           </div>
-          <FonteChip source={m.source_ref} />
+          <FonteChip source={m.source_ref} asOf={m.as_of} />
         </div>
       )}
     </MemoriaDialog>

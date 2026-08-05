@@ -86,7 +86,7 @@ export function ReceitaPage() {
       >
         {(d) => (
           <Conteudo
-            key={`${d.cod_ibge}-${d.periodo}`}
+            key={`${d.cod_ibge}-${d.periodo}-${d.as_of}`}
             d={d}
             enteNome={ente.nome}
             ultimoPeriodo={ultimoPeriodo}
@@ -171,9 +171,9 @@ function Conteudo({
       />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <FonteChip source={d.source_ref} ultimoPeriodo={ultimoPeriodo} />
+        <FonteChip source={d.source_ref} asOf={d.as_of} ultimoPeriodo={ultimoPeriodo} />
         <div style={{ flex: 1 }} />
-        <MemoriaReceitaDialog cod={d.cod_ibge} periodo={d.periodo} />
+        <MemoriaReceitaDialog cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
         <ExportButton
           nome="Receita — composição"
           linhas={nivelArvore}
@@ -195,12 +195,17 @@ function Conteudo({
           </SectionLabel>
           <ArvoreDrill
             carregar={(node) =>
-              fetchDrill('receita', d.cod_ibge, { periodo: d.periodo, node: node ?? undefined })
+              fetchDrill('receita', d.cod_ibge, {
+                periodo: d.periodo,
+                node: node ?? undefined,
+                asOf: d.as_of,
+              })
             }
             linkFundo={(codigo) =>
-              `/receita/linha/${encodeURIComponent(codigo)}?periodo=${encodeURIComponent(d.periodo)}`
+              `/receita/linha/${encodeURIComponent(codigo)}?periodo=${encodeURIComponent(d.periodo)}` +
+              (d.as_of ? `&as_of=${encodeURIComponent(d.as_of)}` : '')
             }
-            deps={[d.cod_ibge, d.periodo]}
+            deps={[d.cod_ibge, d.periodo, d.as_of]}
             rotuloRaiz="Categorias econômicas"
             onNivel={setNivelArvore}
             colunas={[
@@ -226,8 +231,8 @@ function Conteudo({
         </Card>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <RealizacaoCard cod={d.cod_ibge} periodo={d.periodo} prevInicial={prevInicial} prev={prev} arrec={arrec} realizacaoPct={numero(d.realizacao_pct)} />
-          <DependenciaCard cod={d.cod_ibge} periodo={d.periodo} />
+          <RealizacaoCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} prevInicial={prevInicial} prev={prev} arrec={arrec} realizacaoPct={numero(d.realizacao_pct)} />
+          <DependenciaCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
         </div>
       </div>
 
@@ -235,7 +240,7 @@ function Conteudo({
         <SectionLabel note="RREO Anexo 01 × repasses publicados pela União e pelo estado">
           Conciliação de transferências · o repasse informado bate com o recebido?
         </SectionLabel>
-        <ConciliacaoCard cod={d.cod_ibge} periodo={d.periodo} enteNome={enteNome} podeAdministrar={podeAdministrar} />
+        <ConciliacaoCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} enteNome={enteNome} podeAdministrar={podeAdministrar} />
       </Card>
 
       <Card>
@@ -261,6 +266,7 @@ function Conteudo({
 function RealizacaoCard({
   cod,
   periodo,
+  asOf,
   prevInicial,
   prev,
   arrec,
@@ -268,12 +274,16 @@ function RealizacaoCard({
 }: {
   cod: string;
   periodo: string;
+  asOf: string | null;
   prevInicial: number | null;
   prev: number;
   arrec: number;
   realizacaoPct: number | null;
 }) {
-  const res = useResource(() => fetchReceitaRealizacao(cod, periodo), [cod, periodo]);
+  const res = useResource(
+    () => fetchReceitaRealizacao(cod, periodo, asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <Card>
       <SectionLabel note="arrecadado ÷ previsto atualizado">Realização da receita</SectionLabel>
@@ -317,7 +327,7 @@ function RealizacaoCard({
                 ))}
               </tbody>
             </table>
-            <FonteChip source={r.source_ref} nota="realização por categoria econômica" />
+            <FonteChip source={r.source_ref} asOf={r.as_of} nota="realização por categoria econômica" />
           </>
         )}
       </Async>
@@ -325,8 +335,19 @@ function RealizacaoCard({
   );
 }
 
-function DependenciaCard({ cod, periodo }: { cod: string; periodo: string }) {
-  const res = useResource(() => fetchReceitaDependencia(cod, periodo), [cod, periodo]);
+function DependenciaCard({
+  cod,
+  periodo,
+  asOf,
+}: {
+  cod: string;
+  periodo: string;
+  asOf: string | null;
+}) {
+  const res = useResource(
+    () => fetchReceitaDependencia(cod, periodo, asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <Card>
       <SectionLabel note="origens 1.7 e 2.4 do Anexo 01">Maiores transferências recebidas</SectionLabel>
@@ -352,7 +373,7 @@ function DependenciaCard({ cod, periodo }: { cod: string; periodo: string }) {
                   ))}
                 </tbody>
               </table>
-              <FonteChip source={dep.source_ref} nota="dependência de transferências" />
+              <FonteChip source={dep.source_ref} asOf={dep.as_of} nota="dependência de transferências" />
             </>
           )
         }
@@ -364,15 +385,20 @@ function DependenciaCard({ cod, periodo }: { cod: string; periodo: string }) {
 function ConciliacaoCard({
   cod,
   periodo,
+  asOf,
   enteNome,
   podeAdministrar,
 }: {
   cod: string;
   periodo: string;
+  asOf: string | null;
   enteNome: string;
   podeAdministrar: boolean;
 }) {
-  const res = useResource(() => fetchReceitaConciliacao(cod, periodo), [cod, periodo]);
+  const res = useResource(
+    () => fetchReceitaConciliacao(cod, periodo, asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <Async
       res={res}
@@ -424,6 +450,7 @@ function ConciliacaoCard({
             </table>
             <FonteChip
               source={c.source_ref}
+              asOf={c.as_of}
               nota={`lado externo: ${[...new Set(c.itens.map((i) => i.tabela_externa))].join(', ') || '—'}`}
             />
           </>
@@ -511,13 +538,21 @@ function LinhaConciliacao({ item }: { item: ConciliacaoItem }) {
   );
 }
 
-function MemoriaReceitaDialog({ cod, periodo }: { cod: string; periodo: string }) {
+function MemoriaReceitaDialog({
+  cod,
+  periodo,
+  asOf,
+}: {
+  cod: string;
+  periodo: string;
+  asOf: string | null;
+}) {
   return (
     <MemoriaDialog
       titulo="Memória de cálculo · Receita"
       subtitulo={`${cod} · ${periodo}`}
-      carregar={() => fetchReceitaMemoria(cod, periodo)}
-      deps={[cod, periodo]}
+      carregar={() => fetchReceitaMemoria(cod, periodo, asOf)}
+      deps={[cod, periodo, asOf]}
     >
       {(m) => (
         <div>
@@ -556,7 +591,7 @@ function MemoriaReceitaDialog({ cod, periodo }: { cod: string; periodo: string }
               </tbody>
             </table>
           )}
-          <FonteChip source={m.source_ref} />
+          <FonteChip source={m.source_ref} asOf={m.as_of} />
         </div>
       )}
     </MemoriaDialog>

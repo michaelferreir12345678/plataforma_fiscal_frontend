@@ -100,7 +100,7 @@ export function PessoalPage() {
           ),
         }}
       >
-        {(d) => <Conteudo key={`${d.cod_ibge}-${d.periodo}`} d={d} enteNome={ente.nome} ultimoPeriodo={ultimoPeriodo} />}
+        {(d) => <Conteudo key={`${d.cod_ibge}-${d.periodo}-${d.as_of}`} d={d} enteNome={ente.nome} ultimoPeriodo={ultimoPeriodo} />}
       </Async>
     </div>
   );
@@ -126,13 +126,13 @@ function Conteudo({
     <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.15fr', gap: 12 }}>
         <ExecutivoCard d={d} exec={exec} />
-        <PorPoderCard cod={d.cod_ibge} periodo={d.periodo} />
+        <PorPoderCard cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <FonteChip source={d.source_ref} ultimoPeriodo={ultimoPeriodo} nota={`esfera ${d.esfera ?? '—'} · RPPS ${d.rpps ? 'sim' : 'não'}`} />
+        <FonteChip source={d.source_ref} asOf={d.as_of} ultimoPeriodo={ultimoPeriodo} nota={`esfera ${d.esfera ?? '—'} · RPPS ${d.rpps ? 'sim' : 'não'}`} />
         <div style={{ flex: 1 }} />
-        <MemoriaPessoalDialog cod={d.cod_ibge} periodo={d.periodo} />
+        <MemoriaPessoalDialog cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
         <ExportButton
           nome="Pessoal — série RGF"
           linhas={d.serie}
@@ -153,9 +153,13 @@ function Conteudo({
           <SectionLabel note="abra um poder para ver os órgãos">Quem puxa a folha</SectionLabel>
           <ArvoreDrill
             carregar={(node) =>
-              fetchPessoalArvore(d.cod_ibge, { periodo: d.periodo, node: node ?? undefined })
+              fetchPessoalArvore(d.cod_ibge, {
+                periodo: d.periodo,
+                node: node ?? undefined,
+                asOf: d.as_of,
+              })
             }
-            deps={[d.cod_ibge, d.periodo]}
+            deps={[d.cod_ibge, d.periodo, d.as_of]}
             rotuloRaiz="Ente"
             colunas={[
               { chave: 'despesa_bruta', rotulo: 'Bruta' },
@@ -251,8 +255,11 @@ function ExecutivoCard({ d, exec }: { d: PessoalDetalhe; exec: PoderItem | null 
 }
 
 /** Pergunta 3: quem gasta o quê, cada poder com a sua faixa. */
-function PorPoderCard({ cod, periodo }: { cod: string; periodo: string }) {
-  const res = useResource(() => fetchPessoalPorPoder(cod, periodo), [cod, periodo]);
+function PorPoderCard({ cod, periodo, asOf }: { cod: string; periodo: string; asOf: string | null }) {
+  const res = useResource(
+    () => fetchPessoalPorPoder(cod, periodo, asOf),
+    [cod, periodo, asOf],
+  );
   return (
     <Card>
       <SectionLabel note="cada poder tem teto próprio; sem teto cadastrado, sem faixa">
@@ -307,7 +314,7 @@ function PorPoderCard({ cod, periodo }: { cod: string; periodo: string }) {
               O consolidado do ente (60%/50% da RCL) soma todos os poderes; o teto de 54%/49% é
               só do Executivo. Somar percentuais de poderes distintos não produz limite algum.
             </div>
-            <FonteChip source={pp.source_ref} nota={`RPPS ${pp.rpps ? 'sim' : 'não'}`} />
+            <FonteChip source={pp.source_ref} asOf={pp.as_of} nota={`RPPS ${pp.rpps ? 'sim' : 'não'}`} />
           </>
         )}
       </Async>
@@ -538,13 +545,21 @@ function SimuladorCard({
   );
 }
 
-function MemoriaPessoalDialog({ cod, periodo }: { cod: string; periodo: string }) {
+function MemoriaPessoalDialog({
+  cod,
+  periodo,
+  asOf,
+}: {
+  cod: string;
+  periodo: string;
+  asOf: string | null;
+}) {
   return (
     <MemoriaDialog
       titulo="Memória de cálculo · Pessoal"
       subtitulo={`${cod} · ${periodo}`}
-      carregar={() => fetchPessoalMemoria(cod, periodo)}
-      deps={[cod, periodo]}
+      carregar={() => fetchPessoalMemoria(cod, periodo, asOf)}
+      deps={[cod, periodo, asOf]}
     >
       {(m) => (
         <div>
@@ -590,7 +605,7 @@ function MemoriaPessoalDialog({ cod, periodo }: { cod: string; periodo: string }
               </tbody>
             </table>
           </div>
-          <FonteChip source={m.source_ref} />
+          <FonteChip source={m.source_ref} asOf={m.as_of} />
         </div>
       )}
     </MemoriaDialog>

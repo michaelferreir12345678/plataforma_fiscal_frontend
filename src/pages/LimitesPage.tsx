@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
+import { FonteChip } from '../components/FonteChip';
 import { useApp, useResource } from '../context/AppContext';
 import { fetchLimites, type LimiteItem } from '../services/backend';
 import { brl, fmt, pct } from '../utils/format';
@@ -68,6 +69,10 @@ export function LimitesPage() {
             </Card>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <FonteChip source={d.source_ref} asOf={d.as_of} />
+                <div style={{ flex: 1 }} />
+              </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <ExportButton
                   nome="Limites legais"

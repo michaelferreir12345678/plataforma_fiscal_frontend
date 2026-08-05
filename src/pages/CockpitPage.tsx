@@ -77,7 +77,21 @@ function Secao({ n, titulo, pergunta, children }: { n: number; titulo: string; p
   );
 }
 
-function Fonte({ relatorio, anexo, periodo, versao }: { relatorio?: string | null; anexo?: string | null; periodo?: string | null; versao?: string | null }) {
+function Fonte({
+  relatorio,
+  anexo,
+  periodo,
+  versao,
+  asOf,
+}: {
+  relatorio?: string | null;
+  anexo?: string | null;
+  periodo?: string | null;
+  versao?: string | null;
+  /** Instante bitemporal resolvido pelo cabeçalho (§6.5) — as 7 camadas compartilham o
+   * mesmo, já que o cockpit é composto numa única chamada atômica ao backend. */
+  asOf?: string | null;
+}) {
   if (!relatorio) return null;
   return (
     <div style={{ fontSize: 11, color: colors.faint, fontFamily: "'JetBrains Mono', monospace", marginTop: 6 }}>
@@ -85,6 +99,7 @@ function Fonte({ relatorio, anexo, periodo, versao }: { relatorio?: string | nul
       {anexo ? ` · ${anexo}` : ''}
       {periodo ? ` · ${periodo}` : ''}
       {versao ? ` · v${versao}` : ''}
+      {asOf ? ` · as_of ${asOf}` : ''}
     </div>
   );
 }
@@ -200,6 +215,13 @@ export function CockpitPage() {
                   )}
                 </div>
               </Card>
+              <Fonte
+                relatorio={c.source_ref.relatorio}
+                anexo={c.source_ref.anexo}
+                periodo={c.source_ref.periodo}
+                versao={c.source_ref.versao_entrega}
+                asOf={c.as_of}
+              />
             </Secao>
 
             {/* 2 — CRÍTICOS */}
@@ -208,7 +230,7 @@ export function CockpitPage() {
                 <Card><Vazio>Nenhum indicador apurado neste período.</Vazio></Card>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(c.criticos.length, 4)}, 1fr)`, gap: 10 }}>
-                  {c.criticos.map((k) => <CardCritico key={k.indicador} k={k} />)}
+                  {c.criticos.map((k) => <CardCritico key={k.indicador} k={k} asOf={c.as_of} />)}
                 </div>
               )}
             </Secao>
@@ -216,14 +238,14 @@ export function CockpitPage() {
             {/* 3 — TENDÊNCIAS */}
             <Secao n={3} titulo="Tendências" pergunta="para onde vai?">
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(c.tendencias.length, 3)}, 1fr)`, gap: 10 }}>
-                {c.tendencias.map((t) => <CardTendencia key={t.indicador} t={t} />)}
+                {c.tendencias.map((t) => <CardTendencia key={t.indicador} t={t} asOf={c.as_of} />)}
               </div>
             </Secao>
 
             {/* 4 — EXPLICADORES */}
             <Secao n={4} titulo="Explicadores" pergunta="por que mudou?">
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(c.explicadores.length, 3)}, 1fr)`, gap: 10 }}>
-                {c.explicadores.map((e) => <CardExplicador key={e.dimensao} e={e} />)}
+                {c.explicadores.map((e) => <CardExplicador key={e.dimensao} e={e} asOf={c.as_of} />)}
               </div>
             </Secao>
 
@@ -240,7 +262,7 @@ export function CockpitPage() {
                 <Card><Vazio>Nenhum alerta ativo para este ente.</Vazio></Card>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {c.riscos.map((r) => <CardRisco key={r.id} r={r} />)}
+                  {c.riscos.map((r) => <CardRisco key={r.id} r={r} asOf={c.as_of} />)}
                 </div>
               )}
             </Secao>
@@ -274,7 +296,7 @@ function Vazio({ children }: { children: React.ReactNode }) {
  * `valor_rs` — aparecia como "None%", e os gerenciais mostravam "teto 0%", que numa tela de
  * conformidade se lê como "o teto é zero", o oposto de "não há teto".
  */
-function CardCritico({ k }: { k: CriticoItem }) {
+function CardCritico({ k, asOf }: { k: CriticoItem; asOf?: string | null }) {
   const temLimite = k.limite_pct !== null && k.limite_pct !== undefined;
   const teto = temLimite ? Number(k.limite_pct) : 0;
   const porHabitante = k.denominador === 'populacao';
@@ -319,13 +341,13 @@ function CardCritico({ k }: { k: CriticoItem }) {
         {temLimite && ` · ${k.sentido === 'piso' ? 'mínimo' : 'teto'} ${pct(k.limite_pct, 0)}`}
       </div>
       <div style={{ alignSelf: 'flex-start' }}>
-        <Fonte relatorio={k.source_ref?.relatorio} anexo={k.source_ref?.anexo} periodo={k.source_ref?.periodo} versao={k.source_ref?.versao_entrega} />
+        <Fonte relatorio={k.source_ref?.relatorio} anexo={k.source_ref?.anexo} periodo={k.source_ref?.periodo} versao={k.source_ref?.versao_entrega} asOf={asOf} />
       </div>
     </Card>
   );
 }
 
-function CardTendencia({ t }: { t: TendenciaItem }) {
+function CardTendencia({ t, asOf }: { t: TendenciaItem; asOf?: string | null }) {
   if (!t.disponivel) {
     return (
       <Card>
@@ -383,7 +405,7 @@ function CardTendencia({ t }: { t: TendenciaItem }) {
       ) : (
         <div style={{ fontSize: 11, color: colors.muted }}>Não cruza o limite no horizonte projetado.</div>
       )}
-      <Fonte relatorio={t.source_ref?.relatorio} anexo={t.source_ref?.anexo} periodo={t.source_ref?.periodo} versao={t.source_ref?.versao_entrega} />
+      <Fonte relatorio={t.source_ref?.relatorio} anexo={t.source_ref?.anexo} periodo={t.source_ref?.periodo} versao={t.source_ref?.versao_entrega} asOf={asOf} />
     </Card>
   );
 }
@@ -415,7 +437,7 @@ function Legenda({ cruza }: { cruza: boolean }) {
   );
 }
 
-function CardExplicador({ e }: { e: ExplicadorItem }) {
+function CardExplicador({ e, asOf }: { e: ExplicadorItem; asOf?: string | null }) {
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ fontSize: 11.5, fontWeight: 600 }}>{e.rotulo}</div>
@@ -439,7 +461,7 @@ function CardExplicador({ e }: { e: ExplicadorItem }) {
           ))}
         </>
       )}
-      <Fonte relatorio={e.source_ref?.relatorio} anexo={e.source_ref?.anexo} periodo={e.source_ref?.periodo} versao={e.source_ref?.versao_entrega} />
+      <Fonte relatorio={e.source_ref?.relatorio} anexo={e.source_ref?.anexo} periodo={e.source_ref?.periodo} versao={e.source_ref?.versao_entrega} asOf={asOf} />
     </Card>
   );
 }
@@ -464,7 +486,7 @@ function LinhaComparacao({ c }: { c: ComparacaoItem }) {
   );
 }
 
-function CardRisco({ r }: { r: RiscoItem }) {
+function CardRisco({ r, asOf }: { r: RiscoItem; asOf?: string | null }) {
   const cor = r.severidade === 'critico' ? colors.red : r.severidade === 'atencao' ? colors.orange : colors.muted;
   const fundo = r.severidade === 'critico' ? colors.redBg : r.severidade === 'atencao' ? colors.orangeBg : colors.bg;
   return (
@@ -489,7 +511,7 @@ function CardRisco({ r }: { r: RiscoItem }) {
           Abrir detalhe →
         </a>
       )}
-      <Fonte relatorio={r.source_ref?.relatorio} anexo={r.source_ref?.anexo} periodo={r.source_ref?.periodo} versao={r.source_ref?.versao_entrega} />
+      <Fonte relatorio={r.source_ref?.relatorio} anexo={r.source_ref?.anexo} periodo={r.source_ref?.periodo} versao={r.source_ref?.versao_entrega} asOf={asOf} />
     </Card>
   );
 }

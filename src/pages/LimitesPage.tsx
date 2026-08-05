@@ -6,6 +6,8 @@ import { SectionLabel } from '../components/SectionLabel';
 import { Async } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
 import { FonteChip } from '../components/FonteChip';
+import { SeloCobertura } from '../components/SeloCobertura';
+import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { useApp, useResource } from '../context/AppContext';
 import { fetchLimites, type LimiteItem } from '../services/backend';
 import { brl, fmt, pct } from '../utils/format';
@@ -56,6 +58,12 @@ export function LimitesPage() {
       <SectionLabel note="posição vs. teto/piso legal · faixas alerta 90% / prudencial 95% / máximo 100%">
         Limites legais do ente
       </SectionLabel>
+
+      <SeloQualidadePagina periodo={periodo} />
+      {/* U31: faltava aqui — justamente a página mais sensível a "faltou apurar"
+          (limites já registra os indicadores em coverage/service.py::INDICADORES_POR_PAGINA,
+          só faltava consumir). */}
+      <SeloCobertura pagina="limites" ente={ente.cod_ibge} periodo={periodo} />
 
       <Async res={res}>
         {(d) =>
@@ -110,6 +118,17 @@ function LimiteRow({ it }: { it: LimiteItem }) {
   const valor = it.valor_pct_rcl ?? 0;
   const ratio = teto ? Math.min((valor / teto) * 100, 100) : 0;
   const isPiso = it.sentido === 'piso';
+  // U32: num teto, a barra cheia é o estado ruim (perto/acima do limite) — o preenchimento
+  // cresce com o risco. Num piso, a MESMA conta (valor/piso) satura em 100% assim que o
+  // ente cumpre o mínimo: um ente muito acima do piso também enche a barra até o traço
+  // final, ficando visualmente indistinguível de "no limite máximo" de um teto.
+  // Invertida, a barra volta a significar a mesma coisa nas duas leituras: **mais cheia =
+  // mais perto de violar** — vazia (bem acima do piso) para quem cumpre com folga, cheia
+  // para quem está bem abaixo do mínimo.
+  const alertaPct = it.alerta_pct != null && teto > 0 ? Math.min((it.alerta_pct / teto) * 100, 100) : null;
+  const ratioVisual = isPiso ? Math.max(0, 100 - ratio) : ratio;
+  const alertaVisual = alertaPct == null ? null : isPiso ? 100 - alertaPct : alertaPct;
+  const marcaLimiteVisual = isPiso ? 0 : 100;
   return (
     <Card accent={rc.color} style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
       <div style={{ width: 220 }}>
@@ -153,11 +172,11 @@ function LimiteRow({ it }: { it: LimiteItem }) {
           aria-valuenow={valor}
           style={{ position: 'relative', height: 12, background: colors.borderSoft, borderRadius: 3 }}
         >
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${ratio}%`, background: rc.color, borderRadius: 3 }} />
-          {it.alerta_pct != null && teto > 0 && (
-            <div style={{ position: 'absolute', left: `${Math.min((it.alerta_pct / teto) * 100, 100)}%`, top: -3, bottom: -3, width: 1.5, background: colors.yellowText }} />
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${ratioVisual}%`, background: rc.color, borderRadius: 3 }} />
+          {alertaVisual != null && (
+            <div style={{ position: 'absolute', left: `${alertaVisual}%`, top: -3, bottom: -3, width: 1.5, background: colors.yellowText }} />
           )}
-          <div style={{ position: 'absolute', left: '100%', top: -3, bottom: -3, width: 2, background: colors.primaryDeep }} />
+          <div style={{ position: 'absolute', left: `${marcaLimiteVisual}%`, top: -3, bottom: -3, width: 2, background: colors.primaryDeep }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 11, color: colors.muted, fontFamily: "'JetBrains Mono', monospace" }}>
           <span>distância ao {isPiso ? 'piso' : 'teto'}: {it.distancia_teto != null ? fmt(it.distancia_teto, 1) + ' p.p.' : '—'}</span>

@@ -83,6 +83,11 @@ export interface DependenciaResumo {
   total: number;
   pct_propria: number | null;
   pct_transferida: number | null;
+  /** Desdobramento de `transferida` por categoria econômica (U21/U22). */
+  transferida_corrente: number | null;
+  transferida_capital: number | null;
+  pct_transferida_corrente: number | null;
+  pct_transferida_capital: number | null;
 }
 
 export interface ReceitaDetalhe {
@@ -437,6 +442,8 @@ export interface PessoalDetalhe {
   versao_entrega: string;
   esfera: string | null;
   rpps: boolean;
+  /** RGF quadrimestral, salvo município < 50 mil hab. (semestral — LRF art. 63, II). */
+  cadencia_rgf: 'quadrimestral' | 'semestral';
   totais: PessoalTotais;
   rcl_12m: FiscalDecimal | null;
   executivo: PoderItem | null;
@@ -541,7 +548,14 @@ export interface CapagHero {
   endividamento_pct: FiscalDecimal | null;
   ind_poupanca: FiscalDecimal | null;
   ind_liquidez: FiscalDecimal | null;
+  /** ICF (layout oficial) ou versão de metodologia (layout estadual) — nunca o ano-base. */
   metodologia_versao: string | null;
+  /** "ICF" (município) ou "Metodologia" (estado); null quando não há o que rotular. */
+  metodologia_rotulo: string | null;
+  /** Ano-base real da planilha, quando o layout municipal histórico trouxe `Ano_Base`. */
+  ano_base_fonte: number | null;
+  /** true ⇒ `ano_base_fonte` diverge do esperado (`ano_ref - 1`). */
+  ano_base_fonte_diverge: boolean | null;
   as_of: string | null;
   source_ref: SourceRef;
 }
@@ -1710,6 +1724,8 @@ export interface ConciliacaoOut {
   as_of: string | null;
   tem_msc: boolean;
   tem_dca: boolean;
+  /** "Conciliação MSC ↔ DCA" com MSC; "Balanço fecha" sem MSC (só 1 dos 3 checks roda). */
+  titulo: string;
   n_checks: number;
   n_divergencias: number;
   conciliado: boolean;

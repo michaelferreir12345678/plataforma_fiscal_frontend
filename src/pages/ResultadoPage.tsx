@@ -93,7 +93,7 @@ export function ResultadoPage() {
           return (
             <>
               <MetricHeader
-                label={`Resultado primário · ${d.periodo}`}
+                label={`Resultado primário (com RPPS) · ${d.periodo}`}
                 value={M(d.valores.resultado_primario)}
                 valueColor={cor(primario)}
                 context={
@@ -105,15 +105,19 @@ export function ResultadoPage() {
                 }
                 right={
                   <div>
+                    {/* U27: "(com RPPS)"/"(sem RPPS)" movidos para o número principal — a
+                        NotaRpps abaixo continua existindo, mas o regime não pode depender
+                        de o gestor abrir um card recolhido para saber qual apuração está
+                        vendo. */}
                     <div style={{ fontSize: 11, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>
-                      Resultado nominal (variação da dívida)
+                      Resultado nominal (sem RPPS) · variação da dívida
                     </div>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: cor(nominal) }}>
                       {M(d.valores.resultado_nominal)}
                     </div>
                     <div style={{ fontSize: 11, color: colors.muted, marginTop: 6, lineHeight: 1.45 }}>
-                      = primário − juros líquidos {M(d.valores.juros_liquidos)}. DCL {M(d.valores.dcl_inicio)} →{' '}
-                      {M(d.valores.dcl_fim)} (variação {M(d.valores.variacao_dcl)}).
+                      = primário (com RPPS) − juros líquidos {M(d.valores.juros_liquidos)}. DCL{' '}
+                      {M(d.valores.dcl_inicio)} → {M(d.valores.dcl_fim)} (variação {M(d.valores.variacao_dcl)}).
                     </div>
                   </div>
                 }
@@ -241,25 +245,40 @@ function MetaCard({
         {(mt) => (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
             <OrigemMeta origem={mt.origem} />
-            {mt.resumo.informada ? (
+            {/* U28: antes, `mt.resumo.informada` (true também quando só a meta NOMINAL
+                existe) abria este bloco e ele só sabia desenhar linhas de primário — um
+                ente que publica só meta nominal via "Meta de resultado primário —",
+                indistinguível de não ter meta nenhuma. Os dois blocos agora aparecem
+                cada um por sua própria presença. */}
+            {mt.resumo.meta_primario != null || mt.resumo.meta_nominal != null ? (
               <>
-                <Linha k="Meta de resultado primário" v={M(mt.resumo.meta_primario)} />
-                <Linha k="Realizado" v={M(mt.resumo.realizado_primario)} />
-                <Linha k="Projeção de fechamento" v={M(mt.projecao_primario)} />
-                <Linha k="Esforço necessário" v={M(mt.esforco_necessario)} total />
-                <span
-                  style={{
-                    alignSelf: 'flex-start',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: mt.resumo.atingido_primario ? colors.green : colors.orange,
-                    background: mt.resumo.atingido_primario ? colors.greenBg : colors.orangeBg,
-                    padding: '2px 8px',
-                    borderRadius: 3,
-                  }}
-                >
-                  {mt.resumo.atingido_primario ? 'Meta atingida' : 'Abaixo da meta'}
-                </span>
+                {mt.resumo.meta_primario != null && (
+                  <>
+                    <Linha k="Meta de resultado primário" v={M(mt.resumo.meta_primario)} />
+                    <Linha k="Realizado (primário)" v={M(mt.resumo.realizado_primario)} />
+                    <Linha k="Projeção de fechamento" v={M(mt.projecao_primario)} />
+                    <Linha k="Esforço necessário" v={M(mt.esforco_necessario)} total />
+                    <span
+                      style={{
+                        alignSelf: 'flex-start',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: mt.resumo.atingido_primario ? colors.green : colors.orange,
+                        background: mt.resumo.atingido_primario ? colors.greenBg : colors.orangeBg,
+                        padding: '2px 8px',
+                        borderRadius: 3,
+                      }}
+                    >
+                      {mt.resumo.atingido_primario ? 'Meta atingida' : 'Abaixo da meta'}
+                    </span>
+                  </>
+                )}
+                {mt.resumo.meta_nominal != null && (
+                  <>
+                    <Linha k="Meta de resultado nominal" v={M(mt.resumo.meta_nominal)} />
+                    <Linha k="Realizado (nominal)" v={M(mt.resumo.realizado_nominal)} />
+                  </>
+                )}
               </>
             ) : (
               <div style={{ color: colors.muted, lineHeight: 1.5 }}>{mt.observacao}</div>

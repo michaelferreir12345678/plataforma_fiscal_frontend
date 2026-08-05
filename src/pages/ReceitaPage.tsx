@@ -113,7 +113,12 @@ function Conteudo({
   const prev = numero(d.totais.previsto_atualizado) ?? 0;
   const prevInicial = numero(d.totais.previsto_inicial);
   const pctProp = numero(d.dependencia.pct_propria) ?? 0;
-  const pctTransf = numero(d.dependencia.pct_transferida) ?? 0;
+  const pctTransfCorrente = numero(d.dependencia.pct_transferida_corrente) ?? numero(d.dependencia.pct_transferida) ?? 0;
+  const pctTransfCapital = numero(d.dependencia.pct_transferida_capital) ?? 0;
+  // U20: o Anexo 01 não publica, na prática, uma coluna de deduções da receita corrente
+  // (só a RCL — Anexo 03 — as apura). `deducoes` fica exposta para quando/se um layout a
+  // trouxer; hoje é ausência real, não omissão da tela — some quando nula.
+  const deducoes = numero(d.totais.deducoes);
   const [nivelArvore, setNivelArvore] = useState<DrillChild[]>([]);
 
   const contexto = {
@@ -132,6 +137,14 @@ function Conteudo({
         context={
           <span>
             RCL 12m {M(d.rcl_12m)} · realização {P(d.realizacao_pct)} do previsto
+            {/* U20: bruto × deduções — só aparece quando a fonte publicou a coluna de
+                deduções da receita corrente (hoje ausente no Anexo 01 real; a RCL, no
+                Anexo 03, é quem as apura). Ausência real, não omitida pela tela. */}
+            {deducoes != null && (
+              <>
+                {' '}· deduções da receita corrente {M(deducoes)} (bruto {M(arrec + deducoes)})
+              </>
+            )}
             {d.comparacao && (
               <>
                 {' '}· {d.comparacao.periodo_anterior}: {M(d.comparacao.arrecadado_acum_anterior)}
@@ -148,23 +161,33 @@ function Conteudo({
         right={
           <div>
             <div style={{ fontSize: 11, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>
-              Dependência · própria × transferida
+              Dependência · própria × transferida (corrente × capital)
             </div>
+            {/* U21/U22: transferida desdobrada em corrente × capital — são naturezas
+                econômicas diferentes (uma recorrente, outra eventual, ex.: convênio de
+                capital) que uma barra só fundia numa tinta. Soma continua igual. */}
             <div
               role="img"
-              aria-label={`Composição da receita: própria ${fmt(pctProp, 0)}%; transferida ${fmt(pctTransf, 0)}%`}
+              aria-label={`Composição da receita: própria ${fmt(pctProp, 0)}%; transferida corrente ${fmt(pctTransfCorrente, 0)}%; transferida capital ${fmt(pctTransfCapital, 0)}%`}
               style={{ display: 'flex', height: 26, borderRadius: 4, overflow: 'hidden', border: `1px solid ${colors.border}` }}
             >
               <div style={{ width: `${pctProp}%`, background: colors.primary, color: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
                 Própria {fmt(pctProp, 0)}%
               </div>
-              <div style={{ width: `${pctTransf}%`, background: colors.orangeSoft, color: colors.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
-                Transferida {fmt(pctTransf, 0)}%
+              <div style={{ width: `${pctTransfCorrente}%`, background: colors.orangeSoft, color: colors.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
+                Transf. corrente {fmt(pctTransfCorrente, 0)}%
               </div>
+              {pctTransfCapital > 0 && (
+                <div style={{ width: `${pctTransfCapital}%`, background: colors.yellowSoft, color: colors.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
+                  Transf. capital {fmt(pctTransfCapital, 0)}%
+                </div>
+              )}
             </div>
             <div style={{ fontSize: 11, color: colors.muted, marginTop: 8, lineHeight: 1.45 }}>
-              Própria {M(d.dependencia.propria)} · transferida {M(d.dependencia.transferida)}. Dependência
-              alta = fragilidade estrutural mesmo com caixa folgado.
+              Própria {M(d.dependencia.propria)} · transferida corrente{' '}
+              {M(d.dependencia.transferida_corrente ?? d.dependencia.transferida)} · transferida capital{' '}
+              {M(d.dependencia.transferida_capital)}. Dependência alta = fragilidade estrutural mesmo com
+              caixa folgado.
             </div>
           </div>
         }
@@ -190,7 +213,7 @@ function Conteudo({
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: 12 }}>
         <Card>
-          <SectionLabel note="Categoria → Origem → Espécie → Rubrica → Alínea">
+          <SectionLabel note="Categoria → Origem → Espécie">
             De onde vem cada real · árvore navegável
           </SectionLabel>
           <ArvoreDrill

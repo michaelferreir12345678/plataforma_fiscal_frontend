@@ -6,7 +6,7 @@
  * ingerir — em vez de exibir o patrimônio de outro município.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { AppProvider } from '../context/AppContext';
@@ -71,7 +71,8 @@ function patrimonioFake(over: Partial<backend.PatrimonioDetalhe> = {}): backend.
 function mockPatrimonio(detalhe: backend.PatrimonioDetalhe) {
   vi.spyOn(backend, 'fetchPatrimonio').mockResolvedValue(detalhe);
   vi.spyOn(backend, 'fetchMscConciliacao').mockResolvedValue({
-    cod_ibge: '2304400', ano: 2024, conciliado: true, n_checks: 3, n_divergencias: 0,
+    cod_ibge: '2304400', ano: 2024, tem_msc: false, tem_dca: true, titulo: 'Balanço fecha',
+    conciliado: true, n_checks: 1, n_divergencias: 0,
     checks: [], observacao: 'Sem MSC: apenas os testes da DCA se aplicam.',
     source_ref: SRC_DCA, as_of: null,
   } as never);
@@ -192,6 +193,19 @@ describe('Patrimônio — o ente é o do contexto (Sprint 25D)', () => {
     // 2022 não tem a conta: célula vazia, nunca R$ 0.
     expect(linhaPl?.textContent).toContain('—');
     expect(screen.getByText('29,5%')).toBeInTheDocument();
+  });
+
+  it('rotula "Balanço fecha" (não "Conciliação MSC ↔ DCA") para ente sem MSC (U33)', async () => {
+    // patrimonioFake() é tem_msc:false por padrão — só o check do Balanço roda (1 de 3);
+    // "Conciliação MSC ↔ DCA" descreveria os três como se tivessem passado. O rótulo
+    // aparece duas vezes (StatBox do cabeçalho + SectionLabel do card de conciliação).
+    mockSessao();
+    mockPatrimonio(patrimonioFake());
+    renderPatrimonio();
+    await screen.findByText('Balanço fecha'); // primeiro a resolver: o cabeçalho
+    // O card de conciliação (fetchMscConciliacao) resolve numa camada assíncrona à parte.
+    await waitFor(() => expect(screen.getAllByText('Balanço fecha').length).toBeGreaterThanOrEqual(2));
+    expect(screen.queryByText('Conciliação MSC ↔ DCA')).not.toBeInTheDocument();
   });
 });
 
@@ -354,5 +368,21 @@ describe('Benchmarking — indicadores gerenciais e multi-período (Sprint 25D)'
     await evolucaoPronta();
     expect(screen.getAllByText(/11,80% da RCL/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/11,39% da RCL/).length).toBeGreaterThan(0);
+  });
+
+  it('declara a cobertura da página — coorte mais rala do produto (U34)', async () => {
+    mockSessao();
+    mockBenchmark();
+    vi.spyOn(backend, 'fetchCoberturaPagina').mockResolvedValue({
+      pagina: 'benchmarking',
+      ente: { cod_ibge: '2304400', tem_dado: true, periodo_mais_recente: '2024-B6', periodo_solicitado: '2024-B6' },
+      escopo: { entes_no_escopo: 184, entes_com_dado: 18 },
+      fontes: [],
+      indicadores: [{ indicador: 'pessoal_executivo', entes_com_dado: 18, periodo_mais_recente: '2024-B6' }],
+      lacunas: ['pessoal_executivo'],
+      observacao: 'Esta página depende de dados que a plataforma ainda não carregou.',
+    } as never);
+    renderBenchmarking();
+    expect(await screen.findByRole('button', { name: /Responde para/ })).toHaveTextContent('18 de 184');
   });
 });

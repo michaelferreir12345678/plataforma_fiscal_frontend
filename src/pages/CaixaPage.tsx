@@ -426,6 +426,10 @@ function Art42Panel({ a }: { a: Art42Out }) {
           {atende ? '✓' : a.n_descumprimentos}
         </div>
         <div style={{ fontSize: 11, color: colors.muted }}>
+          {/* U29: o painel calculava o quadrimestre avaliado e não o exibia — só o
+              booleano dentro/fora da janela. Sem o período, dois exercícios de fim de
+              mandato ficam indistinguíveis na mesma tela. */}
+          {a.quadrimestre != null ? `${a.ano}-Q${a.quadrimestre} · ` : ''}
           {a.janela_vedacao ? 'dentro da janela de vedação (Q2–Q3)' : 'fora da janela de vedação'}
         </div>
       </div>

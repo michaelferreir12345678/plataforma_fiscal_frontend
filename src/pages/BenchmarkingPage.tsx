@@ -16,6 +16,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Async, Skeleton } from '../components/AsyncState';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { SeloCobertura } from '../components/SeloCobertura';
+import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { VirtualizedTable, type VirtualColumn } from '../components/VirtualizedTable';
 import { useApp, useResource } from '../context/AppContext';
 import {
@@ -136,6 +138,12 @@ export function BenchmarkingPage() {
         context={`${ente.nome} · IBGE ${ente.cod_ibge} · período ${periodo || '—'} · coortes explícitas e percentis`}
         source="Indicadores e rankings materializados na camada gold"
       />
+
+      <SeloQualidadePagina periodo={periodo} />
+      {/* U34: faltava aqui — a coorte mais rala do produto (Nordeste ~10%), justamente
+          onde "quantos entes de fato entram na comparação" mais importa. Já registrado
+          em coverage/service.py::INDICADORES_POR_PAGINA, só faltava consumir. */}
+      <SeloCobertura pagina="benchmarking" ente={ente.cod_ibge} periodo={periodo} />
 
       <Async res={benchmark}>
         {(data) => (

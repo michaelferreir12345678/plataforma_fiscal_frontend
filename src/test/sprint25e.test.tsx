@@ -416,4 +416,48 @@ describe('Aceite 25E — export + relatório institucional em página fiscal', (
     const link = screen.getByRole('link', { name: /relatório completo/ });
     expect(link).toHaveAttribute('href', '/relatorios?modelo=limites');
   });
+
+  it('Limites inverte a direção visual da barra para pisos (U32)', async () => {
+    // Cumprir o mínimo com folga (27% contra piso de 15%) é o MELHOR estado, não o pior —
+    // a barra tem de ficar vazia (mesma leitura "cheio = perto de violar" de um teto), não
+    // cheia até o traço só porque a razão valor/piso satura em 100%.
+    mockSessao();
+    vi.spyOn(backend, 'fetchLimites').mockResolvedValue({
+      cod_ibge: '2304400', periodo: '2024-B6', versao_entrega: '1',
+      itens: [
+        {
+          indicador: 'saude_minimo', esfera: 'municipal', sentido: 'piso',
+          valor_rs: 200_000_000, valor_pct_rcl: 27, faixa: 'adequado', teto_pct: 15,
+          alerta_pct: 15, prudencial_pct: 15.75, distancia_teto: 12, distancia_alerta: null,
+          denominador: 'impostos_transferencias', base_valor: 740_000_000,
+        },
+      ],
+      source_ref: SRC,
+    } as never);
+    renderPagina(LimitesPage);
+    const medidor = await screen.findByRole('meter');
+    // O valor real continua descrito com fidelidade na árvore de acessibilidade — só o
+    // preenchimento visual (pixel) muda de sentido, nunca o número.
+    expect(medidor).toHaveAttribute('aria-valuenow', '27');
+    const fill = medidor.firstElementChild as HTMLElement;
+    expect(parseFloat(fill.style.width)).toBe(0);
+  });
+
+  it('Limites declara a cobertura da página — já registrada, só faltava consumir (U31)', async () => {
+    mockSessao();
+    vi.spyOn(backend, 'fetchLimites').mockResolvedValue({
+      cod_ibge: '2304400', periodo: '2024-B6', versao_entrega: '1', itens: [], source_ref: SRC,
+    } as never);
+    vi.spyOn(backend, 'fetchCoberturaPagina').mockResolvedValue({
+      pagina: 'limites',
+      ente: { cod_ibge: '2304400', tem_dado: true, periodo_mais_recente: '2024-B6', periodo_solicitado: '2024-B6' },
+      escopo: { entes_no_escopo: 184, entes_com_dado: 1 },
+      fontes: [],
+      indicadores: [{ indicador: 'saude_minimo', entes_com_dado: 1, periodo_mais_recente: '2024-B6' }],
+      lacunas: ['saude_minimo'],
+      observacao: 'Esta página depende de dados que a plataforma ainda não carregou.',
+    } as never);
+    renderPagina(LimitesPage);
+    expect(await screen.findByRole('button', { name: /Responde para/ })).toHaveTextContent('1 de 184');
+  });
 });

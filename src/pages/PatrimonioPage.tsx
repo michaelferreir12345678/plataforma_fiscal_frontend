@@ -221,10 +221,13 @@ function Header({ d, enteNome }: { d: PatrimonioDetalhe; enteNome: string }) {
             fg={fecha ? colors.green : colors.red}
             bg={fecha ? colors.greenBg : colors.redBg}
           />
+          {/* U33: "Conciliação MSC ↔ DCA" aparecia mesmo para entes sem MSC nenhuma —
+              só o check do Balanço roda (1 de 3), mas o rótulo descrevia os três como se
+              tivessem passado. Sem MSC, o rótulo muda para o que de fato foi verificado. */}
           <StatBox
-            label="Conciliação MSC ↔ DCA"
-            value={d.conciliado === true ? '✓ conciliado' : `${d.n_divergencias ?? '—'} div.`}
-            sub={d.tem_msc ? 'rollup · encerramento · balanço' : 'só DCA (sem MSC publicada)'}
+            label={d.tem_msc ? 'Conciliação MSC ↔ DCA' : 'Balanço fecha'}
+            value={d.conciliado === true ? (d.tem_msc ? '✓ conciliado' : '✓ fecha') : `${d.n_divergencias ?? '—'} div.`}
+            sub={d.tem_msc ? 'rollup · encerramento · balanço' : 'só DCA — Ativo = Passivo+PL (sem MSC publicada)'}
             fg={d.conciliado === false ? colors.red : colors.green}
             bg={d.conciliado === false ? colors.redBg : colors.greenBg}
           />
@@ -473,12 +476,14 @@ function Conciliacao({ cod, ano, asOf }: { cod: string; ano: number; asOf: strin
   );
   return (
     <Card>
-      <SectionLabel note="pai = Σ filhos · Ativo = Passivo+PL · MSC ↔ DCA">
-        Conciliação do patrimônio
-      </SectionLabel>
       <Async res={conc}>
         {(c) => (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* U33: título condicional — "Conciliação do patrimônio" evocava os 3 checks
+                (rollup, balanço, MSC×DCA) mesmo quando só 1 roda (ente sem MSC). */}
+            <SectionLabel note={c.tem_msc ? 'pai = Σ filhos · Ativo = Passivo+PL · MSC ↔ DCA' : 'Ativo = Passivo+PL (sem MSC publicada)'}>
+              {c.titulo}
+            </SectionLabel>
             <div
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6,
@@ -490,7 +495,7 @@ function Conciliacao({ cod, ano, asOf }: { cod: string; ano: number; asOf: strin
               </span>
               <span style={{ fontSize: 12, fontWeight: 600, color: c.conciliado ? colors.green : colors.red }}>
                 {c.conciliado
-                  ? `Conciliado — ${c.n_checks} verificações`
+                  ? `Conciliado — ${c.n_checks} verificaç${c.n_checks === 1 ? 'ão' : 'ões'}`
                   : `${c.n_divergencias} divergência(s) em ${c.n_checks}`}
               </span>
             </div>

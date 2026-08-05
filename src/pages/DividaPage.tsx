@@ -313,8 +313,23 @@ function CapagHeroCard({ hero, memoria }: { hero: CapagHero; memoria: CapagMemor
         {memoria.formula_endividamento}. Base: {memoria.base_numerador} ÷ {memoria.base_denominador}. {memoria.escala}.
         {numberValue(hero.ind_endividamento) != null && ` Índice publicado: ${ratioPercent(hero.ind_endividamento)}.`}
       </div>
+      {/* U26: "Metodologia" misturava três grandezas sob um rótulo — ICF (layout
+          oficial), versão de metodologia (layout estadual) e o ano-base real da planilha
+          (layout municipal histórico, coluna Ano_Base). O backend já separa: quando o
+          valor bruto era um ano, ele sai daqui e aparece como "Ano-base da fonte"; o que
+          sobra em metodologia_versao é ICF/metodologia de verdade. */}
       {hero.metodologia_versao && (
-        <div style={{ fontSize: 11, color: colors.faint }}>Metodologia {hero.metodologia_versao}</div>
+        <div style={{ fontSize: 11, color: colors.faint }}>
+          {hero.metodologia_rotulo ?? 'Metodologia'} {hero.metodologia_versao}
+        </div>
+      )}
+      {hero.ano_base_fonte != null && (
+        <div style={{ fontSize: 11, color: hero.ano_base_fonte_diverge ? colors.orange : colors.faint }}>
+          Ano-base da fonte {hero.ano_base_fonte}
+          {hero.ano_base_fonte_diverge && (
+            <> — diverge do ano-base esperado ({hero.ano_ref - 1}) para a classificação de {hero.ano_ref}.</>
+          )}
+        </div>
       )}
       <NotaMetodologica
         titulo="Por que o ano da nota não é o ano dos dados"

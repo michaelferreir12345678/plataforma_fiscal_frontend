@@ -686,6 +686,22 @@ function CardFundeb({
         <MiniValor rotulo="Base FUNDEB" valor={M(fundeb.base)} />
         <MiniValor rotulo="Aplicado em profissionais" valor={M(fundeb.aplicado_profissionais)} />
         <MiniValor rotulo={`Mínimo ${P(fundeb.minimo_pct, 0)}`} valor={M(fundeb.valor_minimo)} />
+        {/* U29/U30 — achado revisado na investigação (Sprint F2): a ficha pedia replicar
+            a nota de expurgo de RPNP sem lastro que a árvore MDE/ASPS já tem. Mas
+            health_edu/service.py::_apurar_educacao NÃO subtrai rpnp do valor de
+            FUNDEB_PROFISSIONAIS — só o total de MDE é expurgado (aplicada = despesa_bruta
+            − deducoes − rpnp); o indicador FUNDEB isolado usa o valor bruto do Anexo 8
+            sem dedução. Replicar a nota como se o expurgo já valesse aqui criaria uma
+            falsa clareza — o oposto do que esta sprint existe para consertar. A nota
+            abaixo diz a verdade (assimetria, não paridade) e não altera nenhum cálculo;
+            se o expurgo do FUNDEB for de fato exigido, é um achado de CÁLCULO para outra
+            sprint, não de rótulo. */}
+        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: colors.yellowText, lineHeight: 1.45 }}>
+          Diferente do ASPS/MDE acima, este percentual <strong>não expurga</strong> restos a
+          pagar não processados sem disponibilidade de caixa — o valor de FUNDEB_PROFISSIONAIS
+          do Anexo 8 entra bruto. A regra de expurgo (RGF Anexo 5) hoje só se aplica ao
+          cômputo do MDE.
+        </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <FonteChip
             source={fundeb.source_ref ?? fonteFallback}

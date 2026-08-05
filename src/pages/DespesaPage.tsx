@@ -22,6 +22,7 @@ import { MetricHeader } from '../components/MetricHeader';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, EmptyState, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
+import { SeloCobertura } from '../components/SeloCobertura';
 import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { MemoriaDialog, LinhaMemoria } from '../components/MemoriaDialog';
 import { SerieChart } from '../components/SerieChart';
@@ -68,6 +69,10 @@ export function DespesaPage() {
       />
 
       <SeloQualidadePagina />
+      {/* U21/U22: existia em Receita e faltava aqui — páginas irmãs, tratamento
+          inconsistente. `siconfi_rreo` já declara "despesa" em paginas_impactadas
+          (registry.py), só faltava consumir. */}
+      <SeloCobertura pagina="despesa" ente={ente.cod_ibge} periodo={periodo} />
 
       <Async
         res={det}
@@ -165,7 +170,10 @@ function Conteudo({
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <div style={{ flex: 1 }}>
-            <SectionLabel note={eixo === 'funcao' ? 'Função → Subfunção (Portaria 42)' : 'Categoria → Grupo → Modalidade → Elemento'}>
+            {/* U19: o eixo natureza (Anexo 01, lado despesa) só deriva Categoria →
+                Grupo — 2 níveis (classificacao.py::NATUREZA_PARENT: raiz + filho
+                direto), não os 4 que o rótulo anunciava. */}
+            <SectionLabel note={eixo === 'funcao' ? 'Função → Subfunção (Portaria 42)' : 'Categoria Econômica → Grupo de Natureza'}>
               Em que se gasta · árvore navegável
             </SectionLabel>
           </div>
@@ -174,6 +182,17 @@ function Conteudo({
             <BotaoEixo ativo={eixo === 'natureza'} onClick={() => setEixo('natureza')} rotulo="Por natureza" />
           </div>
         </div>
+        {/* U23: cabeçalho e série (acima) sempre leem o eixo função (fetchDespesa é
+            chamado fixo com 'funcao'); só a árvore abaixo muda com o seletor. Sem isto,
+            trocar para "por natureza" e continuar vendo o mesmo número no topo parecia
+            bug, não descompasso conhecido de fonte (Anexo 02 função × Anexo 01 natureza). */}
+        {eixo === 'natureza' && (
+          <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8, lineHeight: 1.4 }}>
+            O cabeçalho e a série acima continuam no eixo <strong>função</strong> (Anexo 02) —
+            só esta árvore mudou para natureza (Anexo 01). Os dois eixos podem divergir; veja
+            a memória de cálculo.
+          </div>
+        )}
         <ArvoreDrill
           carregar={(node) =>
             fetchDrill('despesa', d.cod_ibge, {

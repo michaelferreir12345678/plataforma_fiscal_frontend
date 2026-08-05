@@ -130,7 +130,15 @@ function Conteudo({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <FonteChip source={d.source_ref} asOf={d.as_of} ultimoPeriodo={ultimoPeriodo} nota={`esfera ${d.esfera ?? '—'} · RPPS ${d.rpps ? 'sim' : 'não'}`} />
+        <FonteChip
+          source={d.source_ref}
+          asOf={d.as_of}
+          ultimoPeriodo={ultimoPeriodo}
+          // U25: o cabeçalho não dizia se este ente publica RGF quadrimestral ou
+          // semestral (< 50 mil hab. — LRF art. 63, II). O cálculo (mapeamento Q→B em
+          // periodo_util) já trata os dois certo; só faltava o rótulo dizer qual vale.
+          nota={`esfera ${d.esfera ?? '—'} · RPPS ${d.rpps ? 'sim' : 'não'} · RGF ${d.cadencia_rgf}`}
+        />
         <div style={{ flex: 1 }} />
         <MemoriaPessoalDialog cod={d.cod_ibge} periodo={d.periodo} asOf={d.as_of} />
         <ExportButton

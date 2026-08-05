@@ -58,7 +58,12 @@ function receitaFake(overrides: Partial<backend.ReceitaDetalhe> = {}): backend.R
     },
     realizacao_pct: 80,
     rcl_12m: 12_000_000,
-    dependencia: { propria: 3_000_000, transferida: 5_000_000, total: 8_000_000, pct_propria: 37.5, pct_transferida: 62.5 },
+    dependencia: {
+      propria: 3_000_000, transferida: 5_000_000, total: 8_000_000,
+      pct_propria: 37.5, pct_transferida: 62.5,
+      transferida_corrente: 4_500_000, transferida_capital: 500_000,
+      pct_transferida_corrente: 56.25, pct_transferida_capital: 6.25,
+    },
     composicao: [
       {
         codigo: 'ReceitasCorrentes',
@@ -275,7 +280,12 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
       periodo: '2024-B6',
       as_of: null,
       versao_entrega: '1',
-      resumo: { propria: 3_000_000, transferida: 5_000_000, total: 8_000_000, pct_propria: 37.5, pct_transferida: 62.5 },
+      resumo: {
+        propria: 3_000_000, transferida: 5_000_000, total: 8_000_000,
+        pct_propria: 37.5, pct_transferida: 62.5,
+        transferida_corrente: 4_500_000, transferida_capital: 500_000,
+        pct_transferida_corrente: 56.25, pct_transferida_capital: 6.25,
+      },
       maiores_transferencias: [
         { codigo: 'TransferenciasDaUniao', descricao: 'Cota-Parte do FPM', arrecadado_acum: 3_000_000, pct_das_transferencias: 60 },
       ],
@@ -392,6 +402,41 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
     expect(vazio).toHaveTextContent('2024-B6');
     // sem dado ⇒ nenhum número inventado no lugar
     expect(screen.queryByText(/Receita arrecadada/)).not.toBeInTheDocument();
+  });
+
+  it('anuncia a hierarquia que a árvore de fato deriva — 3 níveis, não 5 (U19)', async () => {
+    // natureza.construir_arvore só produz Categoria → Origem → Espécie (ordem de leitura +
+    // caixa do texto); o SICONFI não expõe Rubrica/Alínea (sem código numérico pontuado).
+    renderReceita();
+    expect(await screen.findByText('Categoria → Origem → Espécie')).toBeInTheDocument();
+    expect(screen.queryByText(/Rubrica/)).not.toBeInTheDocument();
+  });
+
+  it('desdobra a transferida em corrente × capital, sem mudar a soma (U21/U22)', async () => {
+    renderReceita();
+    expect(await screen.findByText(/Transf\. corrente 56%/)).toBeInTheDocument();
+    expect(screen.getByText(/Transf\. capital 6%/)).toBeInTheDocument();
+    // R$ 4,5 M + R$ 0,5 M = R$ 5,0 M, o mesmo total que "transferida" sempre teve.
+    expect(screen.getByText(/transferida corrente/)).toBeInTheDocument();
+    expect(screen.getByText(/transferida capital/)).toBeInTheDocument();
+  });
+
+  it('expõe bruto × deduções quando a fonte publica a coluna (U20)', async () => {
+    vi.spyOn(backend, 'fetchReceita').mockResolvedValue(
+      receitaFake({ totais: { ...receitaFake().totais, deducoes: 500_000 } }),
+    );
+    renderReceita();
+    expect(await screen.findByText(/deduções da receita corrente/)).toBeInTheDocument();
+    // bruto = arrecadado (8.000.000) + deduções (500.000) = 8.500.000 = R$ 8,5 M
+    expect(screen.getByText(/bruto R\$ 8,5 M/)).toBeInTheDocument();
+  });
+
+  it('sem a coluna de deduções (caso real hoje), não inventa bruto (U20)', async () => {
+    // Nenhum RREO Anexo 01 real traz coluna de deduções — o Anexo 03 (RCL) é quem as
+    // apura. `deducoes: null` é o caso comum; a tela não deve fabricar um "bruto".
+    renderReceita();
+    await screen.findByText(/Receita arrecadada/);
+    expect(screen.queryByText(/deduções da receita corrente/)).not.toBeInTheDocument();
   });
 
   it('marca defasagem quando o período exibido não é o mais recente com dado', async () => {
@@ -516,5 +561,36 @@ describe('Despesa — enriquecimento gerencial (Sprint 25A)', () => {
     const dialogo = await screen.findByRole('dialog');
     expect(within(dialogo).getByText(/os dois eixos fecham/)).toBeInTheDocument();
     expect(within(dialogo).getByText(/empenhado − pago/)).toBeInTheDocument();
+  });
+
+  it('anuncia a hierarquia do eixo natureza como 2 níveis, não 4 (U19)', async () => {
+    // classificacao.py::NATUREZA_PARENT só deriva Categoria → Grupo — a raiz (parent=None)
+    // e o filho direto; o rótulo anunciava "Categoria → Grupo → Modalidade → Elemento".
+    renderDespesa();
+    expect(await screen.findByText('Função → Subfunção (Portaria 42)')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Por natureza' }));
+    expect(await screen.findByText('Categoria Econômica → Grupo de Natureza')).toBeInTheDocument();
+    expect(screen.queryByText(/Modalidade/)).not.toBeInTheDocument();
+  });
+
+  it('avisa que cabeçalho/série continuam no eixo função ao navegar em natureza (U23)', async () => {
+    renderDespesa();
+    expect(screen.queryByText(/continuam no eixo/)).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Por natureza' }));
+    expect(await screen.findByText(/continuam no eixo/)).toBeInTheDocument();
+  });
+
+  it('declara a cobertura da página — existia em Receita e faltava aqui (U21/U22)', async () => {
+    vi.spyOn(backend, 'fetchCoberturaPagina').mockResolvedValue({
+      pagina: 'despesa',
+      ente: { cod_ibge: '2304400', tem_dado: false, periodo_mais_recente: '2024-B6', periodo_solicitado: '2024-B6' },
+      escopo: { entes_no_escopo: 185, entes_com_dado: 90 },
+      fontes: [{ fonte: 'siconfi_rreo', descricao: 'RREO', orgao: 'STN', entes_com_dado: 90, periodo_mais_recente: '2024-B6' }],
+      indicadores: [],
+      lacunas: [],
+      observacao: null,
+    } as never);
+    renderDespesa();
+    expect(await screen.findByRole('button', { name: /Responde para/ })).toHaveTextContent('90 de 185');
   });
 });

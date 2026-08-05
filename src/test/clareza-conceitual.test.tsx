@@ -106,6 +106,27 @@ describe('vocabulário: o que a tela escreve é o que o gestor lê', () => {
   });
 });
 
+/**
+ * Sprint F2 (U19–U34) — continuação direta desta disciplina.
+ *
+ * Os regressões de U19-U34 ficam nos arquivos que já tinham o harness de render da
+ * página tocada (mesmo padrão de piso-vs-teto.test.tsx e selo-cobertura.test.tsx, que
+ * também não vivem aqui apesar de serem clareza pura):
+ *  - U19 (hierarquia Receita/Despesa), U20 (bruto×deduções), U21/U22 (corrente×capital +
+ *    SeloCobertura em Despesa), U23 (aviso de eixo) → receita-despesa.test.tsx
+ *  - U25 (cadência RGF) → sprint25b.test.tsx, describe "Pessoal"
+ *  - U26 (ano-base × metodologia/ICF da CAPAG) → divida-capag.test.tsx
+ *  - U27 (RPPS no MetricHeader) / U28 (meta_nominal) → sprint25b.test.tsx, describe
+ *    "Resultado"
+ *  - U29 (quadrimestre no Art42Panel) → sprint25b.test.tsx, describe "Caixa"
+ *  - U29/U30 revisado (nota do FUNDEB — achado de cálculo, não de rótulo; ver relatório
+ *    da sprint) → sprint25c.test.tsx
+ *  - U31 (SeloCobertura em Limites) / U32 (barra invertida para piso) →
+ *    sprint25e.test.tsx, describe "Aceite transversal"
+ *  - U33 (rótulo condicional "Balanço fecha") → sprint25d.test.tsx, describe "Patrimônio"
+ *  - U34 (SeloCobertura em Benchmarking) → sprint25d.test.tsx, describe "Benchmarking"
+ */
+
 describe('selo de qualidade', () => {
   beforeEach(() => vi.restoreAllMocks());
 

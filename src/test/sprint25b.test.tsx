@@ -66,6 +66,7 @@ function pessoalFake(over: Partial<backend.PessoalDetalhe> = {}): backend.Pessoa
     versao_entrega: '1',
     esfera: 'municipal',
     rpps: false,
+    cadencia_rgf: 'quadrimestral',
     totais: { despesa_bruta: 6_700_000_000, exclusoes: 1_200_000_000, despesa_liquida: 5_585_000_000, pct_rcl: 48.8 },
     rcl_12m: 11_400_000_000,
     executivo: {
@@ -320,6 +321,20 @@ describe('Pessoal — página nova (Sprint 25B)', () => {
     renderPessoal();
     expect(await screen.findByText(/Sem dado para/)).toBeInTheDocument();
   });
+
+  it('rotula a cadência do RGF — quadrimestral ou semestral (U25)', async () => {
+    // O cálculo (mapeamento Q→B) já tratava os dois casos certo; só o cabeçalho não dizia
+    // qual cadência vale para este ente (semestral = município < 50 mil hab., LRF art. 63).
+    renderPessoal();
+    expect(await screen.findByText(/RGF quadrimestral/)).toBeInTheDocument();
+  });
+
+  it('cadência semestral também aparece, quando o backend a informa (U25)', async () => {
+    vi.spyOn(backend, 'fetchPessoal').mockResolvedValue(pessoalFake({ cadencia_rgf: 'semestral' }));
+    renderPessoal();
+    expect(await screen.findByText(/RGF semestral/)).toBeInTheDocument();
+    expect(screen.queryByText(/RGF quadrimestral/)).not.toBeInTheDocument();
+  });
 });
 
 // --- Resultado: meta oficial × cadastrada -------------------------------------
@@ -475,6 +490,33 @@ describe('Resultado — meta da LDO (decisão §11.5)', () => {
     expect(await screen.findByText(/Diga de onde veio o número/)).toBeInTheDocument();
     expect(salvar).not.toHaveBeenCalled();
   });
+
+  it('diz "(com RPPS)"/"(sem RPPS)" no número principal, não só na nota recolhida (U27)', async () => {
+    mockComum();
+    mockResultado();
+    renderResultado();
+    expect(await screen.findByText(/Resultado primário \(com RPPS\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Resultado nominal \(sem RPPS\)/)).toBeInTheDocument();
+  });
+
+  it('exibe meta_nominal/realizado_nominal quando o ente só publica a meta nominal (U28)', async () => {
+    // Antes: só meta_primario aparecia; um ente com meta SÓ nominal lia "Meta de resultado
+    // primário —", indistinguível de não ter meta nenhuma.
+    mockComum();
+    mockResultado({
+      origem: 'a6',
+      resumo: {
+        informada: true, meta_primario: null, realizado_primario: 220_000_000,
+        esforco_primario: null, atingido_primario: null,
+        meta_nominal: 100_000_000, realizado_nominal: 150_000_000,
+      },
+    } as never);
+    renderResultado();
+    expect(await screen.findByText('Meta de resultado nominal')).toBeInTheDocument();
+    expect(screen.getByText('Realizado (nominal)')).toBeInTheDocument();
+    expect(screen.queryByText('Meta de resultado primário')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sem meta publicada nem cadastrada/)).not.toBeInTheDocument();
+  });
 });
 
 // --- Caixa: RP sem lastro dedicado -------------------------------------------
@@ -577,5 +619,23 @@ describe('Caixa — RP sem lastro, árvore por fonte e série', () => {
     const dialogo = await screen.findByRole('dialog');
     expect(within(dialogo).getByText(/max\(0, RPNP − disp_liquida_antes\)/)).toBeInTheDocument();
     expect(within(dialogo).getByText(/por fonte, nunca consolidada/)).toBeInTheDocument();
+  });
+
+  it('Art42Panel mostra o quadrimestre avaliado, não só o booleano da janela (U29)', async () => {
+    vi.spyOn(backend, 'fetchCaixaArt42').mockResolvedValue({
+      cod_ibge: '2304400', periodo: '2024-Q3', as_of: null, versao_entrega: '1',
+      esfera: 'municipal', ano: 2024, quadrimestre: 3, aplicavel: true, janela_vedacao: true,
+      atende: true, n_descumprimentos: 0, total_lacuna: 0, fontes: [],
+      observacao: 'Último ano do mandato — art. 42 avaliado.',
+      source_ref: { ...SRC_RGF, anexo: 'Anexo 05' },
+    } as never);
+    render(
+      <MemoryRouter>
+        <AppProvider>
+          <CaixaPage />
+        </AppProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/2024-Q3 · dentro da janela de vedação/)).toBeInTheDocument();
   });
 });

@@ -397,4 +397,18 @@ describe('Saúde & Educação — uma tela com as sete respostas (Sprint 25C)', 
       screen.getByText(/base = receitas do FUNDEB \(não é a base de impostos do MDE\)/),
     ).toBeInTheDocument();
   });
+
+  it('avisa que o FUNDEB não expurga RPNP sem lastro — diferente do MDE (U29/U30 revisado)', async () => {
+    // Achado revisado na investigação da Sprint F2: a ficha pedia "replicar" a nota de
+    // expurgo do MDE no card FUNDEB, mas health_edu/service.py::_apurar_educacao não
+    // subtrai rpnp de fundeb_aplicado_profissionais — só o total de MDE é expurgado.
+    // Replicar a nota como paridade seria uma falsa clareza; a nota aqui diz a assimetria
+    // real, sem mudar nenhum cálculo.
+    mockTudo();
+    renderPagina();
+    await userEvent.click(screen.getByRole('tab', { name: /Educação/ }));
+    expect(await screen.findByText('98,19%')).toBeInTheDocument();
+    expect(screen.getByText(/não expurga/)).toBeInTheDocument();
+    expect(screen.getByText(/só se aplica ao cômputo do MDE/)).toBeInTheDocument();
+  });
 });

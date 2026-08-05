@@ -6,6 +6,7 @@
  * mostrar só o escolhido responde pela metade — e **exportação** da projeção.
  */
 import { useEffect, useId, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
 import { humanizar, rotuloIndicador, rotuloModelo } from '../utils/rotulos';
 import { Card } from '../components/Card';
@@ -25,16 +26,21 @@ import {
   type PremissaObservada,
   simularCenario,
   type ForecastIndicador,
+  type ForecastModelo,
   type ModeloComparado,
   type ProjecaoResponse,
   type CenarioSimularResponse,
   type PontoProjecao,
   type LimiteImpacto,
   type EspacoFiscal,
+  type NovoContratoDivida,
   compararCenarios,
   arquivarCenario,
+  duplicarCenario,
+  excluirCenarioDefinitivo,
   exportarCenario,
   type CenarioDetalhe,
+  type CenarioComparadoItem,
 } from '../services/backend';
 
 const INDICADORES: { key: ForecastIndicador; label: string }[] = [
@@ -42,6 +48,18 @@ const INDICADORES: { key: ForecastIndicador; label: string }[] = [
   { key: 'receita', label: 'Receita' },
   { key: 'pessoal', label: 'Pessoal' },
   { key: 'divida', label: 'Dívida' },
+];
+
+function ehForecastIndicador(v: string | null): v is ForecastIndicador {
+  return v === 'rcl' || v === 'receita' || v === 'pessoal' || v === 'divida';
+}
+
+/** Modelos oferecidos no seletor da simulação; `null` = "o melhor disponível" (padrão). */
+const MODELOS_CENARIO: { value: ForecastModelo | null; label: string }[] = [
+  { value: null, label: 'Melhor disponível (automático)' },
+  { value: 'fechamento', label: 'Fechamento (run-rate)' },
+  { value: 'holt_winters', label: 'Holt (nível + tendência)' },
+  { value: 'regressao_exogenas', label: 'Regressão com exógenas' },
 ];
 
 /** Horizontes oferecidos; o backend aceita 1..24 (Sprint 25E). */
@@ -56,7 +74,14 @@ function valorFmt(v: number, unidade: string): string {
 
 export function PrevisoesPage() {
   const { ente } = useApp();
-  const [indicador, setIndicador] = useState<ForecastIndicador>('rcl');
+  // O alerta preditivo (Sprint G1) leva `?indicador=` na URL — antes sempre caía em RCL, e
+  // quem clicava num alerta de Pessoal ou Dívida tinha que reencontrar o indicador certo à
+  // mão. Lido uma vez, na montagem: trocar de indicador depois é ação da própria tela.
+  const [params] = useSearchParams();
+  const [indicador, setIndicador] = useState<ForecastIndicador>(() => {
+    const doUrl = params.get('indicador');
+    return ehForecastIndicador(doUrl) ? doUrl : 'rcl';
+  });
   const [horizonte, setHorizonte] = useState<number>(4);
 
   const proj = useResource<ProjecaoResponse>(
@@ -167,6 +192,7 @@ export function PrevisoesPage() {
             {selecionados.length >= 2 && (
               <ComparacaoCenariosPainel
                 ente={ente.cod_ibge}
+                enteNome={ente.nome}
                 ids={selecionados}
                 onFechar={() => setSelecionados([])}
               />
@@ -451,10 +477,27 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
   const [fpm, setFpm] = useState<number | null>(null);
   const [crescInd, setCrescInd] = useState(0);
   const [crescRcl, setCrescRcl] = useState(0);
+  // Robustez (Sprint G1): FUNDEB e folha têm significado fiscal próprio, distinto dos
+  // choques genéricos — cada um só faz sentido para o indicador a que pertence.
+  const [fundeb, setFundeb] = useState(0);
+  const [folha, setFolha] = useState(0);
+  const [modelo, setModelo] = useState<ForecastModelo | null>(null);
+  // Simulador de novo contrato de dívida — só aparece para o indicador 'divida'. Vazio por
+  // padrão: um principal de R$ 0 não é "sem contrato", então o envio ao backend é
+  // condicionado a `contratoAtivo`, não a `contratoPrincipal > 0` sozinho.
+  const [contratoAtivo, setContratoAtivo] = useState(false);
+  const [contratoPrincipal, setContratoPrincipal] = useState(10_000_000);
+  const [contratoPrazo, setContratoPrazo] = useState(120);
+  const [contratoCarencia, setContratoCarencia] = useState(24);
+  const [contratoTaxa, setContratoTaxa] = useState(10);
   const [nome, setNome] = useState('Cenário sem título');
   const [res, setRes] = useState<CenarioSimularResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const ehReceita = indicador === 'rcl' || indicador === 'receita';
+  const ehPessoal = indicador === 'pessoal';
+  const ehDivida = indicador === 'divida';
 
   const obs = (chave: string): PremissaObservada | undefined =>
     premissas.data?.premissas.find((p) => p.chave === chave);
@@ -479,12 +522,23 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
       const r = await simularCenario(ente, indicador, {
         nome,
         horizonte,
+        modelo,
         // Premissa sem valor não vira zero: zero é uma premissa, "não informado" é outra.
         ipca_aa_pct: ipca ?? undefined,
         selic_aa_pct: selic ?? undefined,
         fpm_variacao_pct: fpm ?? undefined,
         crescimento_indicador_pct: crescInd,
         crescimento_rcl_pct: crescRcl,
+        fundeb_variacao_pct: ehReceita ? fundeb : undefined,
+        reajuste_folha_pct: ehPessoal ? folha : undefined,
+        novo_contrato_divida: ehDivida && contratoAtivo
+          ? ({
+              principal_rs: contratoPrincipal,
+              prazo_meses: contratoPrazo,
+              carencia_meses: contratoCarencia,
+              taxa_aa_pct: contratoTaxa,
+            } satisfies NovoContratoDivida)
+          : undefined,
         salvar,
       });
       setRes(r);
@@ -512,12 +566,40 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
           label="Variação do FPM" min={-20} max={20} step={0.5} />
         <ScenarioSlider label="Crescimento do indicador" value={crescInd} min={-10} max={15} step={0.5} suffix="%" onChange={setCrescInd} />
         <ScenarioSlider label="Crescimento da RCL" value={crescRcl} min={-10} max={15} step={0.5} suffix="%" onChange={setCrescRcl} />
+        {ehReceita && (
+          <ScenarioSlider label="Variação do FUNDEB" value={fundeb} min={-20} max={20} step={0.5} suffix="%" onChange={setFundeb} />
+        )}
+        {ehPessoal && (
+          <ScenarioSlider label="Reajuste de folha / admissões" value={folha} min={-10} max={20} step={0.5} suffix="%" onChange={setFolha} />
+        )}
+        {ehDivida && <NovoContratoDividaForm
+          ativo={contratoAtivo} onAtivo={setContratoAtivo}
+          principal={contratoPrincipal} onPrincipal={setContratoPrincipal}
+          prazo={contratoPrazo} onPrazo={setContratoPrazo}
+          carencia={contratoCarencia} onCarencia={setContratoCarencia}
+          taxa={contratoTaxa} onTaxa={setContratoTaxa}
+        />}
+        <div style={{ marginTop: 12 }}>
+          <label htmlFor="modelo-cenario" style={{ fontSize: 11.5, color: colors.muted, display: 'block', marginBottom: 4 }}>
+            Modelo de projeção
+          </label>
+          <select
+            id="modelo-cenario"
+            value={modelo ?? ''}
+            onChange={(e) => setModelo((e.target.value || null) as ForecastModelo | null)}
+            style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.surface, color: colors.ink }}
+          >
+            {MODELOS_CENARIO.map((m) => (
+              <option key={m.label} value={m.value ?? ''}>{m.label}</option>
+            ))}
+          </select>
+        </div>
         <input
           aria-label="Nome do cenário"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
           placeholder="Nome do cenário"
-          style={{ width: '100%', marginTop: 6, padding: '7px 10px', fontSize: 12, border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.surface, color: colors.ink }}
+          style={{ width: '100%', marginTop: 10, padding: '7px 10px', fontSize: 12, border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.surface, color: colors.ink }}
         />
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button type="button" onClick={() => run(false)} disabled={busy} style={btn(colors.primary, colors.bg)}>
@@ -562,9 +644,105 @@ function ScenarioPanel({ ente, indicador, unidade, horizonte, onSaved }: { ente:
             <ConsumoDaMargem base={res.base} cenario={res.cenario} />
             <LimitImpactTable titulo="Impacto nos limites (tetos)" itens={res.impacto_limites} unidade={unidade} />
             <LimitImpactTable titulo="Impacto nos mínimos (pisos)" sentido="piso" itens={res.impacto_minimos} unidade={unidade} />
+            <ImpactoContratoDividaPainel impacto={res.impacto_contrato_divida} />
+            {/* Aviso legal calculado e antes descartado pela tela (Sprint G1): a RCL
+                projetada é proxy explícita do teto/piso em reais, não a apuração oficial
+                dos mínimos de saúde/educação. */}
+            {typeof res.memoria['observacao_minimos'] === 'string' && (
+              <div role="note" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 4, background: colors.neutralBg, fontSize: 10.5, color: colors.muted, lineHeight: 1.5 }}>
+                {res.memoria['observacao_minimos'] as string}
+              </div>
+            )}
           </>
         )}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Simulador estruturado de novo contrato de dívida (Sprint G1, escopo mínimo).
+ *
+ * Antes o único jeito de simular dívida era o choque genérico de crescimento — sem
+ * principal, prazo, carência ou taxa, um contrato de R$ 50 milhões e um de R$ 5 milhões
+ * eram indistinguíveis se produzissem a mesma variação percentual. Aqui o gestor descreve
+ * a operação como ela é negociada, e o backend traduz para o que importa: quanto ela come
+ * do teto de 120%/200% da RCL. Não persiste — o contrato hipotético não vira linha em
+ * nenhuma tabela; uma operação real nasce no SADIPEM.
+ */
+function NovoContratoDividaForm({
+  ativo, onAtivo, principal, onPrincipal, prazo, onPrazo, carencia, onCarencia, taxa, onTaxa,
+}: {
+  ativo: boolean; onAtivo: (v: boolean) => void;
+  principal: number; onPrincipal: (v: number) => void;
+  prazo: number; onPrazo: (v: number) => void;
+  carencia: number; onCarencia: (v: number) => void;
+  taxa: number; onTaxa: (v: number) => void;
+}) {
+  return (
+    <div style={{ marginTop: 12, padding: '9px 10px', border: `1px solid ${colors.border}`, borderRadius: 5 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+        <input type="checkbox" checked={ativo} onChange={(e) => onAtivo(e.target.checked)} />
+        Simular novo contrato de dívida
+      </label>
+      {ativo && (
+        <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <CampoNumero label="Principal (R$)" value={principal} onChange={onPrincipal} min={0} step={100000} />
+          <CampoNumero label="Taxa a.a. (%)" value={taxa} onChange={onTaxa} min={0} max={100} step={0.25} />
+          <CampoNumero label="Prazo (meses)" value={prazo} onChange={onPrazo} min={1} max={480} step={1} />
+          <CampoNumero label="Carência (meses)" value={carencia} onChange={onCarencia} min={0} max={120} step={1} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CampoNumero({ label, value, onChange, min, max, step }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
+  return (
+    <label style={{ fontSize: 10.5, color: colors.muted, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {label}
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ padding: '5px 7px', fontSize: 12, fontFamily: font.mono, border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.surface, color: colors.ink }}
+      />
+    </label>
+  );
+}
+
+/** Quanto o contrato hipotético come do teto de 120%/200% da RCL. */
+function ImpactoContratoDividaPainel({ impacto }: { impacto: CenarioSimularResponse['impacto_contrato_divida'] }) {
+  if (!impacto) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 11, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: 4 }}>
+        Impacto do novo contrato no teto de DCL
+      </div>
+      <div style={{ padding: '7px 9px', borderRadius: 4, background: impacto.cruza ? colors.redBg : colors.surface, border: `1px solid ${colors.border}`, fontSize: 11.5 }}>
+        {impacto.pct_rcl_adicional == null ? (
+          <span style={{ color: colors.muted }}>Sem RCL no acervo para converter o principal em % da RCL.</span>
+        ) : (
+          <>
+            <div>
+              +{fmt(num(impacto.pct_rcl_adicional), 2)} p.p. de principal → resultante{' '}
+              <strong style={{ fontFamily: font.mono, color: impacto.cruza ? colors.red : colors.ink }}>
+                {fmt(num(impacto.pct_rcl_resultante), 2)}%
+              </strong>{' '}
+              / teto {fmt(num(impacto.teto_pct))}%
+            </div>
+            {impacto.cruza && (
+              <div style={{ color: colors.red, fontWeight: 600, marginTop: 3 }}>
+                Este contrato, por si só, ultrapassa o teto de DCL.
+              </div>
+            )}
+          </>
+        )}
+        <div style={{ fontSize: 10, color: colors.faint, marginTop: 4, lineHeight: 1.4 }}>{impacto.fundamento}</div>
+      </div>
     </div>
   );
 }
@@ -633,6 +811,9 @@ function SavedScenarios({
   const list = (res.data as CenarioDetalhe[] | null) ?? [];
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // Exclusão definitiva pede confirmação — o botão vira "confirmar exclusão?" no próprio
+  // cartão em vez de um `window.confirm` que o teste (e o leitor de tela) não vê chegar.
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState<string | null>(null);
 
   async function agir(id: string, acao: () => Promise<unknown>) {
     setOcupado(id);
@@ -703,6 +884,13 @@ function SavedScenarios({
                     </strong>{' '}
                     · {new Date(c.atualizado_em ?? c.criado_em).toLocaleDateString('pt-BR')}
                   </div>
+                  {/* `criado_por` era gravado desde a Sprint C2 e nunca chegava à tela
+                      (Sprint G1) — quem decidiu fica só no banco. */}
+                  {c.criado_por && (
+                    <div style={{ fontSize: 10.5, color: colors.faint, marginTop: 2 }}>
+                      criado por {c.criado_por}
+                    </div>
+                  )}
                   {/* Versão sem procedência não pode prometer reprodutibilidade que não tem. */}
                   {ultima && !ultima.procedencia.registrada && (
                     <div style={{ fontSize: 10.5, color: colors.orange, marginTop: 3, lineHeight: 1.4 }}>
@@ -714,6 +902,13 @@ function SavedScenarios({
               <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => onAbrir(c.id)} style={acaoLink(colors.primary)}>
                   reabrir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => agir(c.id, () => duplicarCenario(c.id))}
+                  style={acaoLink(colors.muted)}
+                >
+                  duplicar
                 </button>
                 <button
                   type="button"
@@ -729,6 +924,28 @@ function SavedScenarios({
                 >
                   {c.arquivado ? 'restaurar' : 'arquivar'}
                 </button>
+                {confirmandoExclusao === c.id ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setConfirmandoExclusao(null); void agir(c.id, () => excluirCenarioDefinitivo(c.id)); }}
+                      style={acaoLink(colors.red)}
+                    >
+                      confirmar exclusão definitiva
+                    </button>
+                    <button type="button" onClick={() => setConfirmandoExclusao(null)} style={acaoLink(colors.muted)}>
+                      cancelar
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmandoExclusao(c.id)}
+                    style={acaoLink(colors.red)}
+                  >
+                    excluir definitivamente
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -780,6 +997,7 @@ function CenarioReaberto({ id, onFechar }: { id: string; onFechar: () => void })
                 {d.cenario.nome}{' '}
                 <span style={{ fontSize: 11, color: colors.muted, fontWeight: 400 }}>
                   · versão {d.versao.versao} de {d.cenario.versao_atual}
+                  {d.versao.criado_por && ` · gravada por ${d.versao.criado_por}`}
                 </span>
               </div>
 
@@ -908,10 +1126,12 @@ const rotuloMini = {
  */
 function ComparacaoCenariosPainel({
   ente,
+  enteNome,
   ids,
   onFechar,
 }: {
   ente: string;
+  enteNome: string;
   ids: string[];
   onFechar: () => void;
 }) {
@@ -975,6 +1195,31 @@ function ComparacaoCenariosPainel({
                   ))}
                 </tbody>
               </table>
+            </div>
+            {/* Exportar/imprimir a comparação (Sprint G1) — reusa o mesmo ExportButton da
+                comparação de modelos, para o mesmo padrão CSV + relatório institucional. */}
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+              <ExportButton
+                nome="Comparação de cenários"
+                linhas={d.itens.filter((item) => item.encontrado)}
+                colunas={[
+                  { cabecalho: 'cenario', valor: (item: CenarioComparadoItem) => item.nome },
+                  { cabecalho: 'versao', valor: (item: CenarioComparadoItem) => item.versao },
+                  ...d.periodos.map((p) => ({
+                    cabecalho: p,
+                    valor: (item: CenarioComparadoItem) => {
+                      const ponto = item.projecao.find((x) => x.periodo_alvo === p);
+                      return ponto ? Number(ponto.valor_previsto) : '';
+                    },
+                  })),
+                ]}
+                contexto={{
+                  ente: enteNome,
+                  periodo: d.periodos.join(' '),
+                  fonte: `Comparação de cenários salvos${d.aviso ? ' · ' + d.aviso : ''}`,
+                }}
+                modeloRelatorio="tecnico"
+              />
             </div>
           </div>
         )}

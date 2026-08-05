@@ -170,7 +170,10 @@ describe('premissas de cenário', () => {
   it('não exibe os antigos valores de fábrica', async () => {
     mockar();
     montar();
-    await screen.findByText(/14,28%/);
+    // O valor observado aparece legitimamente em dois lugares (o controle ancorado e a
+    // nota "observado" abaixo dele) — `findAllByText` espera até pelo menos uma
+    // ocorrência existir, sem quebrar quando as duas já resolveram no mesmo commit.
+    await screen.findAllByText(/14,28%/);
     expect(screen.queryByText(/10,50%/)).not.toBeInTheDocument();
   });
 });

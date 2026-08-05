@@ -74,6 +74,7 @@ function detalhe(over: Partial<CenarioDetalhe> = {}): CenarioDetalhe {
     arquivado: false,
     criado_em: '2026-08-01T10:00:00Z',
     atualizado_em: '2026-08-03T10:00:00Z',
+    criado_por: 'gestor@ente.gov.br',
     versoes: [
       {
         versao: 2,
@@ -89,6 +90,7 @@ function detalhe(over: Partial<CenarioDetalhe> = {}): CenarioDetalhe {
           registrada: true,
         },
         criado_em: '2026-08-03T10:00:00Z',
+        criado_por: 'gestor@ente.gov.br',
       },
       {
         versao: 1,
@@ -104,6 +106,7 @@ function detalhe(over: Partial<CenarioDetalhe> = {}): CenarioDetalhe {
           registrada: true,
         },
         criado_em: '2026-08-01T10:00:00Z',
+        criado_por: null,
       },
     ],
     ...over,

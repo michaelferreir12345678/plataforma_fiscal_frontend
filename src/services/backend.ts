@@ -3577,6 +3577,14 @@ export interface CheckQualidade {
   tolerancia: FiscalDecimal | null;
   detalhe: Record<string, unknown>;
   executado_em: string;
+  /**
+   * Entrega sobre a qual o veredito foi dado (Sprint E1/A26). `null` no check de
+   * atualidade, que mede justamente a **ausência** da entrega. Opcional porque respostas
+   * anteriores à E1 não trazem o campo.
+   */
+  versao_entrega?: string | null;
+  /** Procedência do número comparado (§6.3); `null` quando não há entrega conferida. */
+  source_ref?: SourceRef | null;
 }
 
 export interface ResumoQualidade {

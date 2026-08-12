@@ -16,6 +16,7 @@ import { Card } from '../components/Card';
 import { Async, ContextoIndisponivel } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
 import { PageHeader } from '../components/PageHeader';
+import { PrintButton } from '../components/PrintButton';
 import { SeloQualidade } from '../components/SeloQualidade';
 import { TendenciaChart, type PontoTendencia } from '../components/TendenciaChart';
 import { RadialMeter } from '../components/RadialMeter';
@@ -173,6 +174,7 @@ export function CockpitPage() {
             />
           ) : undefined
         }
+        actions={<PrintButton />}
       />
       <Async res={res}>
         {(c) => (

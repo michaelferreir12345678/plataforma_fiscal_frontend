@@ -15,10 +15,11 @@
  *   correspondente fica desabilitado com o motivo à vista.
  * - Tabela equivalente sempre disponível (leitor de tela, conferência e cópia).
  */
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { colors, font } from '../theme';
 import { fmt, pct as pctFmt } from '../utils/format';
 import type { SerieAjuste } from '../services/backend';
+import { AccessibleChart, type AccessibleChartColumn } from './AccessibleChart';
 
 export interface PontoSerie {
   periodo: string;
@@ -79,11 +80,7 @@ export function SerieChart({
   const temReal = !percentual && pontos.some((p) => p.real != null);
   const temPerCapita = !percentual && pontos.some((p) => p.perCapita != null);
   const [modo, setModo] = useState<Modo>('nominal');
-  const [tabela, setTabela] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
-  const chartId = useId().replace(/:/g, '');
-  const panelId = `serie-panel-${chartId}`;
-  const descriptionId = `serie-description-${chartId}`;
 
   const modoEfetivo: Modo =
     (modo === 'real' && !temReal) || (modo === 'per_capita' && !temPerCapita) ? 'nominal' : modo;
@@ -141,6 +138,55 @@ export function SerieChart({
   const ultimoValor = ultimoIdx >= 0 ? series.principal[ultimoIdx] : null;
   const pontoHover = hover != null ? pontos[hover] : null;
 
+  // Resumo textual (Sprint B3 — AccessibleChart): comunica a tendência sem depender da
+  // geometria, para quem usa leitor de tela ou só quer o número sem abrir o gráfico.
+  const descricaoSerie = [
+    `${medida}.`,
+    `Série com ${pontos.length} período(s).`,
+    ultimoValor != null ? `Último valor (${pontos[ultimoIdx]?.periodo}): ${formatar(ultimoValor)}.` : null,
+    limiar ? `${limiar.sentido === 'piso' ? 'Mínimo' : 'Teto'} legal (${limiar.rotulo}): ${formatar(limiar.valor)}.` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const colunas: AccessibleChartColumn<PontoSerie>[] = [];
+  if (percentual) {
+    colunas.push(
+      { key: 'periodo', header: 'Período', render: (p) => p.periodo },
+      {
+        key: 'valor',
+        header: medida,
+        align: 'right',
+        render: (p) => (p.nominal != null ? pctFmt(p.nominal, 2) : '—'),
+      },
+    );
+    if (limiar) {
+      colunas.push({
+        key: 'limiar',
+        header: limiar.rotulo,
+        align: 'right',
+        render: (p) => (p.nominal == null ? '—' : viola(p.nominal) ? 'não cumpre' : 'cumpre'),
+      });
+    }
+  } else {
+    colunas.push(
+      { key: 'periodo', header: 'Período', render: (p) => p.periodo },
+      {
+        key: 'nominal',
+        header: `${medida} (nominal)`,
+        align: 'right',
+        render: (p) => (p.nominal != null ? milhoes(p.nominal) : '—'),
+      },
+      { key: 'real', header: 'real', align: 'right', render: (p) => (p.real != null ? milhoes(p.real) : '—') },
+      {
+        key: 'per_capita',
+        header: 'per capita',
+        align: 'right',
+        render: (p) => (p.perCapita != null ? reais(p.perCapita) : '—'),
+      },
+    );
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -164,39 +210,21 @@ export function SerieChart({
             />
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setTabela((t) => !t)}
-          aria-controls={panelId}
-          aria-expanded={tabela}
-          style={botaoStyle(false)}
-        >
-          {tabela ? 'ver gráfico' : 'ver tabela'}
-        </button>
       </div>
 
-      <div id={descriptionId} className="sr-only">
-        {titulo}. {medida}. Série com {pontos.length} períodos. A alternativa tabular
-        contém os mesmos valores do gráfico.
-      </div>
-      <div id={panelId}>
-        {tabela ? (
-          <TabelaSerie
-            titulo={titulo}
-            pontos={pontos}
-            medida={medida}
-            percentual={percentual}
-            limiar={limiar}
-          />
-        ) : (
+      <AccessibleChart
+        label={titulo}
+        description={descricaoSerie}
+        rows={pontos}
+        columns={colunas}
+        rowKey={(p) => p.periodo}
+        tableCaption={`${titulo} — alternativa tabular`}
+        chart={
           <div style={{ position: 'relative' }}>
           <svg
             viewBox={`0 0 ${largura} ${altura}`}
             width="100%"
             height={altura}
-            role="group"
-            aria-label={`${titulo} — ${medida}, ${pontos.length} períodos`}
-            aria-describedby={descriptionId}
             onMouseLeave={() => setHover(null)}
           >
             {/* grade recessiva + eixo */}
@@ -374,8 +402,8 @@ export function SerieChart({
             </div>
           )}
           </div>
-        )}
-      </div>
+        }
+      />
 
       {modoEfetivo === 'real' && (
         <Legenda
@@ -393,84 +421,6 @@ export function SerieChart({
         {ajuste?.observacao && <div style={{ color: colors.yellowText }}>{ajuste.observacao}</div>}
       </div>
     </div>
-  );
-}
-
-function TabelaSerie({
-  titulo,
-  pontos,
-  medida,
-  percentual,
-  limiar,
-}: {
-  titulo: string;
-  pontos: PontoSerie[];
-  medida: string;
-  percentual: boolean;
-  limiar?: LimiarSerie;
-}) {
-  if (percentual) {
-    return (
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
-        <caption className="sr-only">{titulo} — alternativa tabular</caption>
-        <thead>
-          <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-            <th style={th}>Período</th>
-            <th style={{ ...th, textAlign: 'right' }}>{medida}</th>
-            {limiar && <th style={{ ...th, textAlign: 'right' }}>{limiar.rotulo}</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {pontos.map((p) => {
-            const abaixo =
-              p.nominal != null && limiar != null &&
-              (limiar.sentido === 'piso' ? p.nominal < limiar.valor : p.nominal > limiar.valor);
-            return (
-              <tr key={p.periodo} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
-                <td style={td}>{p.periodo}</td>
-                <td style={{ ...td, textAlign: 'right', fontFamily: font.mono }}>
-                  {p.nominal != null ? pctFmt(p.nominal, 2) : '—'}
-                </td>
-                {limiar && (
-                  <td style={{ ...td, textAlign: 'right', color: abaixo ? colors.red : colors.green }}>
-                    {p.nominal == null ? '—' : abaixo ? 'não cumpre' : 'cumpre'}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    );
-  }
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
-      <caption className="sr-only">{titulo} — alternativa tabular</caption>
-      <thead>
-        <tr style={{ borderBottom: `1px solid ${colors.border}` }}>
-          <th style={th}>Período</th>
-          <th style={{ ...th, textAlign: 'right' }}>{medida} (nominal)</th>
-          <th style={{ ...th, textAlign: 'right' }}>real</th>
-          <th style={{ ...th, textAlign: 'right' }}>per capita</th>
-        </tr>
-      </thead>
-      <tbody>
-        {pontos.map((p) => (
-          <tr key={p.periodo} style={{ borderBottom: `1px dashed ${colors.borderSoft}` }}>
-            <td style={td}>{p.periodo}</td>
-            <td style={{ ...td, textAlign: 'right', fontFamily: font.mono }}>
-              {p.nominal != null ? milhoes(p.nominal) : '—'}
-            </td>
-            <td style={{ ...td, textAlign: 'right', fontFamily: font.mono }}>
-              {p.real != null ? milhoes(p.real) : '—'}
-            </td>
-            <td style={{ ...td, textAlign: 'right', fontFamily: font.mono }}>
-              {p.perCapita != null ? reais(p.perCapita) : '—'}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -537,5 +487,3 @@ function botaoStyle(ativo: boolean, desabilitado = false) {
   } as const;
 }
 
-const th = { padding: '6px 4px', fontSize: 11, color: colors.faint, textTransform: 'uppercase', letterSpacing: '0.06em' } as const;
-const td = { padding: '6px 4px' } as const;

@@ -12,6 +12,12 @@
  *    até a fonte" — que não diz **qual** fonte, demora ~1s para aparecer e não é alcançável
  *    por teclado. Rastreabilidade que não mostra o relatório, o anexo, o período e a versão
  *    não é rastreabilidade (§6.3): agora o número é um botão que abre a ficha do fato.
+ * 3. A âncora só pegava quando o texto repetia `fato.valor_formatado` **caractere a
+ *    caractere**. O Gemini parafraseia o mesmo número (menos casas decimais, sem separador
+ *    de milhar, "aproximadamente") e o link de fonte sumia silenciosamente. Agora, além do
+ *    casamento exato (preferido — zero ambiguidade), um número fiscal solto no texto que
+ *    não repete `valor_formatado` é comparado ao valor **numérico** de cada fato
+ *    (`fato.valor`), com tolerância de arredondamento — ver `casarNumeroTolerante`.
  *
  * Sem `dangerouslySetInnerHTML` e sem dependência nova: o texto vem de um LLM, e transformar
  * saída de modelo em HTML cru seria abrir injeção na tela que mais precisa ser confiável.
@@ -28,14 +34,69 @@ interface Props {
 
 const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * Números fiscais soltos no texto: agrupamento de milhar com ponto (`12.345.678`, com ou
+ * sem decimal), decimal com vírgula (`54,2`) ou percentual (`54%`). Deliberadamente NÃO
+ * casa um inteiro solto (`42`, `2024`) — um artigo de lei ou um ano não é o tipo de token
+ * que um fato representa, e um casamento largo demais criaria link de fonte para o número
+ * errado.
+ */
+const NUMERO_FISCAL_SOURCE = '-?\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?%?|-?\\d+,\\d+%?|-?\\d+%';
+const NUMERO_FISCAL_RE = new RegExp(`^(?:${NUMERO_FISCAL_SOURCE})$`);
+
+/** Converte uma string numérica em pt-BR (milhar por ponto, decimal por vírgula) em
+ * `number`. Só entra em jogo quando `fato.valor` (o decimal cru) não veio preenchido. */
+function numeroDePtBr(formatado: string): number | null {
+  const limpo = formatado.replace(/[^\d,.\-]/g, '');
+  if (!limpo) return null;
+  // Ponto seguido de exatamente 3 dígitos (até o fim ou até o próximo separador) é milhar;
+  // qualquer outro ponto é decimal (não deveria ocorrer em pt-BR, mas não força a leitura).
+  const semMilhar = limpo.replace(/\.(?=\d{3}(?:[.,]|$))/g, '');
+  const normalizado = semMilhar.replace(',', '.');
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Casa um token numérico do texto (ex.: "40,9%", já sem repetir `valor_formatado`) ao
+ * fato mais próximo, dentro de uma tolerância derivada das próprias casas decimais do
+ * token — meio dígito na última casa escrita, ou 0,5 quando o token é inteiro. Isso cobre
+ * "arredondou para menos casas" e "não usou separador de milhar" sem abrir para números
+ * de magnitude parecida mas realmente diferentes.
+ */
+function casarNumeroTolerante(
+  token: string,
+  numericos: readonly { valor: number; fato: AssistFato }[],
+): AssistFato | null {
+  const semPct = token.replace('%', '');
+  const valor = numeroDePtBr(semPct);
+  if (valor === null) return null;
+  const casas = semPct.includes(',') ? semPct.split(',')[1].length : 0;
+  const tolerancia = casas > 0 ? 0.5 * 10 ** -casas : 0.5;
+  let melhor: AssistFato | null = null;
+  let menorDistancia = Infinity;
+  for (const candidato of numericos) {
+    const distancia = Math.abs(candidato.valor - valor);
+    if (distancia <= tolerancia && distancia < menorDistancia) {
+      menorDistancia = distancia;
+      melhor = candidato.fato;
+    }
+  }
+  return melhor;
+}
+
 export function RespostaMarkdown({ texto, fatos = [] }: Props) {
   const porValor = new Map<string, AssistFato>();
+  const numericos: { valor: number; fato: AssistFato }[] = [];
   for (const f of fatos) {
-    if (f.disponivel && f.valor_formatado) porValor.set(f.valor_formatado, f);
+    if (!f.disponivel || !f.valor_formatado) continue;
+    porValor.set(f.valor_formatado, f);
+    const bruto = f.valor != null ? Number(f.valor) : numeroDePtBr(f.valor_formatado);
+    if (bruto != null && Number.isFinite(bruto)) numericos.push({ valor: bruto, fato: f });
   }
   const ancoras = [...porValor.keys()].sort((a, b) => b.length - a.length);
 
-  return <>{blocos(texto).map((b, i) => renderBloco(b, i, ancoras, porValor))}</>;
+  return <>{blocos(texto).map((b, i) => renderBloco(b, i, ancoras, porValor, numericos))}</>;
 }
 
 // --------------------------------------------------------------------------- //
@@ -126,8 +187,9 @@ function renderBloco(
   chave: number,
   ancoras: string[],
   porValor: Map<string, AssistFato>,
+  numericos: readonly { valor: number; fato: AssistFato }[],
 ): ReactNode {
-  const inline = (t: string) => renderInline(t, ancoras, porValor);
+  const inline = (t: string) => renderInline(t, ancoras, porValor, numericos);
   switch (b.tipo) {
     case 'regua':
       return (
@@ -186,6 +248,7 @@ function renderInline(
   texto: string,
   ancoras: string[],
   porValor: Map<string, AssistFato>,
+  numericos: readonly { valor: number; fato: AssistFato }[],
 ): ReactNode[] {
   const partes: string[] = [
     '\\*\\*[^*]+\\*\\*', // negrito
@@ -193,11 +256,18 @@ function renderInline(
     '(?<![*\\w])\\*[^*\\n]+\\*(?![*\\w])', // itálico
   ];
   if (ancoras.length) partes.unshift(ancoras.map(escapar).join('|'));
+  // Números fiscais soltos (paráfrase do Gemini) entram por último: o casamento exato dos
+  // `ancoras` acima sempre tem prioridade na mesma posição do texto.
+  if (numericos.length) partes.push(NUMERO_FISCAL_SOURCE);
   const re = new RegExp(`(${partes.join('|')})`, 'g');
 
   return texto.split(re).filter(Boolean).map((parte, i) => {
-    const fato = porValor.get(parte);
-    if (fato) return <NumeroAncorado key={i} fato={fato} texto={parte} />;
+    const fatoExato = porValor.get(parte);
+    if (fatoExato) return <NumeroAncorado key={i} fato={fatoExato} texto={parte} />;
+    if (numericos.length && NUMERO_FISCAL_RE.test(parte)) {
+      const fatoProximo = casarNumeroTolerante(parte, numericos);
+      if (fatoProximo) return <NumeroAncorado key={i} fato={fatoProximo} texto={parte} />;
+    }
     if (parte.startsWith('**') && parte.endsWith('**') && parte.length > 4) {
       return (
         <strong key={i} style={{ fontWeight: 600, color: colors.ink }}>

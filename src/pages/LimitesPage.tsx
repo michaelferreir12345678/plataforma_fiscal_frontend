@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, ErrorBox, Loading } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { FonteChip } from '../components/FonteChip';
 import { SeloCobertura } from '../components/SeloCobertura';
 import { SeloQualidadePagina } from '../components/SeloQualidade';
@@ -77,6 +78,7 @@ export function LimitesPage() {
             crumbs={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Monitor de Limites' }]}
           />
         )}
+        actions={<PrintButton />}
       />
       <SectionLabel note="posição vs. teto/piso legal · faixas alerta 90% / prudencial 95% / máximo 100%">
         Limites legais do ente

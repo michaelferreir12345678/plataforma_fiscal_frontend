@@ -103,10 +103,31 @@ const PAGINAS_FISCAIS = [
   '/saude-educacao', '/limites', '/patrimonio',
 ];
 
+/**
+ * Rotas em que o período do topo não governa a tela (Sprint B3): cada uma decide seu
+ * próprio recorte de tempo — execução multi-período (`/central-dados`), deep-link por
+ * querystring, tela transacional por ID (`/divida/operacao/:id`, uma operação de crédito
+ * nominal, sem período) ou tela sem escopo fiscal (`/admin`, `/perfil`, `/plataforma`).
+ * `/alertas` e `/previsoes` também não consomem `periodo`/`periodoRgf` do contexto — a
+ * fila de alertas não é fatiada por período e as projeções definem o próprio horizonte.
+ * A auditoria encontrou o seletor renderizado e mudo nessas 7 rotas; mostrá-lo sugeria um
+ * controle que não fazia nada, então ele passa a ficar oculto ali.
+ */
+const ROTAS_SEM_SELETOR_PERIODO = [
+  '/admin',
+  '/central-dados',
+  '/perfil',
+  '/plataforma',
+  '/divida/operacao',
+  '/alertas',
+  '/previsoes',
+];
+
 export function AppShell() {
   const location = useLocation();
   const { ente, periodo, logout } = useApp();
   const usaRgf = ROTAS_RGF.some((r) => location.pathname.startsWith(r));
+  const ocultarSeletorPeriodo = ROTAS_SEM_SELETOR_PERIODO.some((r) => location.pathname.startsWith(r));
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [compacto, setCompacto] = useState(
     () =>
@@ -254,7 +275,7 @@ export function AppShell() {
         </Link>
 
         <SeletorEnte aberto={buscaAberta} setAberto={setBuscaAberta} />
-        <SeletorPeriodo usaRgf={usaRgf} />
+        {!ocultarSeletorPeriodo && <SeletorPeriodo usaRgf={usaRgf} />}
         <SeletorVisao />
 
         <div style={{ flex: 1 }} />

@@ -17,6 +17,7 @@ import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { MemoriaDialog, LinhaMemoria } from '../components/MemoriaDialog';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { useApp, useResource, type Resource } from '../context/AppContext';
 import {
   fetchMe,
@@ -82,6 +83,7 @@ export function ResultadoPage() {
             crumbs={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Análise por bloco' }, { label: 'Resultado' }]}
           />
         )}
+        actions={<PrintButton />}
       />
 
       <SeloQualidadePagina />

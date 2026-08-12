@@ -31,6 +31,7 @@ import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { MemoriaDialog, LinhaMemoria } from '../components/MemoriaDialog';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill, numero } from '../components/ArvoreDrill';
 import { useApp, useResource } from '../context/AppContext';
 import {
@@ -81,6 +82,7 @@ export function PessoalPage() {
             crumbs={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Análise por bloco' }, { label: 'Pessoal' }]}
           />
         )}
+        actions={<PrintButton />}
       />
 
       <SeloQualidadePagina periodo={periodoRgf} />

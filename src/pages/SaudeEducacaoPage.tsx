@@ -33,6 +33,7 @@ import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { MemoriaDialog, LinhaMemoria } from '../components/MemoriaDialog';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill } from '../components/ArvoreDrill';
 import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
 import { useApp, useResource, type Resource } from '../context/AppContext';
@@ -142,6 +143,7 @@ export function SaudeEducacaoPage() {
             ]}
           />
         )}
+        actions={<PrintButton />}
       />
 
       <SeloQualidadePagina />

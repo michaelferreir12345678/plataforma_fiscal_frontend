@@ -14,6 +14,7 @@ import { FonteChip } from '../components/FonteChip';
 import { MemoriaDialog, LinhaMemoria } from '../components/MemoriaDialog';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill } from '../components/ArvoreDrill';
 import { useApp, useResource } from '../context/AppContext';
 import {
@@ -102,6 +103,7 @@ export function CaixaPage() {
             ]}
           />
         )}
+        actions={<PrintButton />}
       />
 
       <Async res={suf}>

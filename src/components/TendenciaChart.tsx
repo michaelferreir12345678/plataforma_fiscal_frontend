@@ -14,10 +14,17 @@
  * - Cor de risco (laranja/vermelho) fica reservada ao **cruzamento do limite**. Usá-la na
  *   curva inteira gastaria o único sinal que significa "faixa da LRF".
  * - Todo ponto tem `<title>`, foco por teclado e tooltip no hover; a tabela equivalente
- *   está no card, para leitor de tela e conferência.
+ *   usa `AccessibleChart` (Sprint B3) — mesmo padrão do `SerieChart`, com alternância
+ *   visível Gráfico/Tabela, em vez de um `sr-only` que só o leitor de tela alcançava.
+ * - **Escala:** ao contrário do `SerieChart` (que ancora em zero), este gráfico usa uma
+ *   janela em torno dos valores — colada no card do Cockpit, ancorar em zero achataria
+ *   uma faixa estreita (ex.: 45%–52% de um limite de 54%) até a invisibilidade. A troca
+ *   não é silenciosa: quando a janela não alcança o zero, a descrição visível do gráfico
+ *   avisa "eixo não parte de zero" (Sprint B3 — a auditoria encontrou o corte sem aviso).
  */
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { colors, font } from '../theme';
+import { AccessibleChart, type AccessibleChartColumn } from './AccessibleChart';
 
 export interface PontoTendencia {
   periodo: string;
@@ -50,7 +57,6 @@ export function TendenciaChart({
   altura = 108,
 }: Props) {
   const [sob, setSob] = useState<number | null>(null);
-  const descId = `tend-desc-${useId().replace(/:/g, '')}`;
 
   const comDado = useMemo(
     () => pontos.filter((p): p is PontoTendencia & { valor: number } => p.valor !== null),
@@ -72,6 +78,12 @@ export function TendenciaChart({
   }, [comDado, limite]);
 
   if (comDado.length < 2) return null;
+
+  // O eixo não parte de zero quando a janela (com folga) fica inteira acima dele — é
+  // exatamente o corte que a auditoria da Sprint B3 encontrou sem aviso nenhum. Diferente
+  // do `SerieChart`, aqui a janela estreita é intencional (ver docstring); o que faltava
+  // era dizer isso, não escondê-lo.
+  const truncado = escala.min > 0;
 
   const innerW = LARGURA - PAD.left - PAD.right;
   const innerH = altura - PAD.top - PAD.bottom;
@@ -110,19 +122,60 @@ export function TendenciaChart({
   const ponto = sob != null ? pontos[sob] : null;
   const idxCruzamento = cruzamento ? pontos.findIndex((p) => p.periodo === cruzamento) : -1;
 
+  // Resumo textual (mesmo papel do `descricaoSerie` do SerieChart): comunica tendência,
+  // último valor e o cruzamento do limite sem depender da geometria do SVG.
+  const ultimoComDado = [...pontos].reverse().find((p) => p.valor !== null) ?? null;
+  const descricaoTendencia = [
+    `${titulo}.`,
+    `${comDado.length} ponto(s) observado(s)${pontos.some((p) => p.projetado) ? ' com projeção incluída' : ''}.`,
+    ultimoComDado
+      ? `Último ponto (${ultimoComDado.periodo}): ${formatar(ultimoComDado.valor as number)}${ultimoComDado.projetado ? ' (projetado)' : ''}.`
+      : null,
+    limite != null ? `Limite legal: ${formatar(limite)}.` : null,
+    cruzamento ? `A projeção cruza o limite em ${cruzamento}.` : null,
+    truncado ? 'Eixo vertical não parte de zero — a janela acompanha a variação da série.' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const colunasTendencia: AccessibleChartColumn<PontoTendencia>[] = [
+    { key: 'periodo', header: 'Período', render: (p) => p.periodo },
+    { key: 'tipo', header: 'Tipo', render: (p) => (p.projetado ? 'Projetado' : 'Observado') },
+    {
+      key: 'valor',
+      header: titulo,
+      align: 'right',
+      render: (p) => (p.valor != null ? formatar(p.valor) : '—'),
+    },
+    {
+      key: 'ic_inferior',
+      header: 'IC inferior',
+      align: 'right',
+      render: (p) => (p.icInferior != null ? formatar(p.icInferior) : '—'),
+    },
+    {
+      key: 'ic_superior',
+      header: 'IC superior',
+      align: 'right',
+      render: (p) => (p.icSuperior != null ? formatar(p.icSuperior) : '—'),
+    },
+  ];
+
   return (
-    <div style={{ position: 'relative' }}>
-      <div id={descId} className="sr-only">
-        {titulo}: {comDado.map((p) => `${p.periodo} ${formatar(p.valor)}${p.projetado ? ' projetado' : ''}`).join('; ')}
-        {limite != null ? `. Limite legal em ${formatar(limite)}.` : ''}
-      </div>
+    <AccessibleChart
+      label={titulo}
+      description={descricaoTendencia}
+      rows={pontos}
+      columns={colunasTendencia}
+      rowKey={(p, i) => `${p.periodo}-${i}`}
+      tableCaption={`${titulo} — alternativa tabular`}
+      chart={
+        <div style={{ position: 'relative' }}>
       <svg
         viewBox={`0 0 ${LARGURA} ${altura}`}
         width="100%"
         height={altura}
-        role="group"
-        aria-label={`${titulo} — série observada e projetada`}
-        aria-describedby={descId}
+        focusable="false"
         onMouseLeave={() => setSob(null)}
         style={{ display: 'block', overflow: 'visible' }}
       >
@@ -281,6 +334,8 @@ export function TendenciaChart({
           )}
         </div>
       )}
-    </div>
+        </div>
+      }
+    />
   );
 }

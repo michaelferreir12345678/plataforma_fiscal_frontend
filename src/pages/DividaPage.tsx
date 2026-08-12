@@ -11,6 +11,7 @@ import { FonteChip } from '../components/FonteChip';
 import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { VirtualizedTable } from '../components/VirtualizedTable';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useResource } from '../context/AppContext';
@@ -120,6 +121,7 @@ export function DividaPage() {
             ]}
           />
         )}
+        actions={<PrintButton />}
       />
 
       <SeloQualidadePagina periodo={periodoRgf} />

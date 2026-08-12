@@ -23,6 +23,7 @@ import { Sparkline } from '../components/Sparkline';
 import { Async, EmptyState, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
 import { ExportButton } from '../components/ExportButton';
+import { PrintButton } from '../components/PrintButton';
 import { VirtualizedTable, type VirtualColumn } from '../components/VirtualizedTable';
 import { useApp, useResource } from '../context/AppContext';
 import {
@@ -89,6 +90,7 @@ export function PatrimonioPage() {
             ]}
           />
         )}
+        actions={<PrintButton />}
       />
 
       {/* O Patrimônio depende de DCA (bem coberta) e MSC (quase ninguém transmite). O

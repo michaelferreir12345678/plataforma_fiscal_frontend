@@ -1279,6 +1279,10 @@ function ProjectionChart({ data }: { data: ProjecaoResponse }) {
   const span = yMax - yMin || Math.abs(yMax) || 1;
   yMin -= span * 0.12;
   yMax += span * 0.12;
+  // Mesmo achado da Sprint B3 no TendenciaChart: a janela (com folga) pode ficar inteira
+  // acima do zero — o eixo trunca. Aqui a curva some no meio de um card menor ainda se
+  // ancorada em zero, então a escolha continua sendo a janela; o que faltava era avisar.
+  const truncado = yMin > 0;
 
   const nSeg = hist.length + proj.length - 1;
   const xOf = (i: number) => padL + (plotW * i) / Math.max(nSeg, 1);
@@ -1328,6 +1332,7 @@ function ProjectionChart({ data }: { data: ProjecaoResponse }) {
       <desc id={descriptionId}>
         Série com {hist.length} períodos históricos e {proj.length} períodos projetados,
         incluindo intervalo de confiança. A tabela seguinte contém os valores exatos.
+        {truncado ? ' O eixo vertical não parte de zero.' : ''}
       </desc>
       {/* grade Y */}
       {[0, 0.5, 1].map((f) => {
@@ -1398,6 +1403,11 @@ function ProjectionChart({ data }: { data: ProjecaoResponse }) {
         },
       )}
     </svg>
+      {truncado && (
+        <div style={{ fontSize: 10.5, color: colors.faint, marginTop: 4 }}>
+          eixo vertical não parte de zero — variação ampliada visualmente
+        </div>
+      )}
       {pontoSob?.valor !== undefined && pontoSob.rotulo && (
         <div
           role="status"

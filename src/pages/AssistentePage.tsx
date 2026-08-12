@@ -137,6 +137,19 @@ function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () 
             {r.titulo && <span style={{ fontSize: 11, color: colors.faint, marginLeft: 'auto' }}>{r.titulo} · {r.periodo}</span>}
           </div>
 
+          {/* Quando o Gemini está indisponível (sem chave, sem SDK, ou falhou), o backend
+              degrada para o provedor local extrativo — que nunca inventa número, mas também
+              não redige. `uso.modelo === 'local-grounded'` é o único sinal disso (llm.py:44-50);
+              sem avisar aqui, o gestor lia uma resposta mais seca sem saber por quê (Sprint B3). */}
+          {r.uso.modelo === 'local-grounded' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', background: colors.orangeBg, borderBottom: `1px solid ${colors.orangeSoft}` }}>
+              <Icon size={12} stroke={colors.orange}><circle cx="8" cy="8" r="6" /><path d="M8 5v3.5M8 11v0.1" /></Icon>
+              <span style={{ fontSize: 11, fontWeight: 600, color: colors.orange }}>
+                Modo offline (sem Gemini) — resposta extrativa a partir dos dados, sem o modelo de linguagem.
+              </span>
+            </div>
+          )}
+
           <div style={{ padding: '14px 16px' }}>
             {/* O modelo responde em Markdown; renderizar como texto puro deixava
                 `**negrito**` e `### título` à mostra para o gestor. */}
@@ -156,6 +169,22 @@ function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () 
                     </span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Sinalizações de dado incompleto (Sprint B3): o backend já calcula
+                `dados_incompletos` (assistant/service.py:173-194) e nenhuma tela lia —
+                mesmo padrão que RelatoriosPage.tsx já usa para o campo irmão. */}
+            {(r.dados_incompletos ?? []).length > 0 && (
+              <div style={{ marginTop: 14, padding: 10, background: colors.orangeBg, color: colors.orange, borderRadius: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 700 }}>
+                  {r.dados_incompletos.length} sinalização(ões) — nenhum item foi omitido
+                </div>
+                {(r.dados_incompletos ?? []).map((issue) => (
+                  <div key={`${issue.tipo}-${issue.codigo}`} style={{ fontSize: 11, marginTop: 4 }}>
+                    [{issue.tipo}] {issue.mensagem}
+                  </div>
+                ))}
               </div>
             )}
 

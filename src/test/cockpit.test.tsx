@@ -329,6 +329,61 @@ describe('cockpit', () => {
   });
 });
 
+describe('Cockpit — crosslinks e retorno da Carteira (Sprint D1)', () => {
+  it('Críticos, Tendências e Explicadores linkam para a página de detalhe certa', async () => {
+    vi.spyOn(backend, 'fetchCockpit').mockResolvedValue(cockpitFake() as never);
+    render(
+      <MemoryRouter>
+        <AppProvider>
+          <CockpitPage />
+        </AppProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Indicadores críticos' });
+    // Crítico (pessoal_executivo) → painel expansível de Limites, no indicador certo.
+    expect(screen.getByRole('link', { name: /ver memória, série e simular/ })).toHaveAttribute(
+      'href',
+      '/limites?indicador=pessoal_executivo',
+    );
+    // Tendência (chave do catálogo de previsão: 'pessoal') → Previsões já no indicador.
+    expect(screen.getByRole('link', { name: /abrir em Previsões/ })).toHaveAttribute(
+      'href',
+      '/previsoes?indicador=pessoal',
+    );
+    // Explicador (dimensão 'receita_origem') → página de Receita.
+    expect(screen.getByRole('link', { name: /ver o detalhe completo/ })).toHaveAttribute(
+      'href',
+      '/receita',
+    );
+  });
+
+  it('sem contexto de Carteira, não mostra "voltar ao ranking"', async () => {
+    vi.spyOn(backend, 'fetchCockpit').mockResolvedValue(cockpitFake() as never);
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AppProvider>
+          <CockpitPage />
+        </AppProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Resumo' });
+    expect(screen.queryByText(/voltar ao ranking/)).not.toBeInTheDocument();
+  });
+
+  it('chegando de um ranking da Carteira, oferece "voltar ao ranking de {indicador} — UF {sigla}"', async () => {
+    vi.spyOn(backend, 'fetchCockpit').mockResolvedValue(cockpitFake() as never);
+    render(
+      <MemoryRouter initialEntries={['/dashboard?deCarteira=divida_consolidada_liquida&uf=23']}>
+        <AppProvider>
+          <CockpitPage />
+        </AppProvider>
+      </MemoryRouter>,
+    );
+    const link = await screen.findByRole('link', { name: /voltar ao ranking de.*Dívida.*UF 23/i });
+    expect(link).toHaveAttribute('href', '/carteira?indicador=divida_consolidada_liquida');
+  });
+});
+
 describe('cockpit — indicadores que não são percentual de limite', () => {
   /**
    * A RCL por habitante vive em `valor_rs` e o cartão renderizava `valor_pct`: a tela

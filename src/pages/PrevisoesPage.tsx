@@ -1218,7 +1218,10 @@ function ComparacaoCenariosPainel({
                   periodo: d.periodos.join(' '),
                   fonte: `Comparação de cenários salvos${d.aviso ? ' · ' + d.aviso : ''}`,
                 }}
-                modeloRelatorio="tecnico"
+                // "tecnico" não existe em reports/models.py::MODELOS — o link caía sempre
+                // em "Resumo Executivo" sem avisar (Sprint D1). Nenhum dos 5 modelos cobre
+                // previsão/cenário; "executivo" é o catch-all explícito.
+                modeloRelatorio="executivo"
               />
             </div>
           </div>
@@ -1654,7 +1657,10 @@ function ComparacaoModelos({
                     periodo: c.periodos_projetados.join(' '),
                     fonte: `${c.descricao} · ${c.aviso}`,
                   }}
-                  modeloRelatorio="tecnico"
+                  // "tecnico" não existe em reports/models.py::MODELOS — o link caía sempre
+                // em "Resumo Executivo" sem avisar (Sprint D1). Nenhum dos 5 modelos cobre
+                // previsão/cenário; "executivo" é o catch-all explícito.
+                modeloRelatorio="executivo"
                 />
               </div>
             </div>

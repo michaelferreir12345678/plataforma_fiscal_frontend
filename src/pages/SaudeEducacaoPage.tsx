@@ -83,20 +83,25 @@ const P = (v: FiscalDecimal | null | undefined, casas = 2): string => {
   return x === null ? '—' : pct(x, casas);
 };
 
+// "saude"/"educacao" não existem em reports/models.py::MODELOS — o link "relatório
+// completo" caía sempre em "Resumo Executivo" sem avisar (Sprint D1). O modelo certo é
+// "limites": suas seções já incluem "saude" e "educacao" (Relatório de Limites Legais —
+// Controladoria/TCE/TCM), diferente de "executivo"/"patrimonio"/"tecnico", que não têm
+// seção nenhuma para os mínimos constitucionais desta página.
 const CONFIG = {
   saude: {
     titulo: 'Saúde · Ações e Serviços Públicos de Saúde',
     curto: 'ASPS',
     norma: 'CF art. 198 · LC 141/2012 art. 25',
     indicadorBenchmark: 'saude_minimo',
-    modeloRelatorio: 'saude',
+    modeloRelatorio: 'limites',
   },
   educacao: {
     titulo: 'Educação · Manutenção e Desenvolvimento do Ensino',
     curto: 'MDE',
     norma: 'CF art. 212 · Lei 14.113/2020',
     indicadorBenchmark: 'educacao_mde',
-    modeloRelatorio: 'educacao',
+    modeloRelatorio: 'limites',
   },
 } as const;
 

@@ -23,6 +23,7 @@ import {
   fetchDividaCapag,
   fetchDividaCronograma,
   fetchDividaMemoria,
+  fetchLimites,
   simularOperacaoDivida,
   type CapagHero,
   type CapagMemoria,
@@ -32,6 +33,7 @@ import {
   type DividaDetalhe,
   type DividaEixo,
   type DividaMemoria,
+  type LimiteItem,
   type PosicaoSimulada,
   type SimulacaoOperacao,
   type SimularOperacaoInput,
@@ -88,7 +90,7 @@ function sourceText(source: SourceRef | null | undefined): string {
 }
 
 export function DividaPage() {
-  const { ente, periodoRgf } = useApp();
+  const { ente, periodo, periodoRgf } = useApp();
   const detalhe = useResource(
     () => fetchDivida(ente.cod_ibge, periodoRgf),
     [ente.cod_ibge, periodoRgf],
@@ -128,6 +130,7 @@ export function DividaPage() {
           <DividaContent
             key={`${data.cod_ibge}-${data.periodo}-${data.as_of}`}
             detalhe={data}
+            periodoRreo={periodo}
           />
         )}
       </Async>
@@ -135,7 +138,16 @@ export function DividaPage() {
   );
 }
 
-function DividaContent({ detalhe }: { detalhe: DividaDetalhe }) {
+function DividaContent({
+  detalhe,
+  periodoRreo,
+}: {
+  detalhe: DividaDetalhe;
+  /** Período RREO (formato bimestre) — é onde `garantias`/`operacoes_credito` são
+   * gravados em `gold.mart_indicador` (ver `endividamento.materializar_limites_endividamento`),
+   * mesmo sendo apurados a partir do RGF (quadrimestral). */
+  periodoRreo: string;
+}) {
   const capag = useResource(
     () => fetchDividaCapag(detalhe.cod_ibge, detalhe.periodo, detalhe.capag.as_of),
     [detalhe.cod_ibge, detalhe.periodo, detalhe.capag.as_of],
@@ -174,6 +186,12 @@ function DividaContent({ detalhe }: { detalhe: DividaDetalhe }) {
           {(data) => <CapagHeroCard hero={data.hero} memoria={data.memoria} />}
         </Async>
       </div>
+
+      {/* Sprint D1: Garantias e Operações de Crédito têm teto legal (22%/16% da RCL
+          Ajustada) desde sempre, mas só apareciam dentro do simulador com o gestor
+          digitando a base atual à mão. O backend já apura os dois via mart_indicador
+          (mesmo dado que /limites lista) — este cartão só busca e mostra. */}
+      <PosicaoEndividamentoCard cod={detalhe.cod_ibge} periodo={periodoRreo} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr', gap: 12 }}>
         <Async res={memoria}>{(data) => <MemoriaCard data={data} />}</Async>
@@ -717,6 +735,90 @@ function CoorteCard({ detalhe }: { detalhe: DividaDetalhe }) {
         )}
       </Async>
     </Card>
+  );
+}
+
+const INDICADORES_ENDIVIDAMENTO: { indicador: string; rotulo: string }[] = [
+  { indicador: 'garantias', rotulo: 'Garantias concedidas' },
+  { indicador: 'operacoes_credito', rotulo: 'Operações de crédito' },
+];
+
+/**
+ * Posição vigente de Garantias (teto 22% da RCL Ajustada) e Operações de Crédito
+ * (teto 16%) — Sprint D1. Reusa `GET /entes/{cod}/limites`, já materializado e testado
+ * (mesmo indicador que o Monitor de Limites lista); esta página só o busca e mostra sem
+ * exigir que o gestor abra o simulador e digite a base atual à mão.
+ */
+function PosicaoEndividamentoCard({ cod, periodo }: { cod: string; periodo: string }) {
+  const res = useResource(() => fetchLimites(cod, periodo), [cod, periodo], { pular: !periodo });
+  return (
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <SectionLabel note="teto legal · % sobre a RCL Ajustada · Res. 43/2001 do Senado">
+        Posição vigente de endividamento
+      </SectionLabel>
+      <Async res={res} skeleton={<Skeleton linhas={2} />}>
+        {(d) => {
+          const porIndicador = new Map(d.itens.map((it) => [it.indicador, it]));
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {INDICADORES_ENDIVIDAMENTO.map(({ indicador, rotulo }) => (
+                  <PosicaoEndividamentoItem
+                    key={indicador}
+                    rotulo={rotulo}
+                    item={porIndicador.get(indicador)}
+                  />
+                ))}
+              </div>
+              <Provenance source={d.source_ref} asOf={d.as_of} />
+            </>
+          );
+        }}
+      </Async>
+    </Card>
+  );
+}
+
+function PosicaoEndividamentoItem({ rotulo, item }: { rotulo: string; item: LimiteItem | undefined }) {
+  if (!item || item.valor_pct_rcl == null) {
+    return (
+      <div style={{ border: `1px solid ${colors.borderSoft}`, borderRadius: 5, padding: 10 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}>{rotulo}</div>
+        <div style={{ fontSize: 11.5, color: colors.muted }}>
+          Não apurado — o ente ainda não publicou o anexo correspondente para este período.
+        </div>
+      </div>
+    );
+  }
+  const color = faixaColor(item.faixa);
+  const teto = numberValue(item.teto_pct) ?? 0;
+  const valor = numberValue(item.valor_pct_rcl) ?? 0;
+  const width = teto > 0 ? Math.min(Math.max((valor / teto) * 100, 0), 100) : 0;
+  return (
+    <div style={{ border: `1px solid ${colors.border}`, borderTop: `3px solid ${color}`, borderRadius: 5, padding: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600 }}>{rotulo}</div>
+        {item.faixa && <Badge text={item.faixa.toLocaleUpperCase('pt-BR')} color={color} />}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
+        <strong style={{ fontFamily: font.mono, fontSize: 22, color }}>{percent(item.valor_pct_rcl)}</strong>
+        <span style={{ fontSize: 11, color: colors.muted }}>/ teto {percent(item.teto_pct, 0)}</span>
+      </div>
+      <div
+        role="meter"
+        aria-label={`${rotulo}: ${percent(valor)} da RCL Ajustada; teto ${percent(teto, 0)}`}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(teto, valor, 1)}
+        aria-valuenow={valor}
+        style={{ height: 7, background: colors.borderSoft, borderRadius: 2, margin: '7px 0' }}
+      >
+        <div style={{ width: `${width}%`, height: '100%', background: color, borderRadius: 2 }} />
+      </div>
+      <div style={{ fontSize: 11, color: colors.muted }}>
+        {money(item.valor_rs)} de {money(item.base_valor)} · distância ao teto{' '}
+        {item.distancia_teto != null ? `${percent(item.distancia_teto, 1)} p.p.` : '—'}
+      </div>
+    </div>
   );
 }
 

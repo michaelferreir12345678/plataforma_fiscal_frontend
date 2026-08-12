@@ -993,22 +993,51 @@ function RetificacoesTab() {
  * discorda do veredito consegue refazer a comparação sem abrir o banco.
  * ========================================================================== */
 function QualidadeTab() {
+  // Deep-link universal (Sprint D1): ?painel=qualidade&ente=&periodo= — o selo de
+  // qualidade e os cards fiscais linkam para cá já filtrados, em vez de o gestor ter que
+  // reencontrar o ente/período na lista inteira do escopo.
+  const [params] = useSearchParams();
   const [status, setStatus] = useState<StatusCheck | ''>('');
   const [fonte, setFonte] = useState('');
+  const enteUrl = params.get('ente') ?? undefined;
+  const periodoUrl = params.get('periodo');
   const res = useResource(
-    () => fetchQualidade({ status: status || undefined, fonte: fonte || undefined, porPagina: 100 }),
-    [status, fonte],
+    () => fetchQualidade({ status: status || undefined, fonte: fonte || undefined, ente: enteUrl, porPagina: 100 }),
+    [status, fonte, enteUrl],
   );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Async res={res}>
-        {(q) => (
+        {(q) => {
+          // `periodo` não é filtro do backend (o check de atualidade não tem um período
+          // conferido) — filtra no cliente, e o resumo some do dado bruto (ele) para os
+          // números do topo não contarem períodos que a tabela abaixo não mostra.
+          const itens = periodoUrl ? q.itens.filter((i) => i.periodo === periodoUrl) : q.itens;
+          const resumo = periodoUrl
+            ? {
+                falha: itens.filter((i) => i.status === 'falha').length,
+                aviso: itens.filter((i) => i.status === 'aviso').length,
+                ok: itens.filter((i) => i.status === 'ok').length,
+              }
+            : { falha: q.resumo.falha, aviso: q.resumo.aviso, ok: q.resumo.ok };
+          return (
           <>
+            {periodoUrl && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: colors.muted }}>
+                <span>
+                  filtrado por período <strong style={{ fontFamily: font.mono }}>{periodoUrl}</strong>
+                  {enteUrl && <> · ente <strong style={{ fontFamily: font.mono }}>{enteUrl}</strong></>}
+                </span>
+                <Link to="/central-dados?painel=qualidade" style={{ color: colors.primary }}>
+                  limpar filtro de período
+                </Link>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <ResumoCard n={q.resumo.falha} rotulo="Em falha" cor={colors.red} fundo={colors.redBg} />
-              <ResumoCard n={q.resumo.aviso} rotulo="Avisos" cor={colors.orange} fundo={colors.orangeBg} />
-              <ResumoCard n={q.resumo.ok} rotulo="Verificados e corretos" cor={colors.green} fundo={colors.greenBg} />
+              <ResumoCard n={resumo.falha} rotulo="Em falha" cor={colors.red} fundo={colors.redBg} />
+              <ResumoCard n={resumo.aviso} rotulo="Avisos" cor={colors.orange} fundo={colors.orangeBg} />
+              <ResumoCard n={resumo.ok} rotulo="Verificados e corretos" cor={colors.green} fundo={colors.greenBg} />
               <div style={{ flex: 1 }} />
               <select
                 aria-label="Filtrar por status"
@@ -1034,17 +1063,17 @@ function QualidadeTab() {
               </select>
             </div>
 
-            {q.resumo.falha > 0 && (
+            {resumo.falha > 0 && (
               <div style={{ padding: '10px 12px', borderRadius: 6, background: colors.redBg, color: colors.red, fontSize: 11.5, lineHeight: 1.5 }}>
-                <strong>{q.resumo.falha} verificação(ões) em falha</strong> em{' '}
-                {q.resumo.fontes_com_falha.join(', ')}. Enquanto durar, as páginas afetadas
+                <strong>{resumo.falha} verificação(ões) em falha</strong>
+                {!periodoUrl && q.resumo.fontes_com_falha.length > 0 && <> em {q.resumo.fontes_com_falha.join(', ')}</>}. Enquanto durar, as páginas afetadas
                 exibem o selo de qualidade sobre o número — o dado não é escondido, mas
                 também não é apresentado como se estivesse conferido.
               </div>
             )}
 
             <Card pad={0}>
-              {q.itens.length === 0 ? (
+              {itens.length === 0 ? (
                 <div style={{ padding: 16, fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
                   {q.observacao ?? 'Nenhuma verificação com os filtros escolhidos.'}
                 </div>
@@ -1060,7 +1089,7 @@ function QualidadeTab() {
                       </tr>
                     </thead>
                     <tbody>
-                      {q.itens.map((c) => (
+                      {itens.map((c) => (
                         <tr key={c.id} data-testid="check-linha" style={{ borderTop: `1px solid ${colors.rowBorder}` }}>
                           <td style={{ padding: '6px 10px' }}><SeloStatus status={c.status} /></td>
                           <td style={{ padding: '6px 10px' }}>
@@ -1086,12 +1115,13 @@ function QualidadeTab() {
                 </div>
               )}
               <div style={{ padding: '8px 12px', fontSize: 11, color: colors.faint, lineHeight: 1.5 }}>
-                {q.total} verificação(ões) no seu escopo. <strong>aviso</strong> inclui o caso
+                {periodoUrl ? itens.length : q.total} verificação(ões) {periodoUrl ? 'neste período' : 'no seu escopo'}. <strong>aviso</strong> inclui o caso
                 &quot;não deu para verificar&quot; (fonte ausente) — que é diferente de &quot;verificado e correto&quot;.
               </div>
             </Card>
           </>
-        )}
+          );
+        }}
       </Async>
     </div>
   );
@@ -1135,7 +1165,11 @@ function numeroCurto(v: string | number | null | undefined): string {
  * vem o número desta tela?"**. O grafo é o mesmo; muda o sentido da leitura.
  * ========================================================================== */
 function LineageTab() {
-  const [no, setNo] = useState<string>('silver.siconfi_rgf');
+  // Deep-link universal (Sprint D1): ?painel=lineage&no= — antes a aba sempre abria em
+  // silver.siconfi_rgf; agora o FonteChip/FatoRow das páginas fiscais podem linkar direto
+  // ao nó que produziu o número que o gestor está olhando.
+  const [params] = useSearchParams();
+  const [no, setNo] = useState<string>(() => params.get('no') || 'silver.siconfi_rgf');
   const res = useResource(() => fetchLineage(no || undefined), [no]);
 
   return (

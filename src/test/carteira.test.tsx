@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { AppProvider, useApp } from '../context/AppContext';
 import { CarteiraPage } from '../pages/CarteiraPage';
@@ -113,11 +113,19 @@ function Sonda() {
   return <span data-testid="ente">{ente.nome}</span>;
 }
 
+/** Sprint D1: para conferir que a navegação para o Cockpit leva o indicador de origem
+ * (?deCarteira=&uf=), sem depender de uma rota `/dashboard` de verdade neste teste. */
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{location.pathname}{location.search}</span>;
+}
+
 function renderCarteira(initialEntries = ['/carteira']) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
       <AppProvider>
         <Sonda />
+        <LocationProbe />
         <CarteiraPage />
       </AppProvider>
     </MemoryRouter>,
@@ -152,6 +160,39 @@ describe('Consolidado UF', () => {
     const alvo = await screen.findByText('Juazeiro do Norte');
     await userEvent.click(alvo);
     await waitFor(() => expect(screen.getByTestId('ente')).toHaveTextContent('Juazeiro do Norte'));
+  });
+
+  it('preserva o indicador do ranking na navegação para o Cockpit (Sprint D1)', async () => {
+    renderCarteira();
+    // Troca o indicador do ranking para Dívida antes de clicar num ente.
+    await userEvent.click(await screen.findByRole('button', { name: 'Dívida (DCL)' }));
+    await waitFor(() =>
+      expect(backend.fetchUfRanking).toHaveBeenLastCalledWith(
+        '23',
+        expect.objectContaining({ indicador: 'divida_consolidada_liquida' }),
+      ),
+    );
+    const alvo = await screen.findByText('Juazeiro do Norte');
+    await userEvent.click(alvo);
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/dashboard?deCarteira=divida_consolidada_liquida&uf=23',
+      ),
+    );
+  });
+
+  it('abre o ranking já no indicador do deep-link ?indicador= (voltar ao ranking)', async () => {
+    renderCarteira(['/carteira?indicador=divida_consolidada_liquida']);
+    await waitFor(() =>
+      expect(backend.fetchUfRanking).toHaveBeenCalledWith(
+        '23',
+        expect.objectContaining({ indicador: 'divida_consolidada_liquida' }),
+      ),
+    );
+    expect(await screen.findByRole('button', { name: 'Dívida (DCL)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 });
 

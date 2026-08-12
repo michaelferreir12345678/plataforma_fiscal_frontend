@@ -7,6 +7,7 @@
  * defasagem. Ausência de fonte aparece como ausência, nunca como número solto.
  */
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { colors, font } from '../theme';
 import type { SourceRef } from '../services/backend';
 
@@ -18,6 +19,27 @@ export interface FonteChipProps {
   /** Complemento curto (ex.: "conciliação FPM/FUNDEB"). */
   nota?: ReactNode;
 }
+
+/**
+ * `source.relatorio` → nó `silver.*` do grafo de lineage (Sprint D1).
+ *
+ * O grafo (`quality/lineage_seed.py`) nomeia os nós pela fonte silver, não pelo rótulo do
+ * relatório que a UI mostra — esta é a tradução para o deep-link `?painel=lineage&no=`.
+ * Só os relatórios com nó confirmado no grafo entram aqui: um mapeamento errado levaria a
+ * um 404 na Central de Dados em vez de simplesmente não mostrar o link.
+ */
+const RELATORIO_PARA_NO_LINEAGE: Record<string, string> = {
+  RREO: 'silver.siconfi_rreo',
+  RGF: 'silver.siconfi_rgf',
+  DCA: 'silver.siconfi_dca',
+  MSC: 'silver.siconfi_msc',
+  SADIPEM: 'silver.sadipem_pvl',
+  CAPAG: 'silver.tesouro_capag',
+  SIOPS: 'silver.siops_saude',
+  SIOPE: 'silver.siope_educacao',
+  'FUNDEB-FNDE': 'silver.fnde_fundeb_repasse',
+  'SICONFI-ENTES': 'silver.siconfi_entes',
+};
 
 export function descreverFonte(source?: SourceRef | null): string {
   if (!source) return 'fonte não informada';
@@ -34,6 +56,7 @@ export function descreverFonte(source?: SourceRef | null): string {
 export function FonteChip({ source, asOf, ultimoPeriodo, nota }: FonteChipProps) {
   const periodo = source?.periodo ?? null;
   const defasado = Boolean(ultimoPeriodo && periodo && ultimoPeriodo !== periodo);
+  const noLineage = source?.relatorio ? RELATORIO_PARA_NO_LINEAGE[source.relatorio] : undefined;
 
   return (
     <div
@@ -51,6 +74,15 @@ export function FonteChip({ source, asOf, ultimoPeriodo, nota }: FonteChipProps)
       <span title="Relatório · anexo · período · versão de entrega">{descreverFonte(source)}</span>
       {asOf && <span title="Consulta bitemporal (as of)">· as_of {asOf}</span>}
       {nota && <span>· {nota}</span>}
+      {noLineage && (
+        <Link
+          to={`/central-dados?painel=lineage&no=${encodeURIComponent(noLineage)}`}
+          style={{ color: colors.primary }}
+          title="De onde vem este número, e o que quebra se a fonte falhar"
+        >
+          · ver linhagem
+        </Link>
+      )}
       {defasado && (
         <span
           data-testid="selo-defasado"

@@ -9,7 +9,9 @@
  * Linguagem sóbria: a severidade vem da faixa legal devolvida pelo backend, nunca de
  * adjetivo escolhido na UI. Onde não há base, a tela diz que não há — nunca mostra zero.
  */
+import { Link, useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
+import { Breadcrumb } from '../components/Breadcrumb';
 import { Card } from '../components/Card';
 import { Async, ContextoIndisponivel } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
@@ -27,7 +29,29 @@ import type {
   RiscoItem,
   TendenciaItem,
 } from '../services/backend';
-import { rotuloFaixa, rotuloModelo } from '../utils/rotulos';
+import { rotuloFaixa, rotuloIndicador, rotuloModelo } from '../utils/rotulos';
+
+/**
+ * Crosslinks do Cockpit para a página de detalhe (Sprint D1) — até esta sprint só a
+ * seção 6 (Riscos) linkava para algum lugar; Críticos, Tendências e Explicadores eram
+ * um beco sem saída, mesmo cada um apontando para uma página que já existe e já sabe
+ * abrir no contexto certo.
+ */
+/** `TendenciaItem.indicador` usa as chaves do catálogo de previsão ('pessoal'/'divida'/
+ * 'rcl' — `cockpit_service.py::_INDICADORES_TENDENCIA`), as mesmas que `ForecastIndicador`
+ * aceita em `/previsoes?indicador=`. */
+const linkTendencia = (indicador: string) => `/previsoes?indicador=${encodeURIComponent(indicador)}`;
+/** `CriticoItem.indicador` vem direto de `limits_service.build_limites` — o mesmo código
+ * que `/limites` já lista, e que o painel expansível (Sprint D1) sabe abrir via `?indicador=`. */
+const linkCritico = (indicador: string) => `/limites?indicador=${encodeURIComponent(indicador)}`;
+/** `ExplicadorItem.dimensao` é interno ao cockpit (`cockpit_service.py`: "receita_origem",
+ * "despesa_funcao", "pessoal_poder") — só os três com página de detalhe confirmada entram
+ * aqui; um mapeamento errado levaria a uma rota inexistente em vez de simplesmente calar. */
+const DIMENSAO_PARA_ROTA: Record<string, string> = {
+  receita_origem: '/receita',
+  despesa_funcao: '/despesa',
+  pessoal_poder: '/pessoal',
+};
 
 const COR: Record<string, string> = {
   verde: colors.green,
@@ -106,6 +130,12 @@ function Fonte({
 
 export function CockpitPage() {
   const { ente, periodo, carregandoContexto, contextoIndisponivel } = useApp();
+  // Sprint D1: quando o gestor chega aqui a partir de um ranking da Carteira
+  // (?deCarteira=<indicador>&uf=<sigla>), oferece o caminho de volta — sem isso, trocar de
+  // ente no ranking era beco sem saída: não havia como voltar para o mesmo ranking depois.
+  const [params] = useSearchParams();
+  const deCarteiraIndicador = params.get('deCarteira');
+  const deCarteiraUf = params.get('uf') ?? ente.cod_ibge.slice(0, 2);
   const res = useResource(
     () => fetchCockpit(ente.cod_ibge, periodo),
     [ente.cod_ibge, periodo],
@@ -131,13 +161,25 @@ export function CockpitPage() {
         title="Cockpit Executivo"
         context={`${ente.nome} · ${periodo || 'sem período selecionado'} · síntese fiscal para decisão`}
         source="RREO, RGF e indicadores gold · SICONFI"
+        breadcrumb={
+          deCarteiraIndicador ? (
+            <Breadcrumb
+              crumbs={[
+                {
+                  label: `← voltar ao ranking de ${rotuloIndicador(deCarteiraIndicador)} — UF ${deCarteiraUf}`,
+                  to: `/carteira?indicador=${encodeURIComponent(deCarteiraIndicador)}`,
+                },
+              ]}
+            />
+          ) : undefined
+        }
       />
       <Async res={res}>
         {(c) => (
           <>
             {/* Sprint 26: o selo vem antes de tudo — se um número desta tela está sob
                 verificação em falha, o gestor precisa ler isso antes do número. */}
-            <SeloQualidade checks={c.qualidade.checks_abertos} />
+            <SeloQualidade checks={c.qualidade.checks_abertos} ente={ente.cod_ibge} periodo={periodo} />
 
             {/* Export da leitura do cockpit — a mesma foto que a tela mostra. */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -343,6 +385,9 @@ function CardCritico({ k, asOf }: { k: CriticoItem; asOf?: string | null }) {
       <div style={{ alignSelf: 'flex-start' }}>
         <Fonte relatorio={k.source_ref?.relatorio} anexo={k.source_ref?.anexo} periodo={k.source_ref?.periodo} versao={k.source_ref?.versao_entrega} asOf={asOf} />
       </div>
+      <Link to={linkCritico(k.indicador)} style={{ alignSelf: 'flex-start', fontSize: 11, color: colors.primary }}>
+        ver memória, série e simular →
+      </Link>
     </Card>
   );
 }
@@ -406,6 +451,9 @@ function CardTendencia({ t, asOf }: { t: TendenciaItem; asOf?: string | null }) 
         <div style={{ fontSize: 11, color: colors.muted }}>Não cruza o limite no horizonte projetado.</div>
       )}
       <Fonte relatorio={t.source_ref?.relatorio} anexo={t.source_ref?.anexo} periodo={t.source_ref?.periodo} versao={t.source_ref?.versao_entrega} asOf={asOf} />
+      <Link to={linkTendencia(t.indicador)} style={{ fontSize: 11, color: colors.primary }}>
+        abrir em Previsões & Cenários →
+      </Link>
     </Card>
   );
 }
@@ -462,6 +510,11 @@ function CardExplicador({ e, asOf }: { e: ExplicadorItem; asOf?: string | null }
         </>
       )}
       <Fonte relatorio={e.source_ref?.relatorio} anexo={e.source_ref?.anexo} periodo={e.source_ref?.periodo} versao={e.source_ref?.versao_entrega} asOf={asOf} />
+      {DIMENSAO_PARA_ROTA[e.dimensao] && (
+        <Link to={DIMENSAO_PARA_ROTA[e.dimensao]} style={{ fontSize: 11, color: colors.primary }}>
+          ver o detalhe completo →
+        </Link>
+      )}
     </Card>
   );
 }

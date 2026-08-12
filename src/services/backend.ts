@@ -396,6 +396,37 @@ export interface LimitesResponse {
   source_ref: SourceRef;
 }
 
+/** Providência legal (base normativa) para a faixa vigente — dado, não decisão (§9). */
+export interface ProvidenciaLimite {
+  faixa: string;
+  texto: string;
+  base_legal: string | null;
+}
+export interface SerieLimiteItem {
+  periodo: string;
+  valor_pct_rcl: FiscalDecimal | null;
+  faixa: string | null;
+  valor_rs: FiscalDecimal | null;
+}
+/** Painel expansível de `/limites` (Sprint D1): memória, providências e série sem sair da página. */
+export interface LimiteDetail {
+  cod_ibge: string;
+  periodo: string;
+  as_of: string | null;
+  indicador: string;
+  esfera: string;
+  faixa: string | null;
+  valor_rs: FiscalDecimal | null;
+  valor_pct_rcl: FiscalDecimal | null;
+  /** `null` = indicador sem limite legal (gerencial). Zero significaria teto igual a zero. */
+  teto_pct: FiscalDecimal | null;
+  memoria: Record<string, unknown> | null;
+  providencias: ProvidenciaLimite[];
+  serie_historica: SerieLimiteItem[];
+  periodo_breadcrumb: DrillNodeRef[];
+  source_ref: SourceRef;
+}
+
 export interface PoderItem {
   poder_codigo: string;
   descricao: string;
@@ -780,6 +811,17 @@ export const fetchDashboard = (ibge: string, periodo: string) =>
 
 export const fetchLimites = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<LimitesResponse>(`/entes/${ibge}/limites`, { periodo, as_of: asOf });
+
+/**
+ * Painel expansível de `/limites` (Sprint D1): memória de cálculo, providências (base
+ * legal por faixa) e série histórica de um único indicador — sem sair da página.
+ */
+export const fetchLimiteDetail = (
+  ibge: string,
+  indicador: string,
+  periodo: string,
+  asOf?: string | null,
+) => apiGet<LimiteDetail>(`/entes/${ibge}/limites/${indicador}`, { periodo, as_of: asOf });
 
 export const fetchPessoalPorPoder = (ibge: string, periodo: string, asOf?: string | null) =>
   apiGet<PorPoderOut>(`/entes/${ibge}/pessoal/por-poder`, { periodo, as_of: asOf });

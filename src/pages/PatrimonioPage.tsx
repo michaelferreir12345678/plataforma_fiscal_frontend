@@ -600,7 +600,11 @@ function ComparacaoAnual({ cod, enteNome }: { cod: string; enteNome: string }) {
                     periodo: c.anos.length ? `${c.anos[0]}-${c.anos[c.anos.length - 1]}` : '—',
                     fonte: c.anexo ?? 'DCA',
                   }}
-                  modeloRelatorio="patrimonio"
+                  // "patrimonio" não existe em reports/models.py::MODELOS — o link caía
+                  // sempre em "Resumo Executivo" sem avisar (Sprint D1). Nenhum dos 5
+                  // modelos tem seção de patrimônio/MSC; "executivo" é o catch-all
+                  // explícito (era o fallback implícito de qualquer forma).
+                  modeloRelatorio="executivo"
                 />
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -711,7 +715,11 @@ function Balancos({
                     { cabecalho: 'nivel', valor: (l) => l.nivel },
                   ]}
                   contexto={{ ente: enteNome, periodo: String(ano), fonte: `DCA ${b.anexo ?? ''} v${b.versao_entrega}` }}
-                  modeloRelatorio="patrimonio"
+                  // "patrimonio" não existe em reports/models.py::MODELOS — o link caía
+                  // sempre em "Resumo Executivo" sem avisar (Sprint D1). Nenhum dos 5
+                  // modelos tem seção de patrimônio/MSC; "executivo" é o catch-all
+                  // explícito (era o fallback implícito de qualquer forma).
+                  modeloRelatorio="executivo"
                 />
               </div>
             </div>

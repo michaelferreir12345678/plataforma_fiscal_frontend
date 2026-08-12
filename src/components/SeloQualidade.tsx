@@ -17,12 +17,26 @@ import { colors, font } from '../theme';
 import { useApp, useResource } from '../context/AppContext';
 import { fetchCockpit, type ChecagemAberta } from '../services/backend';
 
-export function SeloQualidade({ checks }: { checks: ChecagemAberta[] | undefined | null }) {
+export function SeloQualidade({
+  checks,
+  ente,
+  periodo,
+}: {
+  checks: ChecagemAberta[] | undefined | null;
+  /** Ente/período da tela — Sprint D1: o link "ver a conta que não fechou" chega na
+   * Central de Dados já filtrado, em vez de o gestor procurar de novo no escopo inteiro. */
+  ente?: string | null;
+  periodo?: string | null;
+}) {
   const abertos = checks ?? [];
   const falhas = abertos.filter((c) => c.status === 'falha');
   // Aviso sozinho (ex.: fonte não ingerida) não sela o número: não há divergência
   // apurada, e alarmar por ausência treinaria o gestor a ignorar o selo.
   if (falhas.length === 0) return null;
+
+  const destino = new URLSearchParams({ painel: 'qualidade' });
+  if (ente) destino.set('ente', ente);
+  if (periodo) destino.set('periodo', periodo);
 
   return (
     <div
@@ -53,7 +67,7 @@ export function SeloQualidade({ checks }: { checks: ChecagemAberta[] | undefined
             {'; '}
           </span>
         ))}
-        <Link to="/central-dados?painel=qualidade" style={{ color: colors.primary, fontWeight: 600 }}>
+        <Link to={`/central-dados?${destino.toString()}`} style={{ color: colors.primary, fontWeight: 600 }}>
           ver a conta que não fechou
         </Link>
         .
@@ -99,5 +113,5 @@ export function SeloQualidadePagina({ periodo: periodoProp }: { periodo?: string
     );
   }
   if (!res.data) return null;
-  return <SeloQualidade checks={res.data.qualidade.checks_abertos} />;
+  return <SeloQualidade checks={res.data.qualidade.checks_abertos} ente={ente.cod_ibge} periodo={periodo} />;
 }

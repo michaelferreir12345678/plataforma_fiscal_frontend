@@ -99,9 +99,12 @@ export function CarteiraPage() {
   const uf = ente.cod_ibge.slice(0, 2);
 
   // Trocar o ente do contexto e abrir o cockpit — o drill do território para o ente.
-  const abrirEnte = (e: EnteSel) => {
+  // Sprint D1: quando o clique vem de um ranking por indicador, o indicador viaja na URL
+  // — sem isso o Cockpit não tem como oferecer "voltar ao ranking de X" e o gestor perdia
+  // o indicador que estava comparando ao trocar de ente.
+  const abrirEnte = (e: EnteSel, indicador?: string) => {
     setEnte(e);
-    navigate('/dashboard');
+    navigate(indicador ? `/dashboard?deCarteira=${encodeURIComponent(indicador)}&uf=${uf}` : '/dashboard');
   };
 
   return (
@@ -124,7 +127,12 @@ export function CarteiraPage() {
             Selecione um período com dado no seletor do topo para ver o consolidado.
           </Card>
         ) : aba === 'consolidado' ? (
-          <ConsolidadoTab uf={uf} periodo={periodo} onEscolherEnte={abrirEnte} />
+          <ConsolidadoTab
+            uf={uf}
+            periodo={periodo}
+            onEscolherEnte={abrirEnte}
+            indicadorInicial={searchParams.get('indicador')}
+          />
         ) : aba === 'estadual' ? (
           <EnteEstadualTab uf={uf} periodo={periodo} onEscolherEnte={abrirEnte} />
         ) : aba === 'carteira' ? (
@@ -157,11 +165,20 @@ function TabBar({ aba, setAba }: { aba: Aba; setAba: (a: Aba) => void }) {
 
 // ============================ Consolidado UF ============================
 function ConsolidadoTab({
-  uf, periodo, onEscolherEnte,
+  uf, periodo, onEscolherEnte, indicadorInicial,
 }: {
-  uf: string; periodo: string; onEscolherEnte: (e: EnteSel) => void;
+  uf: string;
+  periodo: string;
+  onEscolherEnte: (e: EnteSel, indicador?: string) => void;
+  /** `?indicador=` do deep-link "voltar ao ranking" (Sprint D1) — restaura a seleção que
+   * o gestor tinha antes de abrir um ente, em vez de sempre reiniciar em Pessoal. */
+  indicadorInicial?: string | null;
 }) {
-  const [indicador, setIndicador] = useState('pessoal_executivo');
+  const [indicador, setIndicador] = useState(() =>
+    indicadorInicial && INDICADORES.some((i) => i.codigo === indicadorInicial)
+      ? indicadorInicial
+      : 'pessoal_executivo',
+  );
   const consolidado = useResource(() => fetchConsolidadoUf(uf, periodo), [uf, periodo]);
   const malha = useResource(() => fetchMalha(uf), [uf]);
   const mapa = useResource(() => fetchUfMapa(uf, indicador, periodo), [uf, indicador, periodo]);
@@ -237,7 +254,7 @@ function ConsolidadoTab({
             <Async res={malha}>
               {(m) => (
                 <Async res={mapa}>
-                  {(mp) => <Choropleth malha={m} mapa={mp} onClickEnte={onEscolherEnte} />}
+                  {(mp) => <Choropleth malha={m} mapa={mp} onClickEnte={(e) => onEscolherEnte(e, indicador)} />}
                 </Async>
               )}
             </Async>
@@ -293,7 +310,13 @@ function ConsolidadoTab({
           )}
         </div>
         <Async res={ranking}>
-          {(r) => <RankingLista itens={r.itens} tipoRatio={r.unidade === 'PCT_RCL'} onEscolherEnte={onEscolherEnte} />}
+          {(r) => (
+            <RankingLista
+              itens={r.itens}
+              tipoRatio={r.unidade === 'PCT_RCL'}
+              onEscolherEnte={(e) => onEscolherEnte(e, indicador)}
+            />
+          )}
         </Async>
       </Card>
     </div>

@@ -311,7 +311,12 @@ function EvolucaoCoorte({
                   periodo: `${e.pontos[0].periodo}-${e.pontos[e.pontos.length - 1].periodo}`,
                   fonte: `${rotuloUnidade(e.unidade)} · coorte ${e.coorte.rotulo}`,
                 }}
-                modeloRelatorio="benchmark"
+                // "benchmark" não existe em reports/models.py::MODELOS (executivo | limites |
+                // comparativo | conformidade | boletim) — o link caía sempre em "Resumo
+                // Executivo" sem avisar (Sprint D1: modelo certo é "Comparativo / Benchmark",
+                // que já existe e descreve exatamente esta tela: "Posição, percentil e
+                // ranking nas coortes materializadas").
+                modeloRelatorio="comparativo"
               />
             </div>
           </>

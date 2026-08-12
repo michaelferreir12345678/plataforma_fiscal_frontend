@@ -13,6 +13,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AppProvider } from '../context/AppContext';
 import { CentralDadosPage } from '../pages/CentralDadosPage';
 import { RelatoriosPage } from '../pages/RelatoriosPage';
+import { FonteChip } from '../components/FonteChip';
 import { SeloQualidade } from '../components/SeloQualidade';
 import { SeletorEnte } from '../layouts/ContextSelectors';
 import * as backend from '../services/backend';
@@ -65,7 +66,7 @@ const checkAviso: backend.CheckQualidade = {
 };
 
 function mockQualidade(itens: backend.CheckQualidade[] = [checkFalha, checkAviso]) {
-  vi.spyOn(backend, 'fetchQualidade').mockResolvedValue({
+  const fetchQualidade = vi.spyOn(backend, 'fetchQualidade').mockResolvedValue({
     gerado_em: '2026-07-28T12:00:00Z',
     resumo: {
       total: itens.length,
@@ -81,7 +82,7 @@ function mockQualidade(itens: backend.CheckQualidade[] = [checkFalha, checkAviso
     por_pagina: 100,
     observacao: itens.length === 0 ? 'Nenhum check executado ainda no seu escopo.' : null,
   } as never);
-  vi.spyOn(backend, 'fetchLineage').mockResolvedValue({
+  const fetchLineage = vi.spyOn(backend, 'fetchLineage').mockResolvedValue({
     no: 'silver.siconfi_rgf',
     camada: 'silver',
     montante: [
@@ -107,6 +108,7 @@ function mockQualidade(itens: backend.CheckQualidade[] = [checkFalha, checkAviso
   vi.spyOn(backend, 'fetchFontes').mockResolvedValue({ itens: [] } as never);
   vi.spyOn(backend, 'fetchCobertura').mockResolvedValue({ itens: [] } as never);
   vi.spyOn(backend, 'fetchRetificacoes').mockResolvedValue({ itens: [] } as never);
+  return { fetchQualidade, fetchLineage };
 }
 
 function renderCentral(rota = '/central-dados') {
@@ -181,6 +183,33 @@ describe('Central de Dados — Lineage (Sprint 26)', () => {
   });
 });
 
+describe('Central de Dados — deep-link universal (Sprint D1)', () => {
+  it('Lineage abre no nó pedido pelo link (?no=), não sempre no mesmo nó fixo', async () => {
+    mockSessao();
+    const { fetchLineage } = mockQualidade();
+    renderCentral('/central-dados?painel=lineage&no=gold.fato_pessoal');
+    await waitFor(() => expect(fetchLineage).toHaveBeenCalledWith('gold.fato_pessoal'));
+  });
+
+  it('Qualidade filtra por ente e período quando chega via deep-link', async () => {
+    mockSessao();
+    const { fetchQualidade } = mockQualidade([
+      checkFalha, // periodo 2024-B6
+      { ...checkAviso, id: 'c3', periodo: '2024-B4', rotulo: 'Verificação de outro período' },
+    ]);
+    renderCentral('/central-dados?painel=qualidade&ente=2304400&periodo=2024-B6');
+    await waitFor(() =>
+      expect(fetchQualidade).toHaveBeenCalledWith(
+        expect.objectContaining({ ente: '2304400' }),
+      ),
+    );
+    expect(await screen.findByText('RCL calculada = RCL publicada (A3)')).toBeInTheDocument();
+    // O período 2024-B4 existe na resposta mas não bate com o deep-link — some da tabela.
+    expect(screen.queryByText('Verificação de outro período')).not.toBeInTheDocument();
+    expect(screen.getByText(/filtrado por período/)).toBeInTheDocument();
+  });
+});
+
 describe('Selo de qualidade nas páginas fiscais (Sprint 26)', () => {
   const aberto = (status: 'falha' | 'aviso'): backend.ChecagemAberta => ({
     check_codigo: 'rcl_calculada_vs_publicada',
@@ -204,6 +233,18 @@ describe('Selo de qualidade nas páginas fiscais (Sprint 26)', () => {
     expect(screen.getByRole('link', { name: /ver a conta que não fechou/ })).toHaveAttribute(
       'href',
       '/central-dados?painel=qualidade',
+    );
+  });
+
+  it('leva já filtrado por ente/período quando a página os informa (Sprint D1)', () => {
+    render(
+      <MemoryRouter>
+        <SeloQualidade checks={[aberto('falha')]} ente="2304400" periodo="2024-B6" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: /ver a conta que não fechou/ })).toHaveAttribute(
+      'href',
+      '/central-dados?painel=qualidade&ente=2304400&periodo=2024-B6',
     );
   });
 
@@ -311,5 +352,37 @@ describe('Correções herdadas (Sprint 26)', () => {
     await waitFor(() =>
       expect(screen.getByText(/1 ente\(s\) selecionado\(s\) de 185/)).toBeInTheDocument(),
     );
+  });
+});
+
+describe('FonteChip — deep-link para a linhagem (Sprint D1)', () => {
+  it('linka para o nó silver correto de um relatório conhecido', () => {
+    render(
+      <MemoryRouter>
+        <FonteChip source={{ relatorio: 'RGF', anexo: 'Anexo 02 — DDCL', periodo: '2024-Q3', versao_entrega: '1' }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: /ver linhagem/ })).toHaveAttribute(
+      'href',
+      '/central-dados?painel=lineage&no=silver.siconfi_rgf',
+    );
+  });
+
+  it('não mostra o link quando o relatório não tem nó confirmado no grafo', () => {
+    render(
+      <MemoryRouter>
+        <FonteChip source={{ relatorio: 'DIM_LIMITE_LEGAL', periodo: '2024-B6', versao_entrega: '1' }} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: /ver linhagem/ })).not.toBeInTheDocument();
+  });
+
+  it('não quebra sem source (fonte ausente continua ausência, não erro)', () => {
+    render(
+      <MemoryRouter>
+        <FonteChip source={null} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: /ver linhagem/ })).not.toBeInTheDocument();
   });
 });

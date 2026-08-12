@@ -3272,6 +3272,9 @@ export interface IntegracaoOut {
 export interface AuditoriaItem {
   id: string;
   usuario_id: string | null;
+  /** Autor da ação (join com op.usuario — Sprint H1). `null` quando não há autor humano. */
+  usuario_nome?: string | null;
+  usuario_email?: string | null;
   acao: string;
   recurso: string;
   ts: string;
@@ -3311,6 +3314,9 @@ export const fetchIntegracoes = () => apiGet<IntegracaoOut[]>('/admin/integracoe
 export const fetchAuditoria = (params?: {
   acao?: string;
   q?: string;
+  usuario_id?: string;
+  de?: string;
+  ate?: string;
   limit?: number;
   offset?: number;
 }) => apiGet<AuditoriaPage>('/admin/auditoria', params);
@@ -3746,6 +3752,8 @@ export interface ProvisionamentoOut {
   admin_email: string;
   papel_admin_id: string;
   licencas: Licenca[];
+  /** `null` quando o formulário não informou métrica/preço — a org nasce sem billing. */
+  assinatura: AssinaturaOut | null;
 }
 
 export const fetchPlatformOrgs = () => apiGet<OrgUso[]>('/platform/orgs');
@@ -3767,12 +3775,92 @@ export const alterarLicenca = (
 export const provisionarOrg = (body: {
   nome: string;
   tipo_conta: string;
-  metrica_cobranca?: string | null;
+  metrica_cobranca?: MetricaCobranca | null;
+  preco_unitario?: FiscalDecimal | null;
   admin_email: string;
   admin_nome: string;
   admin_senha: string;
   licencas?: LicencaCreate[];
 }) => apiPost<ProvisionamentoOut, typeof body>('/platform/orgs', body);
+
+// --- Assinatura via control plane (Sprint H1) --------------------------------
+// POST/PATCH /platform/orgs/{id}/assinatura — só o operador da plataforma fixa
+// métrica/preço; emitir_fatura calcula valor_total > 0 só depois disso existir.
+export const definirAssinatura = (
+  orgId: string,
+  body: {
+    plano?: string;
+    metrica_cobranca: MetricaCobranca;
+    preco_unitario?: FiscalDecimal;
+    moeda?: string;
+    ciclo?: 'mensal' | 'anual';
+    status?: 'ativa' | 'suspensa' | 'cancelada';
+    inicio_vigencia?: string | null;
+    fim_vigencia?: string | null;
+  },
+) => apiPost<AssinaturaOut, typeof body>(`/platform/orgs/${orgId}/assinatura`, body);
+
+export const alterarAssinatura = (
+  orgId: string,
+  body: Partial<{
+    plano: string;
+    metrica_cobranca: MetricaCobranca;
+    preco_unitario: FiscalDecimal;
+    moeda: string;
+    ciclo: 'mensal' | 'anual';
+    status: 'ativa' | 'suspensa' | 'cancelada';
+    inicio_vigencia: string | null;
+    fim_vigencia: string | null;
+  }>,
+) => apiPatch<AssinaturaOut, typeof body>(`/platform/orgs/${orgId}/assinatura`, body);
+
+// --- Auditoria própria do control plane (Sprint H1) --------------------------
+// O superusuário nunca tem org_id de sessão e por isso nunca poderia usar
+// GET /admin/auditoria (que filtra pelo org_id do principal).
+export interface AuditoriaPlataformaItem {
+  id: string;
+  org_id: string | null;
+  org_nome: string | null;
+  usuario_id: string | null;
+  usuario_nome: string | null;
+  usuario_email: string | null;
+  acao: string;
+  recurso: string;
+  ts: string;
+}
+export interface AuditoriaPlataformaPage {
+  itens: AuditoriaPlataformaItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+export const fetchAuditoriaPlataforma = (params?: {
+  org_id?: string;
+  acao?: string;
+  q?: string;
+  usuario_id?: string;
+  de?: string;
+  ate?: string;
+  limit?: number;
+  offset?: number;
+}) => apiGet<AuditoriaPlataformaPage>('/platform/auditoria', params);
+
+// --- Licença, do ponto de vista do tenant (Sprint H1) ------------------------
+// Hoje só se descobre por um 403 ao tentar adicionar um ente fora da licença à
+// carteira. GET /me/licencas devolve o mesmo `vigente` que o control plane vê —
+// sem org_id/criada_em: essa projeção é só o que a própria organização precisa saber.
+export interface MinhaLicenca {
+  id: string;
+  tipo: TipoLicenca;
+  cod_ibge: string | null;
+  uf: string | null;
+  vigencia_inicio: string;
+  vigencia_fim: string | null;
+  status: StatusLicenca;
+  vigente: boolean;
+  observacao: string | null;
+}
+export const fetchMinhasLicencas = () => apiGet<MinhaLicenca[]>('/me/licencas');
 
 // --- Perfil e organização ativa ---------------------------------------------
 // Trocar de organização **reautentica**: muda tudo o que a sessão enxerga, então o

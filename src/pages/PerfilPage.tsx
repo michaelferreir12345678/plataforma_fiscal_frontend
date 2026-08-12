@@ -2,17 +2,33 @@ import { useCallback, useId, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
 import { SectionLabel } from '../components/SectionLabel';
-import { Async } from '../components/AsyncState';
+import { Async, EmptyState } from '../components/AsyncState';
+import { StatusBadge } from '../components/StatusBadge';
 import { useResource } from '../context/AppContext';
 import { setToken } from '../services/api';
 import {
   alterarSenha,
   atualizarPerfil,
   fetchMe,
+  fetchMinhasLicencas,
   trocarOrganizacao,
   type MembershipInfo,
+  type MinhaLicenca,
 } from '../services/backend';
+import { labelDaLicenca, nivelDaLicenca } from '../utils/licenca';
 import { colors, font, typeScale } from '../theme';
+
+const TIPO_LICENCA_ROTULO: Record<MinhaLicenca['tipo'], string> = {
+  ente: 'Ente',
+  uf: 'Território (UF)',
+  global: 'Global',
+};
+
+function alvoDaMinhaLicenca(l: MinhaLicenca): string {
+  if (l.tipo === 'ente') return l.cod_ibge ?? '—';
+  if (l.tipo === 'uf') return `UF ${l.uf}`;
+  return 'todos os entes';
+}
 
 const campo = {
   padding: '7px 9px',
@@ -64,6 +80,7 @@ export function PerfilPage() {
               vinculos={dados.memberships}
               onTrocou={() => setVersao((n) => n + 1)}
             />
+            {dados.org_ativa && <MinhaLicenca />}
             <TrocaDeSenha />
           </>
         )}
@@ -332,6 +349,80 @@ function Organizacoes({
           {msg.texto}
         </div>
       )}
+    </Card>
+  );
+}
+
+/**
+ * A licença da própria organização (Sprint H1) — hoje o tenant só descobre o estado
+ * dela por um 403 ao tentar adicionar um ente fora da cobertura à carteira. O rótulo e
+ * a cor vêm do mesmo helper que o control plane usa (`utils/licenca.ts`), para que as
+ * duas telas nunca digam coisas diferentes sobre a mesma licença.
+ */
+function MinhaLicenca() {
+  const licencas = useResource(() => fetchMinhasLicencas(), []);
+
+  return (
+    <Card pad={14}>
+      <SectionLabel note="a mesma licença que o operador da plataforma vê — sem precisar de um erro para descobrir">
+        Minha licença
+      </SectionLabel>
+      <Async
+        res={licencas}
+        vazio={{
+          quando: (lista) => lista.length === 0,
+          render: (
+            <EmptyState
+              ente="sua organização"
+              periodo="sem licença"
+              detalhe="Sem licença ativa, a organização não enxerga ente nenhum — nem os que estiverem na carteira. Fale com o operador da plataforma."
+            />
+          ),
+        }}
+      >
+        {(lista) => (
+          <div style={{ width: '100%', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {['Tipo', 'Alvo', 'Vigência', 'Situação'].map((h) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      style={{
+                        padding: '7px 8px',
+                        textAlign: 'left',
+                        borderBottom: `1px solid ${colors.border}`,
+                        color: colors.faint,
+                        fontSize: typeScale.caption,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map((l) => (
+                  <tr key={l.id} style={{ borderBottom: `1px solid ${colors.rowBorder}` }}>
+                    <td style={{ padding: '7px 8px' }}>{TIPO_LICENCA_ROTULO[l.tipo]}</td>
+                    <td style={{ padding: '7px 8px', fontFamily: font.mono }}>
+                      {alvoDaMinhaLicenca(l)}
+                    </td>
+                    <td style={{ padding: '7px 8px', fontFamily: font.mono, color: colors.muted }}>
+                      {l.vigencia_fim ? `${l.vigencia_inicio} → ${l.vigencia_fim}` : `${l.vigencia_inicio} → sem prazo`}
+                    </td>
+                    <td style={{ padding: '7px 8px' }}>
+                      <StatusBadge level={nivelDaLicenca(l)} label={labelDaLicenca(l)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Async>
     </Card>
   );
 }

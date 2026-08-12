@@ -278,17 +278,33 @@ function FaturamentoBody({ b, reload }: { b: BillingOverview; reload: () => void
           <div>Competência</div><div>Empenho</div><div>Contrato</div><div style={{ textAlign: 'right' }}>Valor</div><div style={{ textAlign: 'center' }}>Status</div>
         </div>
         {b.faturas.length === 0 && <div style={{ padding: 18, fontSize: 12, color: colors.faint }}>Nenhuma fatura emitida ainda.</div>}
-        {b.faturas.map((f) => (
-          <div key={f.id} style={{ display: 'grid', gridTemplateColumns: '0.8fr 1fr 1fr 1fr 0.7fr', padding: '10px 18px', borderBottom: `1px solid ${colors.rowBorder}`, alignItems: 'center', fontSize: 12 }}>
-            <div style={{ fontFamily: font.mono }}>{f.competencia}</div>
-            <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.empenho_ref || '—'}</div>
-            <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.contrato_ref || '—'}</div>
-            <div style={{ fontFamily: font.mono, textAlign: 'right' }}>{brl(f.valor_total)}</div>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: f.status === 'paga' ? colors.greenBg : colors.yellowBg, color: f.status === 'paga' ? colors.green : colors.yellowText }}>{f.status.toUpperCase()}</span>
+        {b.faturas.map((f) => {
+          // Cobrança por_populacao conta ente sem população cadastrada no IBGE como
+          // zero, silenciosamente — o flag já vem calculado na memória (tenancy/
+          // service.py:_computar_base) e faltava só aparecer na tela (Sprint H1).
+          const entesMemoria = Array.isArray(f.memoria?.entes)
+            ? (f.memoria.entes as Array<{ cod_ibge?: string; sem_populacao?: boolean }>)
+            : [];
+          const semPopulacao = entesMemoria.filter((e) => e.sem_populacao).length;
+          return (
+            <div key={f.id} style={{ borderBottom: `1px solid ${colors.rowBorder}` }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1fr 1fr 1fr 0.7fr', padding: '10px 18px', alignItems: 'center', fontSize: 12 }}>
+                <div style={{ fontFamily: font.mono }}>{f.competencia}</div>
+                <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.empenho_ref || '—'}</div>
+                <div style={{ fontFamily: font.mono, color: colors.muted }}>{f.contrato_ref || '—'}</div>
+                <div style={{ fontFamily: font.mono, textAlign: 'right' }}>{brl(f.valor_total)}</div>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 3, fontWeight: 600, background: f.status === 'paga' ? colors.greenBg : colors.yellowBg, color: f.status === 'paga' ? colors.green : colors.yellowText }}>{f.status.toUpperCase()}</span>
+                </div>
+              </div>
+              {semPopulacao > 0 && (
+                <div style={{ padding: '0 18px 10px', fontSize: 11, color: colors.orange }}>
+                  ⚠ {semPopulacao} ente(s) sem população cadastrada no IBGE — cobrados como zero nesta linha.
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </Card>
     </div>
   );
@@ -349,7 +365,20 @@ function Integracoes() {
 function Auditoria() {
   const [q, setQ] = useState('');
   const [acao, setAcao] = useState('');
-  const res = useResource(() => fetchAuditoria({ q: q || undefined, acao: acao || undefined, limit: 100 }), [q, acao]);
+  const [usuarioId, setUsuarioId] = useState('');
+  const [de, setDe] = useState('');
+  const [ate, setAte] = useState('');
+  const res = useResource(
+    () => fetchAuditoria({
+      q: q || undefined,
+      acao: acao || undefined,
+      usuario_id: usuarioId || undefined,
+      de: de ? new Date(de).toISOString() : undefined,
+      ate: ate ? new Date(ate).toISOString() : undefined,
+      limit: 100,
+    }),
+    [q, acao, usuarioId, de, ate],
+  );
 
   return (
     <Card pad={0} className="fade-in">
@@ -358,9 +387,18 @@ function Auditoria() {
           <div style={{ fontSize: 13, fontWeight: 600 }}>Trilha de auditoria</div>
           <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>toda ação sensível é registrada e atribuível — filtrável</div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <input aria-label="Filtrar auditoria por ação" value={acao} onChange={(e) => setAcao(e.target.value)} placeholder="ação (ex.: EMITIR_FATURA)" style={inp(190)} />
           <input aria-label="Busca livre na auditoria" value={q} onChange={(e) => setQ(e.target.value)} placeholder="busca livre" style={inp(140)} />
+          <input aria-label="Filtrar auditoria por autor (usuario_id)" value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} placeholder="autor (usuario_id)" style={inp(170)} />
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10, color: colors.faint }}>
+            de
+            <input aria-label="Início do período" type="date" value={de} onChange={(e) => setDe(e.target.value)} style={inp(130)} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10, color: colors.faint }}>
+            até
+            <input aria-label="Fim do período" type="date" value={ate} onChange={(e) => setAte(e.target.value)} style={inp(130)} />
+          </label>
         </div>
       </div>
       <Async res={res}>
@@ -375,6 +413,9 @@ function Auditoria() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontFamily: font.mono, wordBreak: 'break-word' }}>{a.recurso}</div>
+                  <div style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>
+                    {a.usuario_nome ? `${a.usuario_nome}${a.usuario_email ? ` · ${a.usuario_email}` : ''}` : 'autor não identificado'}
+                  </div>
                   <div style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono, marginTop: 3 }}>{new Date(a.ts).toLocaleString('pt-BR')}</div>
                 </div>
                 <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 3, fontWeight: 600, background: colors.accentSoft, color: colors.primary, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{a.acao}</span>

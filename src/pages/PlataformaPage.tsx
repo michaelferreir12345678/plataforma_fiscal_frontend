@@ -12,10 +12,19 @@ import {
   fetchPlatformOrgs,
   provisionarOrg,
   type Licenca,
+  type MetricaCobranca,
   type OrgUso,
   type TipoLicenca,
 } from '../services/backend';
+import { labelDaLicenca, nivelDaLicenca } from '../utils/licenca';
 import { colors, font, typeScale } from '../theme';
+
+const METRICA_ROTULO: Record<MetricaCobranca, string> = {
+  por_ente: 'por ente monitorado',
+  por_populacao: 'por habitante (população IBGE)',
+  por_consulta_ia: 'por consulta de IA',
+  fixo: 'valor fixo por ciclo',
+};
 
 const TIPO_ROTULO: Record<TipoLicenca, string> = {
   ente: 'Ente',
@@ -296,11 +305,10 @@ function PainelLicencas({ orgId, onMudou }: { orgId: string; onMudou: () => void
                     </td>
                     <td style={{ padding: '7px 8px' }}>
                       {/* `vigente` distingue "ativa" de "ativa e dentro do prazo": uma
-                          licença ativa com prazo vencido aparece como expirada. */}
-                      <StatusBadge
-                        level={l.vigente ? 'folga' : l.status === 'suspensa' ? 'atencao' : 'neutro'}
-                        label={l.vigente ? 'vigente' : l.status}
-                      />
+                          licença ativa com prazo vencido aparece como expirada, não
+                          como "ativa" (Sprint H1 — o badge mentia enquanto não havia
+                          transição automática de status). */}
+                      <StatusBadge level={nivelDaLicenca(l)} label={labelDaLicenca(l)} />
                     </td>
                     <td style={{ padding: '7px 8px', textAlign: 'right' }}>
                       <button
@@ -400,6 +408,8 @@ function Provisionar({ onCriou }: { onCriou: () => void }) {
   const [email, setEmail] = useState('');
   const [nomeAdmin, setNomeAdmin] = useState('');
   const [senha, setSenha] = useState('');
+  const [metricaCobranca, setMetricaCobranca] = useState<MetricaCobranca>('por_ente');
+  const [preco, setPreco] = useState('');
   const [resultado, setResultado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -418,23 +428,29 @@ function Provisionar({ onCriou }: { onCriou: () => void }) {
       const r = await provisionarOrg({
         nome,
         tipo_conta: tipoConta,
+        metrica_cobranca: metricaCobranca,
+        preco_unitario: preco.trim() ? preco.trim() : '0',
         admin_email: email,
         admin_nome: nomeAdmin,
         admin_senha: senha,
       });
       setResultado(
-        `Organização "${r.nome}" criada com o administrador ${r.admin_email}. ` +
-          'Conceda a licença abaixo — sem ela a conta entra e não vê ente nenhum.',
+        `Organização "${r.nome}" criada com o administrador ${r.admin_email}` +
+          (r.assinatura
+            ? ` e billing configurado (${METRICA_ROTULO[r.assinatura.metrica_cobranca]}).`
+            : ', mas sem billing configurado — a primeira fatura sairá em zero.') +
+          ' Conceda a licença abaixo — sem ela a conta entra e não vê ente nenhum.',
       );
       setNome('');
       setEmail('');
       setNomeAdmin('');
       setSenha('');
+      setPreco('');
       onCriou();
     } catch (e) {
       setErro((e as { detail?: string })?.detail ?? 'Não foi possível provisionar.');
     }
-  }, [nome, tipoConta, email, nomeAdmin, senha, onCriou]);
+  }, [nome, tipoConta, metricaCobranca, preco, email, nomeAdmin, senha, onCriou]);
 
   const completo = nome.trim() && email.trim() && nomeAdmin.trim() && senha.length >= 8;
 
@@ -481,6 +497,30 @@ function Provisionar({ onCriou }: { onCriou: () => void }) {
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
             style={{ ...campo, width: 160 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
+          <span style={{ color: colors.faint }}>Métrica de cobrança</span>
+          <select
+            value={metricaCobranca}
+            onChange={(e) => setMetricaCobranca(e.target.value as MetricaCobranca)}
+            style={campo}
+          >
+            {(Object.keys(METRICA_ROTULO) as MetricaCobranca[]).map((m) => (
+              <option key={m} value={m}>
+                {METRICA_ROTULO[m]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
+          <span style={{ color: colors.faint }}>Preço unitário (R$)</span>
+          <input
+            inputMode="decimal"
+            value={preco}
+            onChange={(e) => setPreco(e.target.value)}
+            placeholder="0.00"
+            style={{ ...campo, width: 110 }}
           />
         </label>
         <button

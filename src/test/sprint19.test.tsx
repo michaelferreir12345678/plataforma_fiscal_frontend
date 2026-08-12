@@ -146,7 +146,11 @@ describe('Sprint 19 — control plane', () => {
     await waitFor(() => expect(alterar).toHaveBeenCalledWith('lic-1', { status: 'suspensa' }));
   });
 
-  it('distingue "vigente" de "ativa": prazo vencido aparece como expirada', async () => {
+  it('distingue "vigente" de "ativa": prazo vencido aparece como expirada (Sprint H1)', async () => {
+    // Antes da Sprint H1 o badge mostrava o `status` guardado ('ativa') sempre que
+    // `vigente` era falso — uma licença vencida por prazo aparecia como "ATIVA",
+    // porque não existe transição automática de status. A correção: sem `vigente`,
+    // só é "expirada" quando o prazo já passou.
     mockMe(true);
     vi.spyOn(backend, 'fetchPlatformOrgs').mockResolvedValue([ORG] as never);
     vi.spyOn(backend, 'fetchLicencas').mockResolvedValue([
@@ -160,8 +164,26 @@ describe('Sprint 19 — control plane', () => {
     );
 
     await userEvent.click(await screen.findByRole('button', { name: 'Sefaz do Ceará' }));
-    // O status guardado é 'ativa', mas a licença não vale mais — a tela mostra o efetivo.
-    expect(await screen.findByText('ativa')).toBeInTheDocument();
+    expect(await screen.findByText('expirada')).toBeInTheDocument();
+    expect(screen.queryByText('ativa')).not.toBeInTheDocument();
     expect(screen.queryByText('vigente')).not.toBeInTheDocument();
+  });
+
+  it('licença suspensa (ainda dentro do prazo) mostra o status guardado, não "expirada"', async () => {
+    mockMe(true);
+    vi.spyOn(backend, 'fetchPlatformOrgs').mockResolvedValue([ORG] as never);
+    vi.spyOn(backend, 'fetchLicencas').mockResolvedValue([
+      { ...LICENCA_UF, vigencia_fim: null, status: 'suspensa', vigente: false },
+    ] as never);
+
+    render(
+      <MemoryRouter>
+        <PlataformaPage />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sefaz do Ceará' }));
+    expect(await screen.findByText('suspensa')).toBeInTheDocument();
+    expect(screen.queryByText('expirada')).not.toBeInTheDocument();
   });
 });

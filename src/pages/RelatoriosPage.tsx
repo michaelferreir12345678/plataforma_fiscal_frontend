@@ -4,6 +4,7 @@ import { Async, ErrorBox, Loading } from '../components/AsyncState';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIA } from '../components/ExplicacaoIA';
 import { useApp, useResource } from '../context/AppContext';
 import {
   baixarRelatorio,
@@ -16,6 +17,7 @@ import {
   fetchRelatorio,
   fetchRelatorioModelos,
   fetchRelatorios,
+  narrarRelatorio,
   type RelatorioAgendamento,
   type RelatorioDetalhe,
   type RelatorioEscopo,
@@ -330,9 +332,27 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
   const header = item?.cabecalho ?? {};
   return (
     <Card style={{ flex: 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>Pré-visualização auditável</div>
-        <span style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{item?.formato.toUpperCase() ?? 'aguardando geração'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {item && (
+            /* Sprint IA-5: narrativa executiva **do mesmo documento** — os números e as
+               fontes são os que a pré-visualização mostra; a IA só liga um ao outro. */
+            <ExplicacaoIA
+              rotulo="Narrativa executiva"
+              titulo={`Narrativa · ${active?.nome ?? item.modelo} · ${item.periodo}`}
+              descricao="Gerar a narrativa executiva deste relatório, com os mesmos números e fontes"
+              carregar={() =>
+                narrarRelatorio({
+                  ente: item.cod_ibge,
+                  periodo: item.periodo,
+                  modelo: item.modelo,
+                })
+              }
+            />
+          )}
+          <span style={{ fontSize: 11, color: colors.faint, fontFamily: font.mono }}>{item?.formato.toUpperCase() ?? 'aguardando geração'}</span>
+        </div>
       </div>
       {!item ? <div style={{ padding: 40, textAlign: 'center', color: colors.muted, fontSize: 12 }}>Gere um relatório para visualizar números, fontes e pendências reais.</div> : (
         <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, padding: '24px 28px', maxWidth: 760, margin: '0 auto' }}>

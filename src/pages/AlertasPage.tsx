@@ -10,11 +10,13 @@ import { useNavigate } from 'react-router-dom';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIA } from '../components/ExplicacaoIA';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, Skeleton } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
 import { useApp, useResource } from '../context/AppContext';
 import {
+  explicarAlertas,
   fetchAlertas,
   fetchAlertasHistorico,
   fetchCalendario,
@@ -118,9 +120,23 @@ export function AlertasPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 12, alignItems: 'start' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <SectionLabel note="crítico → atenção → informativo">
-                  Central de alertas · fila priorizada {escopo === 'carteira' ? '· carteira' : ''}
-                </SectionLabel>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <SectionLabel note="crítico → atenção → informativo">
+                    Central de alertas · fila priorizada {escopo === 'carteira' ? '· carteira' : ''}
+                  </SectionLabel>
+                  <div style={{ flex: 1 }} />
+                  {escopo === 'ente' && data.alertas.length > 0 && (
+                    /* Sprint IA-5: a IA **explica** a fila; quem ordena continua sendo
+                       `alerts/rules.py`. Por isso o botão fica ao lado do rótulo da
+                       ordenação, e não em cima dela. */
+                    <ExplicacaoIA
+                      rotulo="Por que este é o primeiro?"
+                      titulo={`Fila de alertas · ${ente.nome}`}
+                      descricao="Explicar por que o primeiro alerta da fila é o primeiro e qual a providência legal"
+                      carregar={() => explicarAlertas({ ente: ente.cod_ibge })}
+                    />
+                  )}
+                </div>
                 {data.alertas.length === 0 && (
                   <Card><span style={{ fontSize: 12, color: colors.muted }}>Nenhum alerta ativo no escopo. Fonte: dado real do SICONFI.</span></Card>
                 )}

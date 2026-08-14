@@ -3201,6 +3201,75 @@ export const gerarResumoExecutivo = (body: {
 
 export const fetchAssistenteUso = () => apiGet<AssistUsoResumo>('/assistant/uso');
 
+// --- IA nas telas (Sprint IA-5) ---
+/**
+ * Quatro capacidades, um envelope só: "Explique este número", a explicação da fila de
+ * alertas, a narrativa do relatório e a busca em linguagem natural da Central de Dados.
+ * Os campos `fatos`, `fontes` e `verificacao` são os **mesmos** do Assistente — é o que
+ * permite renderizar as quatro com o `RespostaMarkdown`, que já ancora número em fonte.
+ */
+export interface InsightNota {
+  titulo: string;
+  linhas: string[];
+  /** Ferramenta ou tabela de onde a nota saiu (aparece na tela, junto da nota). */
+  origem: string | null;
+}
+
+export interface InsightResposta {
+  capacidade: 'explicar_numero' | 'explicar_alertas' | 'narrar_relatorio' | 'central_dados';
+  titulo: string;
+  ente: string;
+  ente_nome: string | null;
+  periodo: string | null;
+  as_of: string | null;
+  /** A pergunta que esta superfície declara responder. */
+  pergunta: string;
+  resposta: string;
+  /** `false` ⇒ ausência declarada: `ausencia` diz o quê e por quê, sem prosa vaga. */
+  disponivel: boolean;
+  ausencia: string | null;
+  fatos: AssistFato[];
+  notas: InsightNota[];
+  fontes: AssistFonteChip[];
+  source_refs: SourceRef[];
+  dados_incompletos: AssistDadoIncompleto[];
+  /** Cadeia de ferramentas que sustentou a resposta (auditada em op.ia_tool_call). */
+  ferramentas: string[];
+  uso: AssistUsoInfo;
+  verificacao: {
+    status: string;
+    total_citados: number;
+    com_lastro: number;
+    sem_lastro: string[];
+  } | null;
+  gerado_em: string;
+}
+
+export const explicarNumero = (body: {
+  ente: string;
+  indicador: string;
+  periodo?: string | null;
+  as_of?: string | null;
+}) => apiPost<InsightResposta, typeof body>('/ia/explicar-numero', body);
+
+export const explicarAlertas = (body: { ente: string; as_of?: string | null }) =>
+  apiPost<InsightResposta, typeof body>('/ia/explicar-alertas', body);
+
+export const narrarRelatorio = (body: {
+  ente: string;
+  periodo?: string | null;
+  modelo?: string;
+  as_of?: string | null;
+}) => apiPost<InsightResposta, typeof body>('/ia/narrar-relatorio', body);
+
+export const buscarCentralDados = (body: {
+  ente: string;
+  pergunta: string;
+  pagina?: string | null;
+  periodo?: string | null;
+  as_of?: string | null;
+}) => apiPost<InsightResposta, typeof body>('/ia/central-dados', body);
+
 // --- Administração, Carteira & Billing (Sprint 18) ---
 export type MetricaCobranca = 'por_ente' | 'por_populacao' | 'por_consulta_ia' | 'fixo';
 

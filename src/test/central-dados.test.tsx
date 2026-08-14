@@ -6,7 +6,40 @@ import { MemoryRouter } from 'react-router-dom';
 import { RequireAdministrar } from '../components/RequireAdministrar';
 import { AdminPage } from '../pages/AdminPage';
 import { CentralDadosPage } from '../pages/CentralDadosPage';
+import { AppProvider } from '../context/AppContext';
 import * as backend from '../services/backend';
+import * as api from '../services/api';
+
+/**
+ * A página passou a depender do contexto de ente na Sprint IA-5 (a busca em linguagem
+ * natural pergunta *sobre um ente*), então ela é renderizada aqui como em produção:
+ * dentro do `AppProvider`. A sessão é estubada para que o provedor não vá à rede — o que
+ * estes testes medem continua sendo a fila de jobs, não o contexto.
+ */
+function mockSessao() {
+  vi.spyOn(api, 'getToken').mockReturnValue('token-de-teste');
+  vi.spyOn(backend, 'fetchPeriodos').mockResolvedValue({
+    cod_ibge: '2304400',
+    relatorio: 'RREO',
+    default: '2024-B6',
+    periodos: [{ periodo: '2024-B6', relatorio: 'RREO', versao_entrega: '1', vigente: true }],
+  } as never);
+  vi.spyOn(backend, 'fetchMe').mockResolvedValue({
+    usuario: { id: 'u1', email: 'gestor@ente.gov.br', nome: 'Gestor' },
+    org_ativa: { id: 'o1', nome: 'Prefeitura', tipo: 'ente', capacidades: ['ver', 'administrar', 'usar_ia'] },
+    orgs: [],
+  } as never);
+}
+
+function renderCentralDados() {
+  return render(
+    <MemoryRouter>
+      <AppProvider>
+        <CentralDadosPage />
+      </AppProvider>
+    </MemoryRouter>,
+  );
+}
 
 const FONTE: backend.FonteCatalogo = {
   fonte: 'siconfi_rreo',
@@ -77,6 +110,10 @@ function job(
 
 describe('Central de Dados — confirmação e polling', () => {
   beforeEach(() => {
+    // Estubar a sessão é o que impede o `AppProvider` de ir à rede — sem isto, o teste
+    // depende de haver um backend local no ar, que é justamente a fragilidade que o
+    // comentário do `fetchSaudeFila` abaixo já registrou uma vez.
+    mockSessao();
     vi.spyOn(backend, 'fetchFontes').mockResolvedValue([FONTE]);
     vi.spyOn(backend, 'fetchIngestJobs').mockResolvedValue([]);
     // A saúde da fila vem no mesmo `Promise.all` da lista de jobs: sem mock, a chamada
@@ -109,11 +146,7 @@ describe('Central de Dados — confirmação e polling', () => {
       }),
     });
 
-    render(
-      <MemoryRouter>
-        <CentralDadosPage />
-      </MemoryRouter>,
-    );
+    renderCentralDados();
 
     const campoEntes = await screen.findByLabelText(/^Entes \(/);
     expect(campoEntes).toBeDisabled();
@@ -160,11 +193,7 @@ describe('Central de Dados — confirmação e polling', () => {
         job: criado,
       });
 
-    render(
-      <MemoryRouter>
-        <CentralDadosPage />
-      </MemoryRouter>,
-    );
+    renderCentralDados();
 
     const campoEntes = await screen.findByLabelText(/^Entes \(/);
     fireEvent.change(campoEntes, { target: { value: entes.join(',') } });
@@ -206,11 +235,7 @@ describe('Central de Dados — confirmação e polling', () => {
       .mockResolvedValueOnce([job('executando', 25)])
       .mockResolvedValue([job('concluido', 100)]);
 
-    render(
-      <MemoryRouter>
-        <CentralDadosPage />
-      </MemoryRouter>,
-    );
+    renderCentralDados();
 
     // Contar microtasks acopla o teste ao número de elos da cadeia de promessas do
     // `useResource`: qualquer `.then` a mais no fetcher quebrava aqui sem nada ter
@@ -269,11 +294,7 @@ describe('Central de Dados — confirmação e polling', () => {
     vi.mocked(backend.fetchIngestJobs).mockResolvedValue([falho]);
     vi.spyOn(backend, 'fetchIngestJob').mockResolvedValue(falho);
 
-    render(
-      <MemoryRouter>
-        <CentralDadosPage />
-      </MemoryRouter>,
-    );
+    renderCentralDados();
     expect(await screen.findByText('1 unidade falhou')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'detalhes' }));

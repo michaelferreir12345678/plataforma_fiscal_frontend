@@ -9,11 +9,13 @@ import { Async, ErrorBox, Loading } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { FonteChip } from '../components/FonteChip';
+import { ExplicacaoIA } from '../components/ExplicacaoIA';
 import { SeloCobertura } from '../components/SeloCobertura';
 import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { useApp, useResource } from '../context/AppContext';
 import { ApiError } from '../services/api';
 import {
+  explicarNumero,
   fetchLimiteDetail,
   fetchLimites,
   simularLimite,
@@ -281,6 +283,21 @@ function LimiteDetailPanel({ indicador, rotulo }: { indicador: string; rotulo: s
                 </span>
               )}
               <div style={{ flex: 1 }} />
+              {/* Sprint IA-5: a explicação fica **ao lado do número**, com a mesma fonte
+                  que o chip declara — é o ponto da capacidade: não trocar de tela para
+                  entender o que já está sendo mostrado. */}
+              <ExplicacaoIA
+                rotulo="Explique este número"
+                titulo={`${rotulo} · ${d.periodo}`}
+                descricao="Explique este número: como foi apurado, de onde vêm os dados, qual a base legal e o que mudaria a faixa"
+                carregar={() =>
+                  explicarNumero({
+                    ente: ente.cod_ibge,
+                    indicador: indicador,
+                    periodo: d.periodo,
+                  })
+                }
+              />
               <FonteChip source={d.source_ref} asOf={d.as_of} />
             </div>
           </div>

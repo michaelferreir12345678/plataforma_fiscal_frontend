@@ -6,15 +6,17 @@
  * execução é sempre um job na fila (Redis/RQ) — o request volta na hora (202) e a barra de
  * progresso anda por polling. Ações custosas (acima do limiar) exigem **confirmação explícita**.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Async } from '../components/AsyncState';
 import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
 import { PageHeader } from '../components/PageHeader';
-import { useResource } from '../context/AppContext';
+import { useApp, useResource } from '../context/AppContext';
+import { Explicacao } from '../components/ExplicacaoIA';
 import {
+  buscarCentralDados,
   fetchLineage,
   fetchQualidade,
   cancelarIngestJob,
@@ -29,6 +31,7 @@ import {
 } from '../services/backend';
 import type {
   CoberturaItem,
+  InsightResposta,
   FonteCatalogo,
   IngestJob,
   IngestJobCreateInput,
@@ -88,6 +91,7 @@ export function CentralDadosPage() {
           />
         )}
       />
+      <BuscaEmLinguagemNatural />
       <div
         id={tabPanelId('central-dados', aba)}
         role="tabpanel"
@@ -104,6 +108,105 @@ export function CentralDadosPage() {
     </div>
   );
 }
+
+
+/**
+ * Busca em linguagem natural (Sprint IA-5, item 4 da §4).
+ *
+ * Pergunta gerencial que responde: **"por que a página de Saúde está vazia para o meu
+ * município?"** — que é pergunta de operação, e cuja resposta já é dado: cobertura
+ * (`mart_cobertura_fonte`), qualidade (`data_quality_check`) e calendário
+ * (`gold.calendario_obrigacao`). A IA roteia a pergunta e redige; os fatos são das
+ * ferramentas.
+ *
+ * Fica **fora** das abas de propósito: a pergunta que traz o gestor até aqui costuma vir
+ * de outra tela ("está vazio, e agora?"), e obrigá-lo a adivinhar a aba certa antes de
+ * perguntar seria devolver a ele o trabalho que esta busca existe para fazer.
+ */
+function BuscaEmLinguagemNatural() {
+  const { ente } = useApp();
+  const [pergunta, setPergunta] = useState('');
+  const [resposta, setResposta] = useState<InsightResposta | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function perguntar(evento: FormEvent) {
+    evento.preventDefault();
+    const texto = pergunta.trim();
+    if (!texto) return;
+    setCarregando(true);
+    setErro(null);
+    setResposta(null);
+    try {
+      setResposta(await buscarCentralDados({ ente: ente.cod_ibge, pergunta: texto }));
+    } catch (e: unknown) {
+      setErro(
+        (e as { detail?: string; message?: string })?.detail ||
+          (e as { message?: string })?.message ||
+          'Não foi possível responder agora.',
+      );
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <Card>
+      <form onSubmit={perguntar} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <label htmlFor="busca-central-dados" style={{ display: 'block', fontSize: 11, color: colors.muted, marginBottom: 4 }}>
+            Pergunte por que um dado está faltando — {ente.nome}
+          </label>
+          <input
+            id="busca-central-dados"
+            type="text"
+            value={pergunta}
+            onChange={(e) => setPergunta(e.target.value)}
+            placeholder="Ex.: por que a página de saúde está vazia para o meu município?"
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              border: `1px solid ${colors.border}`,
+              borderRadius: 4,
+              fontSize: 12.5,
+              color: colors.ink,
+              background: colors.surface,
+            }}
+          />
+        </div>
+        <button type="submit" disabled={carregando || !pergunta.trim()} style={botaoBusca}>
+          {carregando ? 'Consultando…' : 'Responder'}
+        </button>
+      </form>
+      <p aria-live="polite" style={{ margin: '8px 0 0', fontSize: 11, color: colors.faint, fontFamily: font.mono }}>
+        {carregando
+          ? 'Consultando cobertura, qualidade e calendário…'
+          : 'A resposta vem de cobertura, qualidade e calendário — nenhum número é estimado.'}
+      </p>
+      {erro && (
+        <div role="alert" style={{ marginTop: 10, fontSize: 12, color: colors.red }}>
+          {erro}
+        </div>
+      )}
+      {resposta && (
+        <div style={{ marginTop: 12, borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
+          <Explicacao dado={resposta} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const botaoBusca = {
+  border: `1px solid ${colors.border}`,
+  background: colors.accentSoft,
+  color: colors.primaryDeep,
+  borderRadius: 4,
+  padding: '7px 14px',
+  fontSize: 12,
+  cursor: 'pointer',
+  fontFamily: font.mono,
+} as const;
 
 // ============================ Jobs ============================
 function JobsTab() {

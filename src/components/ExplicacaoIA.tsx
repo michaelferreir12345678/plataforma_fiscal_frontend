@@ -18,11 +18,12 @@
  * 4. **O aviso do G6 não pode ser escondido.** Quando a verificação sinaliza um número sem
  *    lastro, a tela mostra o aviso em destaque — além de o próprio texto já trazê-lo.
  */
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { colors, font } from '../theme';
 import { Dialog } from './Dialog';
-import { ErrorBox, Loading } from './AsyncState';
+import { ErrorBox } from './AsyncState';
 import { FonteChip } from './FonteChip';
+import { CarregandoIA, IconeIA, SeloIA } from './MarcaIA';
 import { RespostaMarkdown } from './RespostaMarkdown';
 import type { InsightResposta } from '../services/backend';
 import { ApiError } from '../services/api';
@@ -36,6 +37,8 @@ export interface ExplicacaoIAProps {
   descricao: string;
   /** Chamada que produz a explicação. Só dispara quando o diálogo abre. */
   carregar: () => Promise<InsightResposta>;
+  /** Identidade causal: ente + capacidade + alvo + período + `as_of`. */
+  contextKey: string;
   /** Estilo do gatilho: `discreto` (padrão) ou `destaque`. */
   variante?: 'discreto' | 'destaque';
 }
@@ -45,6 +48,7 @@ export function ExplicacaoIA({
   titulo,
   descricao,
   carregar,
+  contextKey,
   variante = 'discreto',
 }: ExplicacaoIAProps) {
   const [aberto, setAberto] = useState(false);
@@ -53,42 +57,53 @@ export function ExplicacaoIA({
       <button
         type="button"
         onClick={() => setAberto(true)}
-        aria-label={descricao}
+        aria-label={`${rotulo}. ${descricao}`}
+        data-ia-gatilho
         style={variante === 'destaque' ? gatilhoDestaque : gatilho}
       >
-        <span aria-hidden="true">✳ </span>
+        <IconeIA size={12} cor={variante === 'destaque' ? colors.primaryDeep : colors.primary} />
         {rotulo}
       </button>
       {aberto && (
-        <Dialog title={titulo} onClose={() => setAberto(false)} width={820}>
-          <ConteudoExplicacao carregar={carregar} />
+        <Dialog title={titulo} onClose={() => setAberto(false)} width={820} modal={false}>
+          <ConteudoExplicacao carregar={carregar} contextKey={contextKey} />
         </Dialog>
       )}
     </>
   );
 }
 
-function ConteudoExplicacao({ carregar }: { carregar: () => Promise<InsightResposta> }) {
+function ConteudoExplicacao({
+  carregar,
+  contextKey,
+}: {
+  carregar: () => Promise<InsightResposta>;
+  contextKey: string;
+}) {
   const [dado, setDado] = useState<InsightResposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   /** Extras RFC 7807 do backend: o "por quê" da ausência, quando ele existe. */
   const [explicacao, setExplicacao] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [tentativa, setTentativa] = useState(0);
+  const carregarRef = useRef(carregar);
+  const requisicaoSeqRef = useRef(0);
+  carregarRef.current = carregar;
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
 
   useEffect(() => {
-    let vivo = true;
+    const sequencia = ++requisicaoSeqRef.current;
+    let cancelada = false;
     setCarregando(true);
     setErro(null);
     setExplicacao(null);
     setDado(null);
-    carregar()
+    carregarRef.current()
       .then((d) => {
-        if (vivo) setDado(d);
+        if (!cancelada && sequencia === requisicaoSeqRef.current) setDado(d);
       })
       .catch((e: unknown) => {
-        if (!vivo) return;
+        if (cancelada || sequencia !== requisicaoSeqRef.current) return;
         if (e instanceof ApiError) setExplicacao(e.title ?? null);
         setErro(
           (e as { detail?: string; message?: string })?.detail ||
@@ -97,16 +112,15 @@ function ConteudoExplicacao({ carregar }: { carregar: () => Promise<InsightRespo
         );
       })
       .finally(() => {
-        if (vivo) setCarregando(false);
+        if (!cancelada && sequencia === requisicaoSeqRef.current) setCarregando(false);
       });
     return () => {
-      vivo = false;
+      cancelada = true;
+      if (requisicaoSeqRef.current === sequencia) requisicaoSeqRef.current += 1;
     };
-    // `carregar` é recriada a cada render do pai; a dependência é a tentativa.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tentativa]);
+  }, [contextKey, tentativa]);
 
-  if (carregando) return <Loading label="Consultando as fontes da plataforma…" />;
+  if (carregando) return <CarregandoIA />;
   if (erro) return <ErrorBox message={erro} explicacao={explicacao} onRetry={recarregar} />;
   if (!dado) return null;
   return <Explicacao dado={dado} />;
@@ -116,6 +130,15 @@ export function Explicacao({ dado }: { dado: InsightResposta }) {
   const idPergunta = useId();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {dado.disponivel ? <SeloIA /> : <span style={seloPlataforma}>Resposta da plataforma</span>}
+        <span style={{ fontSize: 11, color: colors.faint }}>
+          {dado.disponivel
+            ? 'texto composto por IA · números apurados pela plataforma'
+            : 'ausência apurada deterministicamente · nenhum texto gerado por modelo'}
+        </span>
+      </div>
+
       <p id={idPergunta} style={perguntaEstilo}>
         <span style={{ color: colors.faint }}>Pergunta respondida: </span>
         {dado.pergunta}
@@ -168,8 +191,11 @@ export function Explicacao({ dado }: { dado: InsightResposta }) {
       )}
 
       {dado.source_refs.length > 0 && (
-        <section aria-label="Fontes desta explicação">
-          <h4 style={tituloNota}>Fontes</h4>
+        <section aria-label="Procedência desta explicação">
+          {/* `source_ref` continua visível — é requisito de produto (§6.3). O que mudou na
+              IA-7 é o enquadramento: "procedência" (de onde veio cada número), e não um
+              despejo de metadado no fim do texto. */}
+          <h4 style={tituloNota}>Procedência dos números</h4>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {dado.source_refs.map((source, indice) => (
               <FonteChip
@@ -193,14 +219,20 @@ export function Explicacao({ dado }: { dado: InsightResposta }) {
 }
 
 const gatilho = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
   border: `1px solid ${colors.border}`,
   background: colors.surface,
-  borderRadius: 4,
-  padding: '3px 9px',
+  borderRadius: 999,
+  padding: '3px 10px',
+  minWidth: 24,
+  minHeight: 24,
   fontSize: 11,
   color: colors.ink,
   cursor: 'pointer',
   fontFamily: font.mono,
+  whiteSpace: 'nowrap',
 } as const;
 
 const gatilhoDestaque = {
@@ -208,6 +240,20 @@ const gatilhoDestaque = {
   background: colors.accentSoft,
   borderColor: colors.greenSoft,
   color: colors.primaryDeep,
+} as const;
+
+const seloPlataforma = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 24,
+  padding: '2px 8px',
+  border: `1px solid ${colors.border}`,
+  borderRadius: 999,
+  background: colors.neutralBg,
+  color: colors.muted,
+  fontSize: 10.5,
+  fontFamily: font.mono,
+  fontWeight: 600,
 } as const;
 
 const perguntaEstilo = {

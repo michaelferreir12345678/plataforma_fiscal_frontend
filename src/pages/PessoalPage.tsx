@@ -23,6 +23,7 @@ import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIndicador } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { RadialMeter } from '../components/RadialMeter';
 import { Async, EmptyState, ErrorBox, Skeleton } from '../components/AsyncState';
@@ -34,6 +35,7 @@ import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill, numero } from '../components/ArvoreDrill';
 import { useApp, useResource } from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import {
   fetchMe,
   fetchPessoal,
@@ -48,6 +50,7 @@ import {
   type SimularLimiteResponse,
 } from '../services/backend';
 import { brl, fmt, pct } from '../utils/format';
+import { emBimestre } from '../utils/periodo';
 
 const INDICADOR_EXECUTIVO = 'pessoal_executivo';
 
@@ -67,6 +70,17 @@ export function PessoalPage() {
     [ente.cod_ibge, periodoRgf],
     { pular: !periodoRgf },
   );
+  const contextoDet = det.data?.cod_ibge === ente.cod_ibge && det.data.periodo === periodoRgf
+    ? det.data
+    : null;
+  const competenciaTela = contextoDet?.periodo ?? (periodoRgf || null);
+  useContextoTelaAssistente({
+    pagina: '/pessoal',
+    ente: contextoDet?.cod_ibge ?? ente.cod_ibge,
+    periodo: emBimestre(competenciaTela),
+    competencia: competenciaTela,
+    asOf: contextoDet?.as_of ?? null,
+  });
   const me = useResource(fetchMe, []);
   const podeAdministrar = (me.data?.org_ativa?.capacidades ?? []).includes('administrar');
   const ultimoPeriodo = periodosRgf.length ? periodosRgf[periodosRgf.length - 1] : null;
@@ -239,7 +253,19 @@ function ExecutivoCard({ d, exec }: { d: PessoalDetalhe; exec: PoderItem | null 
 
   return (
     <Card>
-      <SectionLabel note={`teto ${fmt(teto, 0)}% da RCL · esfera ${d.esfera ?? '—'}`}>
+      <SectionLabel
+        note={(
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {`teto ${fmt(teto, 0)}% da RCL · esfera ${d.esfera ?? '—'}`}
+            <ExplicacaoIndicador
+              indicador={INDICADOR_EXECUTIVO}
+              rotulo="Despesa com pessoal do Poder Executivo"
+              periodo={d.periodo_rreo}
+              asOf={d.as_of}
+            />
+          </span>
+        )}
+      >
         Despesa com pessoal · Poder Executivo
       </SectionLabel>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>

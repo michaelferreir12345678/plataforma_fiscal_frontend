@@ -398,6 +398,23 @@ describe('Saúde & Educação — uma tela com as sete respostas (Sprint 25C)', 
     ).toBeInTheDocument();
   });
 
+  it('liga o FUNDEB ao indicador idêntico, com período e as_of da própria fonte', async () => {
+    mockTudo();
+    const explicar = vi.spyOn(backend, 'explicarNumero').mockReturnValue(new Promise(() => {}));
+    renderPagina();
+    await userEvent.click(screen.getByRole('tab', { name: /Educação/ }));
+    await screen.findByText('98,19%');
+
+    await userEvent.click(await screen.findByRole('button', {
+      name: /Explique FUNDEB aplicado em profissionais da educação básica/i,
+    }));
+    await waitFor(() => expect(explicar).toHaveBeenCalledWith(expect.objectContaining({
+      indicador: 'fundeb_profissionais',
+      periodo: '2024-B6',
+      as_of: '2025-02-28T21:00:00Z',
+    })));
+  });
+
   it('avisa que o FUNDEB não expurga RPNP sem lastro — diferente do MDE (U29/U30 revisado)', async () => {
     // Achado revisado na investigação da Sprint F2: a ficha pedia "replicar" a nota de
     // expurgo do MDE no card FUNDEB, mas health_edu/service.py::_apurar_educacao não

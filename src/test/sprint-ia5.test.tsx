@@ -111,6 +111,7 @@ describe('ExplicacaoIA — o gatilho e a chamada sob demanda', () => {
     render(
       <MemoryRouter>
         <ExplicacaoIA
+          contextKey="pessoal-2024-b6"
           rotulo="Explique este número"
           titulo="Pessoal · 2024-B6"
           descricao="Explicar como o indicador foi apurado"
@@ -129,6 +130,7 @@ describe('ExplicacaoIA — o gatilho e a chamada sob demanda', () => {
     render(
       <MemoryRouter>
         <ExplicacaoIA
+          contextKey="pessoal-2024-b6"
           rotulo="Explique este número"
           titulo="Pessoal · 2024-B6"
           descricao="Explicar como o indicador foi apurado"
@@ -166,6 +168,7 @@ describe('ExplicacaoIA — o gatilho e a chamada sob demanda', () => {
     render(
       <MemoryRouter>
         <ExplicacaoIA
+          contextKey="operacoes-2024-b6"
           rotulo="Explique este número"
           titulo="Operações de crédito"
           descricao="Explicar operações de crédito"
@@ -192,6 +195,7 @@ describe('ExplicacaoIA — o gatilho e a chamada sob demanda', () => {
     render(
       <MemoryRouter>
         <ExplicacaoIA
+          contextKey="pessoal"
           rotulo="Explique este número"
           titulo="Pessoal"
           descricao="Explicar pessoal"
@@ -212,7 +216,7 @@ describe('ExplicacaoIA — o gatilho e a chamada sob demanda', () => {
     );
     render(
       <MemoryRouter>
-        <ExplicacaoIA rotulo="Explique" titulo="Pessoal" descricao="Explicar pessoal" carregar={carregar} />
+        <ExplicacaoIA contextKey="pessoal" rotulo="Explique" titulo="Pessoal" descricao="Explicar pessoal" carregar={carregar} />
       </MemoryRouter>,
     );
     await userEvent.click(screen.getByRole('button', { name: /Explicar pessoal/i }));
@@ -226,6 +230,7 @@ describe('ExplicacaoIA — acessibilidade (a plataforma está em Lighthouse a11y
     const { container } = render(
       <MemoryRouter>
         <ExplicacaoIA
+          contextKey="pessoal-2024-b6"
           rotulo="Explique este número"
           titulo="Pessoal · 2024-B6"
           descricao="Explicar como o indicador foi apurado"

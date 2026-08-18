@@ -9,8 +9,11 @@ import { useEffect, useId, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { colors, font } from '../theme';
 import { humanizar, rotuloIndicador, rotuloModelo } from '../utils/rotulos';
+import { emBimestre } from '../utils/periodo';
+import { INDICADOR_APURADO_PREVISAO } from '../utils/previsoes';
 import { Card } from '../components/Card';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIndicador, ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, Skeleton } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
@@ -42,6 +45,50 @@ import {
   type CenarioDetalhe,
   type CenarioComparadoItem,
 } from '../services/backend';
+
+/**
+ * Catálogo de previsão → código do indicador em `gold.mart_indicador` (Sprint IA-7).
+ *
+ * Só pessoal e dívida têm no mart um indicador com a mesma grandeza da série projetada.
+ * RCL e receita são valores absolutos; `rcl_per_capita` não é substituto semântico para
+ * nenhum deles. Nesses dois casos a tela pede procedência/cobertura da projeção, sem
+ * fingir que explica um KPI diferente.
+ */
+function ExplicacaoProjecao({
+  indicador,
+  data,
+}: {
+  indicador: ForecastIndicador;
+  data: ProjecaoResponse;
+}) {
+  const ultimo = data.historico[data.historico.length - 1];
+  const indicadorApurado = INDICADOR_APURADO_PREVISAO[indicador];
+  const periodoApurado = indicadorApurado ? emBimestre(ultimo?.periodo) : null;
+  const asOf = ultimo?.as_of ?? data.as_of;
+
+  if (indicadorApurado && periodoApurado) {
+    return (
+      <ExplicacaoIndicador
+        indicador={indicadorApurado}
+        rotulo={data.descricao}
+        periodo={periodoApurado}
+        asOf={asOf}
+        rotuloGatilho="Explique o indicador apurado"
+      />
+    );
+  }
+
+  return (
+    <ExplicacaoTela
+      pagina="previsoes"
+      rotulo={`Projeção de ${data.descricao}`}
+      periodo={ultimo?.periodo ?? null}
+      asOf={asOf}
+      rotuloGatilho="Entenda os dados da projeção"
+      pergunta={`De quais fontes vem a série histórica de ${data.descricao}, qual é a cobertura usada nesta projeção e até que período há dados observados?`}
+    />
+  );
+}
 
 const INDICADORES: { key: ForecastIndicador; label: string }[] = [
   { key: 'rcl', label: 'RCL' },
@@ -153,7 +200,14 @@ export function PrevisoesPage() {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12 }}>
               <Card>
-                <SectionLabel note="sólido = real · tracejado = projeção · sombra = IC 95%">
+                <SectionLabel
+                  note={(
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      sólido = real · tracejado = projeção · sombra = IC 95%
+                      <ExplicacaoProjecao indicador={indicador} data={data} />
+                    </span>
+                  )}
+                >
                   Projeção · {data.descricao}
                 </SectionLabel>
                 <ProjectionChart data={data} />

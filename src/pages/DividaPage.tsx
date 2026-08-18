@@ -1,10 +1,11 @@
 import { NotaMetodologica } from '../components/NotaMetodologica';
 import { SeloCobertura } from '../components/SeloCobertura';
-import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIndicador, ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, ErrorBox, Loading, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
@@ -15,6 +16,7 @@ import { PrintButton } from '../components/PrintButton';
 import { VirtualizedTable } from '../components/VirtualizedTable';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useResource } from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import { ApiError } from '../services/api';
 import {
   fetchBenchmark,
@@ -41,6 +43,7 @@ import {
   type SourceRef,
 } from '../services/backend';
 import { brl, fmt, pct } from '../utils/format';
+import { emBimestre } from '../utils/periodo';
 
 type MaybeNumber = number | string | null | undefined;
 
@@ -91,12 +94,24 @@ function sourceText(source: SourceRef | null | undefined): string {
 }
 
 export function DividaPage() {
-  const { ente, periodo, periodoRgf } = useApp();
+  const { ente, periodoRgf } = useApp();
   const detalhe = useResource(
     () => fetchDivida(ente.cod_ibge, periodoRgf),
     [ente.cod_ibge, periodoRgf],
     { pular: !periodoRgf },
   );
+  const contextoDetalhe =
+    detalhe.data?.cod_ibge === ente.cod_ibge && detalhe.data.periodo === periodoRgf
+      ? detalhe.data
+      : null;
+  const competenciaTela = contextoDetalhe?.periodo ?? (periodoRgf || null);
+  useContextoTelaAssistente({
+    pagina: '/divida',
+    ente: contextoDetalhe?.cod_ibge ?? ente.cod_ibge,
+    periodo: emBimestre(competenciaTela),
+    competencia: competenciaTela,
+    asOf: contextoDetalhe?.as_of ?? null,
+  });
 
   return (
     <div
@@ -132,7 +147,7 @@ export function DividaPage() {
           <DividaContent
             key={`${data.cod_ibge}-${data.periodo}-${data.as_of}`}
             detalhe={data}
-            periodoRreo={periodo}
+            periodoRreo={emBimestre(data.periodo)}
           />
         )}
       </Async>
@@ -148,7 +163,7 @@ function DividaContent({
   /** Período RREO (formato bimestre) — é onde `garantias`/`operacoes_credito` são
    * gravados em `gold.mart_indicador` (ver `endividamento.materializar_limites_endividamento`),
    * mesmo sendo apurados a partir do RGF (quadrimestral). */
-  periodoRreo: string;
+  periodoRreo: string | null;
 }) {
   const capag = useResource(
     () => fetchDividaCapag(detalhe.cod_ibge, detalhe.periodo, detalhe.capag.as_of),
@@ -183,7 +198,7 @@ function DividaContent({
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: 12 }}>
-        <DclHeroCard hero={detalhe.dcl} esfera={detalhe.esfera} />
+        <DclHeroCard hero={detalhe.dcl} esfera={detalhe.esfera} periodoRreo={periodoRreo} />
         <Async res={capag}>
           {(data) => <CapagHeroCard hero={data.hero} memoria={data.memoria} />}
         </Async>
@@ -193,7 +208,12 @@ function DividaContent({
           Ajustada) desde sempre, mas só apareciam dentro do simulador com o gestor
           digitando a base atual à mão. O backend já apura os dois via mart_indicador
           (mesmo dado que /limites lista) — este cartão só busca e mostra. */}
-      <PosicaoEndividamentoCard cod={detalhe.cod_ibge} periodo={periodoRreo} />
+      <PosicaoEndividamentoCard
+        cod={detalhe.cod_ibge}
+        periodo={periodoRreo}
+        periodoFonte={detalhe.periodo}
+        asOf={detalhe.as_of}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr', gap: 12 }}>
         <Async res={memoria}>{(data) => <MemoriaCard data={data} />}</Async>
@@ -245,7 +265,16 @@ function DividaContent({
   );
 }
 
-function DclHeroCard({ hero, esfera }: { hero: DclHero; esfera: string | null }) {
+function DclHeroCard({
+  hero,
+  esfera,
+  periodoRreo,
+}: {
+  hero: DclHero;
+  esfera: string | null;
+  /** Período em que a DCL é materializada em `gold.mart_indicador` (bimestre do RREO). */
+  periodoRreo: string | null;
+}) {
   const value = numberValue(hero.pct_rcl);
   const ceiling = numberValue(hero.limite_pct);
   const width = value != null && ceiling && ceiling > 0 ? Math.min(Math.max((value / ceiling) * 100, 0), 100) : 0;
@@ -257,6 +286,22 @@ function DclHeroCard({ hero, esfera }: { hero: DclHero; esfera: string | null })
         <div style={eyebrow}>{hero.rotulo}</div>
         <Badge text={(hero.natureza || 'líquida').toLocaleUpperCase('pt-BR')} color={colors.primary} />
         {hero.faixa && <Badge text={hero.faixa.toLocaleUpperCase('pt-BR')} color={color} />}
+        {periodoRreo ? (
+          <ExplicacaoIndicador
+            indicador="divida_consolidada_liquida"
+            rotulo="Dívida consolidada líquida"
+            periodo={periodoRreo}
+            asOf={hero.as_of}
+          />
+        ) : (
+          <ExplicacaoTela
+            pagina="divida"
+            rotulo="Dívida consolidada líquida"
+            periodo={hero.source_ref?.periodo}
+            asOf={hero.as_of}
+            pergunta="De onde vem a dívida consolidada líquida exibida nesta tela e qual é a cobertura do RGF selecionado?"
+          />
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <div style={{ ...heroValue, color }}>{percent(hero.pct_rcl)}</div>
@@ -751,8 +796,41 @@ const INDICADORES_ENDIVIDAMENTO: { indicador: string; rotulo: string }[] = [
  * (mesmo indicador que o Monitor de Limites lista); esta página só o busca e mostra sem
  * exigir que o gestor abra o simulador e digite a base atual à mão.
  */
-function PosicaoEndividamentoCard({ cod, periodo }: { cod: string; periodo: string }) {
-  const res = useResource(() => fetchLimites(cod, periodo), [cod, periodo], { pular: !periodo });
+function PosicaoEndividamentoCard({
+  cod,
+  periodo,
+  periodoFonte,
+  asOf,
+}: {
+  cod: string;
+  periodo: string | null;
+  periodoFonte: string;
+  asOf: string | null;
+}) {
+  const res = useResource(
+    () => fetchLimites(cod, periodo ?? '', asOf),
+    [cod, periodo, asOf],
+    {
+      pular: !periodo,
+      indisponivel: !periodo ? (
+        <ErrorBox
+          severidade="ausencia"
+          message={`Sem período RREO equivalente para ${periodoFonte}.`}
+          explicacao="Garantias e operações de crédito são materializadas no bimestre RREO equivalente. A competência recebida não pôde ser convertida; nenhum valor foi presumido."
+          acao={(
+            <ExplicacaoTela
+              pagina="divida"
+              rotulo="Posição vigente de endividamento"
+              periodo={periodoFonte}
+              asOf={asOf}
+              pergunta="Por que garantias e operações de crédito não têm um período RREO equivalente nesta posição de dívida e quais fontes estão disponíveis?"
+              rotuloGatilho="Entenda a ausência"
+            />
+          )}
+        />
+      ) : undefined,
+    },
+  );
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <SectionLabel note="teto legal · % sobre a RCL Ajustada · Res. 43/2001 do Senado">
@@ -769,6 +847,15 @@ function PosicaoEndividamentoCard({ cod, periodo }: { cod: string; periodo: stri
                     key={indicador}
                     rotulo={rotulo}
                     item={porIndicador.get(indicador)}
+                    explicar={(
+                      <ExplicacaoIndicador
+                        indicador={indicador}
+                        rotulo={rotulo}
+                        periodo={periodo}
+                        asOf={d.as_of}
+                        rotuloGatilho="Explicar"
+                      />
+                    )}
                   />
                 ))}
               </div>
@@ -781,11 +868,23 @@ function PosicaoEndividamentoCard({ cod, periodo }: { cod: string; periodo: stri
   );
 }
 
-function PosicaoEndividamentoItem({ rotulo, item }: { rotulo: string; item: LimiteItem | undefined }) {
+function PosicaoEndividamentoItem({
+  rotulo,
+  item,
+  explicar,
+}: {
+  rotulo: string;
+  item: LimiteItem | undefined;
+  /** Explicação por IA **deste** teto (garantias, operações de crédito) — Sprint IA-7. */
+  explicar?: ReactNode;
+}) {
   if (!item || item.valor_pct_rcl == null) {
     return (
       <div style={{ border: `1px solid ${colors.borderSoft}`, borderRadius: 5, padding: 10 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}>{rotulo}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600 }}>{rotulo}</div>
+          {explicar}
+        </div>
         <div style={{ fontSize: 11.5, color: colors.muted }}>
           Não apurado — o ente ainda não publicou o anexo correspondente para este período.
         </div>
@@ -799,7 +898,10 @@ function PosicaoEndividamentoItem({ rotulo, item }: { rotulo: string; item: Limi
   return (
     <div style={{ border: `1px solid ${colors.border}`, borderTop: `3px solid ${color}`, borderRadius: 5, padding: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 600 }}>{rotulo}</div>
+        <div style={{ fontSize: 11.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {rotulo}
+          {explicar}
+        </div>
         {item.faixa && <Badge text={item.faixa.toLocaleUpperCase('pt-BR')} color={color} />}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>

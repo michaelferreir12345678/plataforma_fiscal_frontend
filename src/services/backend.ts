@@ -3135,8 +3135,16 @@ export interface AssistUsoInfo {
   tokens_saida: number;
   latencia_ms: number;
 }
+export interface VerificacaoResposta {
+  status: string;
+  total_citados: number;
+  com_lastro: number;
+  sem_lastro: string[];
+}
 export interface AssistResposta {
   conversa_id: string;
+  thread_id?: string;
+  parent_id?: string | null;
   tipo: 'pergunta' | 'resumo_executivo';
   ente: string;
   ente_nome: string | null;
@@ -3153,6 +3161,15 @@ export interface AssistResposta {
   dados_incompletos: AssistDadoIncompleto[];
   uso: AssistUsoInfo;
   source_refs: SourceRef[];
+  /**
+   * Turnos anteriores que entraram no contexto desta resposta (Sprint IA-7).
+   * Zero = pergunta isolada. Pode ser menor que o tamanho do fio: turno de ente fora do
+   * escopo atual é descartado pelo backend, e a conversa segue sem ele.
+   */
+  turnos_no_contexto: number;
+  /** Turnos rejeitados pelo backend por escopo, organização ou contexto incompatível. */
+  turnos_descartados: number;
+  verificacao: VerificacaoResposta | null;
   gerado_em: string;
 }
 export interface AssistUsoResumo {
@@ -3164,8 +3181,14 @@ export interface AssistUsoResumo {
 }
 
 export const perguntarAssistente = (body: {
-  ente: string;
+  /**
+   * Opcional **apenas** quando há `conversa_id`: numa pergunta de acompanhamento o ente
+   * é herdado do turno anterior (Sprint IA-7). O escopo é revalidado a cada turno.
+   */
+  ente?: string | null;
   pergunta: string;
+  /** `conversa_id` da resposta anterior — é o que transforma perguntas soltas em conversa. */
+  conversa_id?: string | null;
   periodo?: string | null;
   as_of?: string | null;
   /** Rota da tela de onde veio a pergunta — "pergunte sobre esta tela" (Sprint 25E). */
@@ -3175,6 +3198,8 @@ export const perguntarAssistente = (body: {
 /** Histórico de conversas da organização (endpoint ocioso até a Sprint 25E). */
 export interface ConversaResumo {
   id: string;
+  thread_id?: string;
+  parent_id?: string | null;
   tipo: string;
   cod_ibge: string | null;
   periodo: string | null;
@@ -3182,6 +3207,9 @@ export interface ConversaResumo {
   resposta: string;
   recusa: boolean;
   modelo: string | null;
+  as_of?: string | null;
+  source_refs?: SourceRef[];
+  verificacao?: VerificacaoResposta | null;
   criado_em: string;
 }
 
@@ -3236,12 +3264,7 @@ export interface InsightResposta {
   /** Cadeia de ferramentas que sustentou a resposta (auditada em op.ia_tool_call). */
   ferramentas: string[];
   uso: AssistUsoInfo;
-  verificacao: {
-    status: string;
-    total_citados: number;
-    com_lastro: number;
-    sem_lastro: string[];
-  } | null;
+  verificacao: VerificacaoResposta | null;
   gerado_em: string;
 }
 

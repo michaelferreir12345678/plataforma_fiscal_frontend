@@ -22,6 +22,7 @@ import { Icon } from '../components/Icon';
 import { Async } from '../components/AsyncState';
 import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { VirtualizedTable, type VirtualColumn } from '../components/VirtualizedTable';
 import { ExportButton } from '../components/ExportButton';
 import { useApp, useResource, type EnteSel } from '../context/AppContext';
@@ -239,6 +240,13 @@ function ConsolidadoTab({
             {ind.rotulo}
           </button>
         ))}
+        <ExplicacaoTela
+          pagina="carteira"
+          rotulo={`Comparativo de ${rotuloIndicador(indicador)}`}
+          periodo={periodo}
+          rotuloGatilho="Entenda este comparativo"
+          pergunta={`Como interpretar a cobertura, a procedência e os períodos usados no mapa e no ranking municipal de ${rotuloIndicador(indicador)} desta carteira?`}
+        />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

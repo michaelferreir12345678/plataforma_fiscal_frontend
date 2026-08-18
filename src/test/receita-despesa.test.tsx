@@ -48,6 +48,7 @@ function receitaFake(overrides: Partial<backend.ReceitaDetalhe> = {}): backend.R
   return {
     cod_ibge: '2304400',
     periodo: '2024-B6',
+    as_of: '2026-07-31',
     versao_entrega: '1',
     totais: {
       previsto_inicial: 9_000_000,
@@ -88,6 +89,7 @@ function despesaFake(overrides: Partial<backend.DespesaDetalhe> = {}): backend.D
   return {
     cod_ibge: '2304400',
     periodo: '2024-B6',
+    as_of: '2026-07-31',
     versao_entrega: '1',
     eixo: 'funcao',
     totais: {
@@ -308,6 +310,21 @@ describe('Receita — enriquecimento gerencial (Sprint 25A)', () => {
     });
   });
 
+  it('explica a receita arrecadada pela procedência da tela, sem trocar por RCL per capita', async () => {
+    const buscar = vi.spyOn(backend, 'buscarCentralDados').mockReturnValue(new Promise(() => {}));
+    const explicar = vi.spyOn(backend, 'explicarNumero');
+    renderReceita();
+
+    await screen.findByText(/2024-B6 · arrecadação, composição e dependência/i);
+    const gatilho = await screen.findByRole('button', { name: /Entenda a tela Receita arrecadada/i });
+    await userEvent.click(gatilho);
+    await screen.findByRole('dialog');
+    await waitFor(() => expect(buscar).toHaveBeenCalledWith(expect.objectContaining({
+      pagina: 'receita', periodo: '2024-B6', as_of: '2026-07-31',
+    })));
+    expect(explicar).not.toHaveBeenCalled();
+  });
+
   it('navega a árvore de receita drill DOWN (pergunta: de onde vem cada real?)', async () => {
     renderReceita();
     const raiz = await screen.findByRole('button', { name: /RECEITAS CORRENTES/ });
@@ -517,6 +534,21 @@ describe('Despesa — enriquecimento gerencial (Sprint 25A)', () => {
       detalhes: {},
       source_ref: SOURCE,
     });
+  });
+
+  it('explica a despesa empenhada pela procedência da tela, sem trocar por investimento/RCL', async () => {
+    const buscar = vi.spyOn(backend, 'buscarCentralDados').mockReturnValue(new Promise(() => {}));
+    const explicar = vi.spyOn(backend, 'explicarNumero');
+    renderDespesa();
+
+    await screen.findByText(/2024-B6 · execução, rigidez e composição/i);
+    const gatilho = await screen.findByRole('button', { name: /Entenda a tela Despesa empenhada/i });
+    await userEvent.click(gatilho);
+    await screen.findByRole('dialog');
+    await waitFor(() => expect(buscar).toHaveBeenCalledWith(expect.objectContaining({
+      pagina: 'despesa', periodo: '2024-B6', as_of: '2026-07-31',
+    })));
+    expect(explicar).not.toHaveBeenCalled();
   });
 
   it('mostra a cascata completa até PAGO e o inscrito em restos a pagar', async () => {

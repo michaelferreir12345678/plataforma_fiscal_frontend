@@ -26,6 +26,11 @@ export interface DialogProps {
   width?: number | string;
   initialFocusRef?: RefObject<HTMLElement>;
   closeLabel?: string;
+  /**
+   * `false` cria um painel não modal: sem backdrop bloqueante, sem travar o scroll e sem
+   * prender o Tab. Útil para ajuda contextual que deve coexistir com a tela.
+   */
+  modal?: boolean;
 }
 
 /** Diálogo modal com Escape, ciclo de Tab, foco inicial e restauração ao gatilho. */
@@ -38,6 +43,7 @@ export function Dialog({
   width = 760,
   initialFocusRef,
   closeLabel = 'Fechar diálogo',
+  modal = true,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -52,7 +58,7 @@ export function Dialog({
       ? document.activeElement
       : null;
     const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (modal) document.body.style.overflow = 'hidden';
 
     const focusInitial = () => {
       const requested = initialFocusRef?.current;
@@ -67,7 +73,7 @@ export function Dialog({
         onCloseRef.current();
         return;
       }
-      if (event.key !== 'Tab' || !dialogRef.current) return;
+      if (!modal || event.key !== 'Tab' || !dialogRef.current) return;
       const focusable = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
       ).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
@@ -91,13 +97,13 @@ export function Dialog({
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
+      if (modal) document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
-  }, [initialFocusRef]);
+  }, [initialFocusRef, modal]);
 
   const closeFromBackdrop = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) onClose();
+    if (modal && event.target === event.currentTarget) onClose();
   };
 
   return (
@@ -111,16 +117,17 @@ export function Dialog({
         zIndex: 100,
         display: 'flex',
         alignItems: 'flex-start',
-        justifyContent: 'center',
+        justifyContent: modal ? 'center' : 'flex-end',
         padding: '6vh 16px',
-        background: colors.overlay,
+        background: modal ? colors.overlay : 'transparent',
+        pointerEvents: modal ? 'auto' : 'none',
       }}
     >
       <div
         ref={dialogRef}
         className="dialog-panel"
         role="dialog"
-        aria-modal="true"
+        aria-modal={modal ? 'true' : undefined}
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : undefined}
         tabIndex={-1}
@@ -134,6 +141,7 @@ export function Dialog({
           borderRadius: 8,
           background: colors.surface,
           boxShadow: '0 18px 48px rgba(15, 26, 20, 0.22)',
+          pointerEvents: 'auto',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>

@@ -26,6 +26,7 @@ import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
 import { MetricHeader } from '../components/MetricHeader';
+import { ExplicacaoIndicador } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
@@ -36,7 +37,12 @@ import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill } from '../components/ArvoreDrill';
 import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
-import { useApp, useResource, type Resource } from '../context/AppContext';
+import {
+  useApp,
+  useResource,
+  type Resource,
+} from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import {
   fetchBenchmark,
   fetchEducacao,
@@ -119,6 +125,16 @@ export function SaudeEducacaoPage() {
     [ente.cod_ibge, periodo],
   );
   const detalhe = tab === 'saude' ? saude.data : educacao.data;
+  const contextoDetalhe = detalhe?.cod_ibge === ente.cod_ibge && detalhe.periodo === periodo
+    ? detalhe
+    : null;
+  useContextoTelaAssistente({
+    pagina: '/saude-educacao',
+    ente: contextoDetalhe?.cod_ibge ?? ente.cod_ibge,
+    periodo: contextoDetalhe?.periodo ?? (periodo || null),
+    competencia: contextoDetalhe?.periodo ?? (periodo || null),
+    asOf: contextoDetalhe?.as_of ?? null,
+  });
 
   return (
     <div
@@ -276,6 +292,7 @@ function Painel({
     <>
       <MetricHeader
         label={`% aplicado · ${cfg.titulo} · ${detalhe.periodo}`}
+        explicar={<ExplicacaoIndicador indicador={cfg.indicadorBenchmark} rotulo={cfg.titulo} periodo={detalhe.periodo} asOf={detalhe.as_of} />}
         value={<span data-testid="pct-aplicado">{P(detalhe.pct_aplicado)}</span>}
         valueColor={cor}
         badge={<SeloPiso abaixo={detalhe.abaixo_do_minimo} />}
@@ -681,7 +698,15 @@ function CardFundeb({
   return (
     <Card style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 20, alignItems: 'center' }}>
       <div>
-        <div style={eyebrow}>FUNDEB · profissionais da educação básica</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={eyebrow}>FUNDEB · profissionais da educação básica</div>
+          <ExplicacaoIndicador
+            indicador="fundeb_profissionais"
+            rotulo="FUNDEB aplicado em profissionais da educação básica"
+            periodo={fundeb.source_ref?.periodo ?? fonteFallback.periodo}
+            asOf={fundeb.as_of ?? asOfFallback}
+          />
+        </div>
         <div style={{ fontFamily: font.mono, fontSize: 32, fontWeight: 600, color: cor, marginTop: 4 }}>
           {P(fundeb.pct_aplicado)}
         </div>

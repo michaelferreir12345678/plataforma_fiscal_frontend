@@ -342,6 +342,7 @@ function resultadoFake(): backend.ResultadoDetalhe {
   return {
     cod_ibge: '2304400',
     periodo: '2024-B6',
+    as_of: '2026-07-31',
     versao_entrega: '1',
     valores: {
       receita_primaria: 12_000_000_000,
@@ -423,6 +424,21 @@ function renderResultado() {
 }
 
 describe('Resultado — meta da LDO (decisão §11.5)', () => {
+  it('explica o resultado em reais pela tela, sem trocar pela razão sobre a RCL', async () => {
+    mockComum();
+    mockResultado();
+    const buscar = vi.spyOn(backend, 'buscarCentralDados').mockReturnValue(new Promise(() => {}));
+    const explicar = vi.spyOn(backend, 'explicarNumero');
+    renderResultado();
+
+    await screen.findByText(/2024-B6 · resultados primário e nominal/i);
+    await userEvent.click(await screen.findByRole('button', { name: /Entenda a tela Resultado primário em reais/i }));
+    await waitFor(() => expect(buscar).toHaveBeenCalledWith(expect.objectContaining({
+      pagina: 'resultado', periodo: '2024-B6', as_of: '2026-07-31',
+    })));
+    expect(explicar).not.toHaveBeenCalled();
+  });
+
   it('rotula a meta cadastrada pela organização como restrita a esta tela', async () => {
     mockComum();
     mockResultado({

@@ -13,6 +13,12 @@ interface MetricHeaderProps {
   valueColor?: string;
   /** badge à direita do rótulo */
   badge?: ReactNode;
+  /**
+   * Ponto de entrada da explicação por IA **deste** indicador (Sprint IA-7).
+   * Fica no cabeçalho, ao lado do rótulo, porque é ali que o gestor olha quando não
+   * entende o número — e não numa barra de ações genérica no topo da página.
+   */
+  explicar?: ReactNode;
   /** linha de contexto abaixo do valor */
   context?: ReactNode;
   /** painel à direita (medidor, faixas, etc.) */
@@ -23,11 +29,11 @@ interface MetricHeaderProps {
  * Cabeçalho de indicador — topo padrão de toda tela de detalhe.
  * Reusado por Receita, Despesa, Dívida, Resultado, Caixa e Saúde/Educação.
  */
-export function MetricHeader({ label, value, suffix, valueColor = colors.ink, badge, context, right }: MetricHeaderProps) {
+export function MetricHeader({ label, value, suffix, valueColor = colors.ink, badge, explicar, context, right }: MetricHeaderProps) {
   return (
     <Card pad={16} style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
       <div style={{ flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
           <div
             style={{
               fontSize: 11,
@@ -40,6 +46,7 @@ export function MetricHeader({ label, value, suffix, valueColor = colors.ink, ba
             {label}
           </div>
           {badge}
+          {explicar}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
           <div

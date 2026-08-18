@@ -133,6 +133,18 @@ function renderCarteira(initialEntries = ['/carteira']) {
 }
 
 describe('Consolidado UF', () => {
+  it('oferece explicação de cobertura do comparativo, sem atribuí-lo a um ente isolado', async () => {
+    const buscar = vi.spyOn(backend, 'buscarCentralDados').mockReturnValue(new Promise(() => {}));
+    renderCarteira();
+    await screen.findByText('45,32%');
+
+    await userEvent.click(await screen.findByRole('button', { name: /Entenda a tela Comparativo/i }));
+    await waitFor(() => expect(buscar).toHaveBeenCalledWith(expect.objectContaining({
+      pagina: 'carteira', periodo: '2024-B6',
+    })));
+    expect(buscar.mock.calls[0][0].pergunta).toMatch(/mapa e no ranking municipal/i);
+  });
+
   it('mostra Σnum/Σden e a cobertura honesta (n/184 + períodos mistos)', async () => {
     renderCarteira();
     // consolidado ponderado: 45,32% (não uma média), com a memória Σ/Σ visível

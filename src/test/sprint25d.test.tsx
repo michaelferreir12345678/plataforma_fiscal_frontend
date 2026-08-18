@@ -7,6 +7,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
 import { AppProvider } from '../context/AppContext';
@@ -38,7 +39,7 @@ function patrimonioFake(over: Partial<backend.PatrimonioDetalhe> = {}): backend.
   return {
     cod_ibge: '2304400',
     ano: 2024,
-    as_of: null,
+    as_of: '2026-07-31',
     esfera: 'municipal',
     uf: 'CE',
     tem_msc: false,
@@ -125,6 +126,20 @@ beforeEach(() => {
 });
 
 describe('Patrimônio — o ente é o do contexto (Sprint 25D)', () => {
+  it('explica o exercício exibido e sua cobertura histórica com o mesmo as_of', async () => {
+    mockSessao();
+    mockPatrimonio(patrimonioFake());
+    const buscar = vi.spyOn(backend, 'buscarCentralDados').mockReturnValue(new Promise(() => {}));
+    renderPatrimonio();
+    await screen.findByText(/Ativo total · Município de Fortaleza/);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Entenda a tela Patrimônio/i }));
+    await waitFor(() => expect(buscar).toHaveBeenCalledWith(expect.objectContaining({
+      pagina: 'patrimonio', periodo: '2024', as_of: '2026-07-31',
+    })));
+    expect(buscar.mock.calls[0][0].pergunta).toMatch(/cobertura histórica/i);
+  });
+
   it('não oferece seletor de entes-demo nem troca o ente exibido', async () => {
     mockSessao();
     mockPatrimonio(patrimonioFake());

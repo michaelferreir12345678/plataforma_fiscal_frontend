@@ -98,7 +98,13 @@ describe('Painel expansível de Limites (Sprint D1)', () => {
 
     renderPagina();
     await aguardarContextoEstavel();
-    const toggle = await screen.findByRole('button', { name: /pessoal.*executivo/i });
+    // O gatilho de IA ao lado do numero tambem nomeia o indicador (IA-7), e nomear e o
+    // certo: "Explique este numero" sozinho nao diz QUAL numero a quem usa leitor de
+    // tela. O toggle e identificado pelo proprio estado, nao pelo texto.
+    const toggle = await screen.findByRole('button', {
+      name: /pessoal.*executivo/i,
+      expanded: false,
+    });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(fetchDetail).not.toHaveBeenCalled(); // custo só quando o gestor pede (§6.1)
 
@@ -134,7 +140,13 @@ describe('Painel expansível de Limites (Sprint D1)', () => {
 
     renderPagina('/limites?indicador=pessoal_executivo');
     await aguardarContextoEstavel();
-    const toggle = await screen.findByRole('button', { name: /pessoal.*executivo/i });
+    // O gatilho de IA ao lado do numero tambem nomeia o indicador (IA-7), e nomear e o
+    // certo: "Explique este numero" sozinho nao diz QUAL numero a quem usa leitor de
+    // tela. O toggle e identificado pelo proprio estado, nao pelo texto.
+    const toggle = await screen.findByRole('button', {
+      name: /pessoal.*executivo/i,
+      expanded: true,
+    });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     const painel = await screen.findByRole('region', { name: /pessoal.*executivo/i });
     await within(painel).findByText(/Memória de cálculo/);

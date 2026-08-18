@@ -18,6 +18,7 @@ import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
 import { MetricHeader } from '../components/MetricHeader';
+import { ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Sparkline } from '../components/Sparkline';
 import { Async, EmptyState, Skeleton } from '../components/AsyncState';
@@ -26,6 +27,7 @@ import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { VirtualizedTable, type VirtualColumn } from '../components/VirtualizedTable';
 import { useApp, useResource } from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import {
   fetchPatrimonio,
   fetchMe,
@@ -68,6 +70,18 @@ export function PatrimonioPage() {
   const cod = ente.cod_ibge;
   const [ano, setAno] = useState<number | null>(null);
   const det = useResource(() => fetchPatrimonio(cod, ano), [cod, ano]);
+  const contextoDet = det.data?.cod_ibge === cod && (ano == null || det.data.ano === ano)
+    ? det.data
+    : null;
+  const exercicioTela = contextoDet?.ano ?? ano;
+  useContextoTelaAssistente({
+    pagina: '/patrimonio',
+    ente: contextoDet?.cod_ibge ?? cod,
+    // O Assistente consulta indicadores por RREO; o exercício anual corresponde ao B6.
+    periodo: exercicioTela == null ? null : `${exercicioTela}-B6`,
+    competencia: exercicioTela == null ? null : String(exercicioTela),
+    asOf: contextoDet?.as_of ?? null,
+  });
   const me = useResource(fetchMe, []);
   const podeAdministrar = (me.data?.org_ativa?.capacidades ?? []).includes('administrar');
 
@@ -203,6 +217,15 @@ function Header({ d, enteNome }: { d: PatrimonioDetalhe; enteNome: string }) {
   return (
     <MetricHeader
       label={`Ativo total · ${enteNome} · exercício ${d.ano}`}
+      explicar={(
+        <ExplicacaoTela
+          pagina="patrimonio"
+          rotulo="Patrimônio"
+          periodo={String(d.ano)}
+          asOf={d.as_of}
+          pergunta={`De onde vem o balanço patrimonial do exercício ${d.ano}, qual a cobertura histórica da DCA para este ente e o que o calendário diz sobre o prazo de entrega?`}
+        />
+      )}
       value={B(d.ativo)}
       context={
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

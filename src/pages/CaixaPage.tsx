@@ -8,6 +8,7 @@ import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
 import { MetricHeader } from '../components/MetricHeader';
+import { ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, EmptyState, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
@@ -17,6 +18,7 @@ import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill } from '../components/ArvoreDrill';
 import { useApp, useResource } from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import {
   fetchCaixa,
   fetchCaixaArvore,
@@ -30,6 +32,7 @@ import {
   type RapOrgaoItem,
 } from '../services/backend';
 import { fmt } from '../utils/format';
+import { emBimestre } from '../utils/periodo';
 import { Termo } from '../components/NotaMetodologica';
 
 /** Coage FiscalDecimal (string ou número) para número; null-safe. */
@@ -73,6 +76,17 @@ export function CaixaPage() {
     [ente.cod_ibge, periodoRgf],
     pular,
   );
+  const contextoSuf = suf.data?.cod_ibge === ente.cod_ibge && suf.data.periodo === periodoRgf
+    ? suf.data
+    : null;
+  const competenciaTela = contextoSuf?.periodo ?? (periodoRgf || null);
+  useContextoTelaAssistente({
+    pagina: '/caixa',
+    ente: contextoSuf?.cod_ibge ?? ente.cod_ibge,
+    periodo: emBimestre(competenciaTela),
+    competencia: competenciaTela,
+    asOf: contextoSuf?.as_of ?? null,
+  });
   const det = useResource(
     () => fetchCaixa(ente.cod_ibge, periodoRgf),
     [ente.cod_ibge, periodoRgf],
@@ -118,6 +132,7 @@ export function CaixaPage() {
                   os dois lados juntos que descrevem a posição. */}
               <MetricHeader
                 label={`Disponibilidade das fontes superavitárias · ${s.periodo}`}
+                explicar={<ExplicacaoTela pagina="caixa" rotulo="Restos a Pagar & Caixa" periodo={s.periodo} asOf={s.as_of} pergunta="De onde vem a disponibilidade de caixa e os restos a pagar desta tela, qual a cobertura da fonte e o que o calendário diz sobre o prazo de entrega?" />}
                 value={M(s.resumo.total_disp_liquida_apos_positiva)}
                 context={
                   <span>

@@ -8,7 +8,7 @@
  * ausência de apuração (anexo não entregue) aparece como ausência, nunca como zero.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { AppProvider } from '../context/AppContext';
@@ -86,7 +86,7 @@ beforeEach(() => {
 describe('Dívida — posição vigente de Garantias e Operações de Crédito (Sprint D1)', () => {
   it('busca /limites pelo período RREO (bimestre) e mostra as duas posições sem simular', async () => {
     const fetchLimites = vi.spyOn(backend, 'fetchLimites').mockResolvedValue({
-      cod_ibge: '2304400', periodo: '2024-B6', versao_entrega: '1',
+      cod_ibge: '2304400', periodo: '2024-B6', as_of: '2026-01-01T00:00:00Z', versao_entrega: '1',
       itens: [
         {
           indicador: 'garantias', esfera: 'municipal', sentido: 'teto',
@@ -106,7 +106,9 @@ describe('Dívida — posição vigente de Garantias e Operações de Crédito (
 
     renderDivida();
     await screen.findByText('Posição vigente de endividamento');
-    expect(fetchLimites).toHaveBeenCalledWith('2304400', '2024-B6');
+    await waitFor(() => expect(fetchLimites).toHaveBeenCalledWith(
+      '2304400', '2024-B6', '2026-01-01T00:00:00Z',
+    ));
 
     expect(await screen.findByText('Garantias concedidas')).toBeInTheDocument();
     expect(screen.getByText('Operações de crédito')).toBeInTheDocument();
@@ -119,7 +121,7 @@ describe('Dívida — posição vigente de Garantias e Operações de Crédito (
 
   it('anexo não entregue aparece como ausência, nunca como zero', async () => {
     vi.spyOn(backend, 'fetchLimites').mockResolvedValue({
-      cod_ibge: '2304400', periodo: '2024-B6', versao_entrega: '1',
+      cod_ibge: '2304400', periodo: '2024-B6', as_of: '2026-01-01T00:00:00Z', versao_entrega: '1',
       itens: [], // nenhum dos dois indicadores foi materializado neste período
       source_ref: SRC_RREO,
     } as never);
@@ -129,5 +131,29 @@ describe('Dívida — posição vigente de Garantias e Operações de Crédito (
     const avisos = await screen.findAllByText(/Não apurado/);
     expect(avisos).toHaveLength(2);
     expect(screen.queryByText('0,00%')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Explique Garantias concedidas/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Explique Operações de crédito/i })).toBeInTheDocument();
+  });
+
+  it('competência não conversível termina em ausência explicada, sem skeleton eterno', async () => {
+    const detalheBase = await backend.fetchDivida('2304400', '2024-Q3');
+    vi.mocked(backend.fetchDivida).mockResolvedValue({
+      ...detalheBase,
+      periodo: '2024-A1',
+      source_ref: { ...detalheBase.source_ref, periodo: '2024-A1' },
+      dcl: {
+        ...detalheBase.dcl,
+        source_ref: { ...detalheBase.dcl.source_ref, periodo: '2024-A1' },
+      },
+    });
+    const fetchLimites = vi.spyOn(backend, 'fetchLimites');
+
+    renderDivida();
+
+    expect(await screen.findByText('Sem período RREO equivalente para 2024-A1.')).toBeInTheDocument();
+    expect(fetchLimites).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: /^Entenda a ausência\./i }),
+    ).toBeInTheDocument();
   });
 });

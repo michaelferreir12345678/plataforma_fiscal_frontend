@@ -339,6 +339,10 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
             /* Sprint IA-5: narrativa executiva **do mesmo documento** — os números e as
                fontes são os que a pré-visualização mostra; a IA só liga um ao outro. */
             <ExplicacaoIA
+              contextKey={[
+                'narrar_relatorio', item.id, item.cod_ibge, item.modelo, item.periodo,
+                item.as_of ?? '',
+              ].join('\u0000')}
               rotulo="Narrativa executiva"
               titulo={`Narrativa · ${active?.nome ?? item.modelo} · ${item.periodo}`}
               descricao="Gerar a narrativa executiva deste relatório, com os mesmos números e fontes"
@@ -347,6 +351,7 @@ function Preview({ item, metrics, active }: { item: RelatorioItem | null; metric
                   ente: item.cod_ibge,
                   periodo: item.periodo,
                   modelo: item.modelo,
+                  as_of: item.as_of,
                 })
               }
             />

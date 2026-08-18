@@ -11,6 +11,7 @@ import { useState, type CSSProperties } from 'react';
 import { colors, font, type RiskLevel } from '../theme';
 import { Card } from '../components/Card';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIndicador } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { StatusBadge } from '../components/StatusBadge';
 import { Async, Skeleton } from '../components/AsyncState';
@@ -496,7 +497,21 @@ function Comparison({ data }: { data: BenchmarkResponse }) {
 
   return (
     <Card>
-      <SectionLabel note={`${CRITERIO_LABEL[data.coorte.criterio] ?? data.coorte.criterio} · ${data.coorte.faixa}`}>
+      <SectionLabel
+        note={(
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {`${CRITERIO_LABEL[data.coorte.criterio] ?? data.coorte.criterio} · ${data.coorte.faixa}`}
+            {/* Sprint IA-7: a explicação segue o indicador **selecionado** na tela — o
+                comparativo muda de assunto a cada troca, e a IA tem de mudar junto. */}
+            <ExplicacaoIndicador
+              indicador={data.indicador}
+              rotulo={data.indicador_rotulo}
+              periodo={data.periodo}
+              asOf={data.as_of}
+            />
+          </span>
+        )}
+      >
         Ente × mediana × extremos
       </SectionLabel>
       <div style={{ marginTop: 8 }}>

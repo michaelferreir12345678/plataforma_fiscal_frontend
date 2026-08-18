@@ -44,6 +44,17 @@ const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const NUMERO_FISCAL_SOURCE = '-?\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?%?|-?\\d+,\\d+%?|-?\\d+%';
 const NUMERO_FISCAL_RE = new RegExp(`^(?:${NUMERO_FISCAL_SOURCE})$`);
 
+/**
+ * Carimbo de tempo ISO-8601. Entra na alternância ANTES do número para ser consumido
+ * inteiro: sem isso, os segundos fracionários de `2026-08-18T04:46:13.996583Z` casam
+ * `13.996` como notação de milhar, e o trecho vira um número destacado e ancorado a
+ * uma fonte pelo casamento tolerante — procedência de mentira para um valor que não
+ * existe. O backend mascara o mesmo padrão antes do G6
+ * (`shared/tooling/verificacao.py`); os dois lados têm de continuar iguais.
+ */
+const TIMESTAMP_ISO_SOURCE =
+  '\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:?\\d{2})?';
+
 /** Converte uma string numérica em pt-BR (milhar por ponto, decimal por vírgula) em
  * `number`. Só entra em jogo quando `fato.valor` (o decimal cru) não veio preenchido. */
 function numeroDePtBr(formatado: string): number | null {
@@ -256,6 +267,9 @@ function renderInline(
     '(?<![*\\w])\\*[^*\\n]+\\*(?![*\\w])', // itálico
   ];
   if (ancoras.length) partes.unshift(ancoras.map(escapar).join('|'));
+  // O carimbo de tempo vem antes do número, de propósito: alternância de regex é ordenada,
+  // então ele é consumido inteiro e os seus segundos fracionários não viram "13.996".
+  partes.push(TIMESTAMP_ISO_SOURCE);
   // Números fiscais soltos (paráfrase do Gemini) entram por último: o casamento exato dos
   // `ancoras` acima sempre tem prioridade na mesma posição do texto.
   if (numericos.length) partes.push(NUMERO_FISCAL_SOURCE);

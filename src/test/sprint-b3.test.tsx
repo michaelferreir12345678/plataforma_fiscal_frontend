@@ -226,6 +226,10 @@ describe('Assistente — dados incompletos e modo offline (Sprint B3)', () => {
       dados_incompletos: [],
       uso: { modelo: 'gemini-2.5-flash', tokens_entrada: 120, tokens_saida: 80, latencia_ms: 640 },
       source_refs: [],
+      // Sprint IA-7: a resposta declara quantos turnos anteriores entraram no contexto.
+      turnos_no_contexto: 0,
+      turnos_descartados: 0,
+      verificacao: null,
       gerado_em: '2026-08-01T12:00:00Z',
       ...overrides,
     };

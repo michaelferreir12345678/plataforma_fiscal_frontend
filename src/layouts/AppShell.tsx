@@ -7,6 +7,8 @@ import { SeletorEnte, SeletorPeriodo, SeletorVisao } from './ContextSelectors';
 import { useApp, useResource } from '../context/AppContext';
 import { fetchAlertas, fetchCarteiraResumo, fetchFontes, fetchMe } from '../services/backend';
 import type { FonteCatalogo } from '../services/backend';
+import { emBimestre } from '../utils/periodo';
+import { destinoAssistenteDaTela } from '../utils/contextoAssistente';
 
 /** Versão do app vem do build (Vite), nunca de um literal na UI. */
 const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string) || import.meta.env.MODE;
@@ -125,8 +127,11 @@ const ROTAS_SEM_SELETOR_PERIODO = [
 
 export function AppShell() {
   const location = useLocation();
-  const { ente, periodo, logout } = useApp();
+  const { ente, periodo, periodoRgf, contextoTelaAssistente, logout } = useApp();
   const usaRgf = ROTAS_RGF.some((r) => location.pathname.startsWith(r));
+  const paginaFiscal = PAGINAS_FISCAIS.find(
+    (rota) => location.pathname === rota || location.pathname.startsWith(`${rota}/`),
+  ) ?? null;
   const ocultarSeletorPeriodo = ROTAS_SEM_SELETOR_PERIODO.some((r) => location.pathname.startsWith(r));
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [compacto, setCompacto] = useState(
@@ -198,6 +203,30 @@ export function AppShell() {
       : location.pathname === '/admin'
         ? 'Administração'
         : 'Prumo');
+  const contextoRegistrado =
+    contextoTelaAssistente?.pagina === paginaFiscal
+    && contextoTelaAssistente.ente === ente.cod_ibge
+    && (
+      paginaFiscal === '/patrimonio'
+      || contextoTelaAssistente.competencia === (usaRgf ? periodoRgf : periodo)
+    )
+      ? contextoTelaAssistente
+      : null;
+  const competenciaAtalho = contextoRegistrado?.competencia
+    ?? (usaRgf ? (periodoRgf || null) : (periodo || null));
+  const periodoAtalho = contextoRegistrado
+    ? contextoRegistrado.periodo
+    : usaRgf
+      ? emBimestre(periodoRgf)
+      : (periodo || null);
+  const destinoAssistente = paginaFiscal
+    ? destinoAssistenteDaTela({
+        pagina: paginaFiscal,
+        periodo: periodoAtalho,
+        competencia: competenciaAtalho,
+        asOf: contextoRegistrado?.asOf ?? null,
+      })
+    : null;
 
   useEffect(() => {
     document.title = `${tituloRota} · Prumo`;
@@ -282,10 +311,10 @@ export function AppShell() {
 
         {/* "Pergunte sobre esta tela" (Sprint 25E): leva o assistente ao contexto da
             página em que o gestor está, em vez de obrigá-lo a redigir de onde veio. */}
-        {PAGINAS_FISCAIS.some((r) => location.pathname.startsWith(r)) && (
+        {destinoAssistente && (
           <Link
             className="app-shell__optional-action"
-            to={`/assistente?de=${encodeURIComponent(location.pathname)}`}
+            to={destinoAssistente}
             title="Abrir o assistente já com o contexto desta tela"
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',

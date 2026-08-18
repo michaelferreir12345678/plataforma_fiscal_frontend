@@ -9,13 +9,13 @@ import { Async, ErrorBox, Loading } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { FonteChip } from '../components/FonteChip';
-import { ExplicacaoIA } from '../components/ExplicacaoIA';
+import { ExplicacaoIndicador } from '../components/ExplicacaoIndicador';
 import { SeloCobertura } from '../components/SeloCobertura';
 import { SeloQualidadePagina } from '../components/SeloQualidade';
 import { useApp, useResource } from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import { ApiError } from '../services/api';
 import {
-  explicarNumero,
   fetchLimiteDetail,
   fetchLimites,
   simularLimite,
@@ -64,6 +64,16 @@ const FAIXA_NIVEL: Record<string, RiskLevel> = {
 export function LimitesPage() {
   const { ente, periodo } = useApp();
   const res = useResource(() => fetchLimites(ente.cod_ibge, periodo), [ente.cod_ibge, periodo]);
+  const contextoRes = res.data?.cod_ibge === ente.cod_ibge && res.data.periodo === periodo
+    ? res.data
+    : null;
+  useContextoTelaAssistente({
+    pagina: '/limites',
+    ente: contextoRes?.cod_ibge ?? ente.cod_ibge,
+    periodo: contextoRes?.periodo ?? (periodo || null),
+    competencia: contextoRes?.periodo ?? (periodo || null),
+    asOf: contextoRes?.as_of ?? null,
+  });
   // Crosslink universal (Sprint D1): o Cockpit e outras telas linkam para cá com
   // ?indicador=X — a linha já abre expandida em vez de o gestor ter de procurá-la.
   const [params] = useSearchParams();
@@ -285,18 +295,14 @@ function LimiteDetailPanel({ indicador, rotulo }: { indicador: string; rotulo: s
               <div style={{ flex: 1 }} />
               {/* Sprint IA-5: a explicação fica **ao lado do número**, com a mesma fonte
                   que o chip declara — é o ponto da capacidade: não trocar de tela para
-                  entender o que já está sendo mostrado. */}
-              <ExplicacaoIA
-                rotulo="Explique este número"
-                titulo={`${rotulo} · ${d.periodo}`}
-                descricao="Explique este número: como foi apurado, de onde vêm os dados, qual a base legal e o que mudaria a faixa"
-                carregar={() =>
-                  explicarNumero({
-                    ente: ente.cod_ibge,
-                    indicador: indicador,
-                    periodo: d.periodo,
-                  })
-                }
+                  entender o que já está sendo mostrado. A IA-7 extraiu o bloco para
+                  `ExplicacaoIndicador`: esta era a última cópia manual, e cópia é o que
+                  faz uma tela divergir das outras na primeira mudança de contrato. */}
+              <ExplicacaoIndicador
+                indicador={indicador}
+                rotulo={rotulo}
+                periodo={d.periodo}
+                asOf={d.as_of}
               />
               <FonteChip source={d.source_ref} asOf={d.as_of} />
             </div>

@@ -19,6 +19,7 @@ import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
 import { MetricHeader } from '../components/MetricHeader';
+import { ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, EmptyState, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
@@ -30,6 +31,7 @@ import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
 import { ArvoreDrill, numero } from '../components/ArvoreDrill';
 import { useApp, useResource } from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import {
   fetchDespesa,
   fetchDespesaEstagios,
@@ -52,6 +54,16 @@ const P = (v: number | null | undefined, casas = 1) => (v == null ? '—' : pct(
 export function DespesaPage() {
   const { ente, periodo, periodosRreo } = useApp();
   const det = useResource(() => fetchDespesa(ente.cod_ibge, periodo, 'funcao'), [ente.cod_ibge, periodo]);
+  const contextoDet = det.data?.cod_ibge === ente.cod_ibge && det.data.periodo === periodo
+    ? det.data
+    : null;
+  useContextoTelaAssistente({
+    pagina: '/despesa',
+    ente: contextoDet?.cod_ibge ?? ente.cod_ibge,
+    periodo: contextoDet?.periodo ?? (periodo || null),
+    competencia: contextoDet?.periodo ?? (periodo || null),
+    asOf: contextoDet?.as_of ?? null,
+  });
   const me = useResource(fetchMe, []);
   const podeAdministrar = (me.data?.org_ativa?.capacidades ?? []).includes('administrar');
   const ultimoPeriodo = periodosRreo.length ? periodosRreo[periodosRreo.length - 1] : null;
@@ -123,6 +135,15 @@ function Conteudo({
     <>
       <MetricHeader
         label={`Despesa empenhada · ${d.periodo} (acum.)`}
+        explicar={(
+          <ExplicacaoTela
+            pagina="despesa"
+            rotulo="Despesa empenhada"
+            periodo={d.periodo}
+            asOf={d.as_of}
+            pergunta="Como é composta a despesa empenhada exibida nesta tela, de quais fontes vêm os valores e qual é a cobertura do período?"
+          />
+        )}
         value={fmt(emp / 1e6)}
         suffix="M"
         valueColor={colors.primary}

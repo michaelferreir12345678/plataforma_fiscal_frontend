@@ -12,6 +12,7 @@ import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
 import { RespostaMarkdown } from '../components/RespostaMarkdown';
+import { IconeIA, SeloIA } from '../components/MarcaIA';
 import { PageHeader } from '../components/PageHeader';
 import { useApp } from '../context/AppContext';
 import {
@@ -75,16 +76,17 @@ function fmtSource(ref: SourceRef | null): string {
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '';
+  // `YYYY-MM-DD` é data civil, não instante UTC. Passá-la a `Date` em UTC-3 desloca para
+  // o dia anterior e falseia justamente o corte bitemporal mostrado ao gestor.
+  const dataCivil = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (dataCivil) return `${dataCivil[3]}/${dataCivil[2]}/${dataCivil[1]}`;
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
 }
 
+/** A marca da IA da plataforma (Sprint IA-7) — a mesma das onze telas de indicador. */
 function SparkIcon({ size = 16 }: { size?: number }) {
-  return (
-    <Icon size={size} stroke={colors.bg}>
-      <path d="M8 2l1.5 4.5L14 8l-4.5 1.5L8 14l-1.5-4.5L2 8l4.5-1.5z" />
-    </Icon>
-  );
+  return <IconeIA size={size} cor={colors.bg} />;
 }
 
 function FatoRow({ f }: { f: AssistFato }) {
@@ -108,7 +110,17 @@ function FatoRow({ f }: { f: AssistFato }) {
   );
 }
 
-function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () => void; resumindo: boolean }) {
+function AnswerBubble({
+  turn,
+  onResumo,
+  resumindo,
+  ocupado,
+}: {
+  turn: Turn;
+  onResumo: (contexto: AssistResposta) => void;
+  resumindo: boolean;
+  ocupado: boolean;
+}) {
   const navigate = useNavigate();
   const r = turn.resposta;
   const scope = scopeOf(r);
@@ -131,10 +143,13 @@ function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () 
           <SparkIcon size={15} />
         </div>
         <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: '4px 12px 12px 12px', overflow: 'hidden', flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', background: scopeMap[scope].bg, borderBottom: `1px solid ${colors.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 16px', background: scopeMap[scope].bg, borderBottom: `1px solid ${colors.border}`, flexWrap: 'wrap' }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: scopeMap[scope].color }} />
             <span style={{ fontSize: 11, fontWeight: 600, color: scopeMap[scope].color, letterSpacing: '0.03em' }}>{scopeMap[scope].label}</span>
-            {r.titulo && <span style={{ fontSize: 11, color: colors.faint, marginLeft: 'auto' }}>{r.titulo} · {r.periodo}</span>}
+            <SeloIA rotulo="Resposta por IA" />
+            <span data-testid="contexto-resposta" style={{ fontSize: 11, color: colors.faint, marginLeft: 'auto' }}>
+              {r.titulo ? `${r.titulo} · ` : ''}{r.ente_nome ?? r.ente}{r.periodo ? ` · ${r.periodo}` : ''}
+            </span>
           </div>
 
           {/* Quando o Gemini está indisponível (sem chave, sem SDK, ou falhou), o backend
@@ -188,6 +203,12 @@ function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () 
               </div>
             )}
 
+            {r.verificacao && r.verificacao.status !== 'ok' && (
+              <div role="alert" style={{ marginTop: 14, padding: 10, background: colors.yellowBg, border: `1px solid ${colors.yellowSoft}`, color: colors.yellowText, borderRadius: 4, fontSize: 11.5, lineHeight: 1.5 }}>
+                A verificação automática não encontrou lastro para: {r.verificacao.sem_lastro.join(', ') || 'uma ou mais afirmações'}. Não use esses trechos para decidir.
+              </div>
+            )}
+
             {/* fundamentação normativa */}
             {r.normas.length > 0 && (
               <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${colors.borderSoft}` }}>
@@ -226,7 +247,7 @@ function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () 
                 </button>
               ))}
               {r.tipo === 'pergunta' && (
-                <button type="button" onClick={onResumo} disabled={resumindo} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${colors.border}`, color: colors.primary, borderRadius: 4, fontSize: 11.5, fontWeight: 500, opacity: resumindo ? 0.6 : 1 }}>
+                <button type="button" onClick={() => onResumo(r)} disabled={ocupado} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', minHeight: 32, border: `1px solid ${colors.border}`, color: colors.primary, borderRadius: 4, fontSize: 11.5, fontWeight: 500, opacity: ocupado ? 0.6 : 1 }}>
                   <Icon size={12}><rect x="3" y="2" width="10" height="12" rx="1" /><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" /></Icon>
                   {resumindo ? 'Gerando…' : 'Gerar resumo executivo'}
                 </button>
@@ -239,6 +260,11 @@ function AnswerBubble({ turn, onResumo, resumindo }: { turn: Turn; onResumo: () 
               <span>tokens: {r.uso.tokens_entrada}→{r.uso.tokens_saida}</span>
               {r.uso.latencia_ms > 0 && <span>{r.uso.latencia_ms} ms</span>}
               {r.source_refs.length > 0 && <span>{r.source_refs.length} fonte(s) rastreável(is)</span>}
+              {r.as_of && <span>as_of {fmtDate(r.as_of)}</span>}
+            </div>
+            <div data-testid="turnos-contexto" style={{ display: 'flex', gap: 10, marginTop: 6, fontSize: 11, color: colors.faint, flexWrap: 'wrap' }}>
+              <span>{r.turnos_no_contexto ?? 0} turno(s) anterior(es) usado(s)</span>
+              <span>{r.turnos_descartados ?? 0} turno(s) descartado(s)</span>
             </div>
           </div>
         </div>
@@ -266,20 +292,62 @@ export function AssistentePage() {
   // Chegou pelo atalho do shell: o assistente sabe de qual tela veio a pergunta.
   const paginaOrigem = params.get('de');
   const nomePagina = paginaOrigem ? NOME_PAGINA[paginaOrigem] ?? null : null;
+  const paginaAssistente = nomePagina ? paginaOrigem : null;
+  const periodoOrigem = nomePagina ? params.get('periodo') : null;
+  const competenciaOrigem = nomePagina ? params.get('competencia') : null;
+  const asOfOrigem = nomePagina ? params.get('as_of') : null;
+  const periodoDaConversa = periodoOrigem ?? periodo;
+  const competenciaExibida = competenciaOrigem ?? periodoDaConversa;
   const [historicoAberto, setHistoricoAberto] = useState(false);
   const [conversas, setConversas] = useState<ConversaResumo[] | null>(null);
   const [thread, setThread] = useState<Turn[]>([]);
+  /**
+   * Fio da conversa (Sprint IA-7): o `conversa_id` do último turno volta ao backend na
+   * próxima pergunta. É o que faz "e por que isso aconteceu?" ter sujeito — antes, cada
+   * pergunta era isolada por construção, e a tela mantinha a aparência de conversa sem a
+   * continuidade real.
+   */
+  const [conversaId, setConversaId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
   const [resumindo, setResumindo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uso, setUso] = useState<AssistUsoResumo | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contextoKey = [
+    ente.cod_ibge,
+    paginaAssistente ?? '',
+    periodoDaConversa ?? '',
+    competenciaExibida ?? '',
+    asOfOrigem ?? '',
+  ].join('\u0000');
+  const contextoKeyRef = useRef(contextoKey);
+  const perguntaSeqRef = useRef(0);
+  const resumoSeqRef = useRef(0);
+  const operacaoEmCursoRef = useRef<'pergunta' | 'resumo' | null>(null);
+
+  const resetarConversa = useCallback(() => {
+    perguntaSeqRef.current += 1;
+    resumoSeqRef.current += 1;
+    operacaoEmCursoRef.current = null;
+    setThread([]);
+    setConversaId(null);
+    setInput('');
+    setError(null);
+    setPending(false);
+    setResumindo(false);
+  }, []);
 
   const reloadUso = useCallback(() => {
     fetchAssistenteUso().then(setUso).catch(() => setUso(null));
   }, []);
   useEffect(() => reloadUso(), [reloadUso]);
+
+  useEffect(() => {
+    if (contextoKeyRef.current === contextoKey) return;
+    contextoKeyRef.current = contextoKey;
+    resetarConversa();
+  }, [contextoKey, resetarConversa]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -293,52 +361,112 @@ export function AssistentePage() {
   const ask = useCallback(
     async (pergunta: string) => {
       const q = pergunta.trim();
-      if (!q || pending) return;
+      if (!q || pending || resumindo || operacaoEmCursoRef.current) return;
+      const sequencia = ++perguntaSeqRef.current;
+      const contextoDaPergunta = contextoKeyRef.current;
+      operacaoEmCursoRef.current = 'pergunta';
       setPending(true);
       setError(null);
       setInput('');
       try {
         const resposta = await perguntarAssistente({
-          ente: ente.cod_ibge,
+          // No acompanhamento, ente e período são herdados do turno anterior pelo
+          // backend — a tela não os repete, e o escopo é revalidado lá de qualquer forma.
+          ente: conversaId ? undefined : ente.cod_ibge,
           pergunta: q,
-          periodo,
+          conversa_id: conversaId,
+          periodo: conversaId ? undefined : periodoDaConversa,
+          as_of: conversaId ? undefined : asOfOrigem,
           // A tela de origem só pesa quando a pergunta não nomeia indicador (backend).
-          pagina: paginaOrigem,
+          pagina: paginaAssistente,
         });
+        if (
+          sequencia !== perguntaSeqRef.current
+          || contextoDaPergunta !== contextoKeyRef.current
+        ) return;
         setThread((t) => [...t, { key: resposta.conversa_id, pergunta: q, resposta }]);
+        setConversaId(resposta.conversa_id);
         reloadUso();
       } catch (e) {
-        setError(errMsg(e));
+        if (
+          sequencia === perguntaSeqRef.current
+          && contextoDaPergunta === contextoKeyRef.current
+        ) setError(errMsg(e));
       } finally {
-        setPending(false);
+        if (
+          sequencia === perguntaSeqRef.current
+          && contextoDaPergunta === contextoKeyRef.current
+        ) {
+          if (operacaoEmCursoRef.current === 'pergunta') operacaoEmCursoRef.current = null;
+          setPending(false);
+        }
       }
     },
-    [ente.cod_ibge, periodo, pending, reloadUso, paginaOrigem],
+    [
+      asOfOrigem,
+      conversaId,
+      ente.cod_ibge,
+      paginaAssistente,
+      pending,
+      periodoDaConversa,
+      reloadUso,
+      resumindo,
+    ],
   );
 
-  const resumo = useCallback(async () => {
-    if (resumindo) return;
+  const resumo = useCallback(async (contextoResposta: AssistResposta) => {
+    if (pending || resumindo || operacaoEmCursoRef.current) return;
+    const sequencia = ++resumoSeqRef.current;
+    const contextoDaSolicitacao = contextoKeyRef.current;
+    operacaoEmCursoRef.current = 'resumo';
     setResumindo(true);
     setError(null);
     try {
-      const resposta = await gerarResumoExecutivo({ ente: ente.cod_ibge, periodo });
+      const resposta = await gerarResumoExecutivo({
+        ente: contextoResposta.ente,
+        periodo: contextoResposta.periodo,
+        as_of: contextoResposta.as_of,
+      });
+      if (
+        sequencia !== resumoSeqRef.current
+        || contextoDaSolicitacao !== contextoKeyRef.current
+      ) return;
       setThread((t) => [
         ...t,
-        { key: resposta.conversa_id, pergunta: `Resumo executivo · ${ente.nome} · ${periodo}`, resposta },
+        {
+          key: resposta.conversa_id,
+          pergunta: `Resumo executivo · ${resposta.ente_nome ?? resposta.ente}${resposta.periodo ? ` · ${resposta.periodo}` : ''}`,
+          resposta,
+        },
       ]);
+      // O resumo é um documento, não um turno: o acompanhamento seguinte continua a
+      // conversa que estava em curso, não o resumo.
+      setConversaId((atual) => atual ?? resposta.conversa_id);
       reloadUso();
     } catch (e) {
-      setError(errMsg(e));
+      if (
+        sequencia === resumoSeqRef.current
+        && contextoDaSolicitacao === contextoKeyRef.current
+      ) setError(errMsg(e));
     } finally {
-      setResumindo(false);
+      if (
+        sequencia === resumoSeqRef.current
+        && contextoDaSolicitacao === contextoKeyRef.current
+      ) {
+        if (operacaoEmCursoRef.current === 'resumo') operacaoEmCursoRef.current = null;
+        setResumindo(false);
+      }
     }
-  }, [ente.cod_ibge, ente.nome, periodo, resumindo, reloadUso]);
+  }, [pending, resumindo, reloadUso]);
+
+  const ultimaResposta = thread[thread.length - 1]?.resposta;
+  const ocupado = pending || resumindo;
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }} data-screen-label="Assistente de IA">
       <PageHeader
         title={`Assistente fiscal · ${ente.nome}`}
-        context={`RAG fundamentado · responde apenas a partir dos dados do ente (${periodo || 'sem período'}) e da norma`}
+        context={`RAG fundamentado · responde apenas a partir dos dados do ente (${competenciaExibida || 'sem período'}) e da norma`}
         source="Indicadores gold · LRF, Constituição Federal e MDF"
         actions={(
           <>
@@ -349,7 +477,13 @@ export function AssistentePage() {
               </div>
             )}
             {thread.length > 0 && (
-              <button type="button" onClick={() => setThread([])} style={{ fontSize: 11, color: colors.muted, padding: '5px 10px', border: `1px solid ${colors.border}`, borderRadius: 4 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  resetarConversa();
+                }}
+                style={{ fontSize: 11, color: colors.muted, padding: '5px 10px', border: `1px solid ${colors.border}`, borderRadius: 4 }}
+              >
                 Nova conversa
               </button>
             )}
@@ -369,11 +503,17 @@ export function AssistentePage() {
         </div>
 
         {thread.map((turn) => (
-          <AnswerBubble key={turn.key} turn={turn} onResumo={resumo} resumindo={resumindo} />
+          <AnswerBubble
+            key={turn.key}
+            turn={turn}
+            onResumo={resumo}
+            resumindo={resumindo}
+            ocupado={ocupado}
+          />
         ))}
 
         {pending && (
-          <div className="fade-in" style={{ display: 'flex', gap: 12, alignItems: 'center', color: colors.muted, fontSize: 12, paddingLeft: 42 }}>
+          <div role="status" aria-live="polite" aria-busy="true" className="fade-in" style={{ display: 'flex', gap: 12, alignItems: 'center', color: colors.muted, fontSize: 12, paddingLeft: 42 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.primary, animation: 'pulse-soft 1.2s ease-in-out infinite' }} />
             Consultando indicadores e a norma…
           </div>
@@ -394,7 +534,11 @@ export function AssistentePage() {
             data-testid="contexto-pagina"
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: colors.accentSoft, color: colors.primary, fontSize: 11.5, lineHeight: 1.5 }}
           >
-            <strong>Contexto: {nomePagina}.</strong> Perguntas sem indicador nomeado (“e isto
+            <strong>
+              Contexto: {nomePagina}
+              {competenciaExibida ? ` · ${competenciaExibida}` : ''}
+              {asOfOrigem ? ` · as_of ${fmtDate(asOfOrigem)}` : ''}.
+            </strong>{' '}Perguntas sem indicador nomeado (“e isto
             aqui, está bom?”) são respondidas com os números desta tela; nomear outro assunto
             muda o contexto.
           </div>
@@ -404,24 +548,37 @@ export function AssistentePage() {
             <div style={{ fontSize: 11, color: colors.faint, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>Perguntas sugeridas · {ente.nome}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
               {SUGESTOES.map((s) => (
-                <button type="button" key={s} onClick={() => ask(s)} disabled={pending} style={{ textAlign: 'left', padding: '8px 12px', border: `1px solid ${colors.border}`, borderRadius: 6, fontSize: 12, background: colors.bg, opacity: pending ? 0.6 : 1 }}>
+                <button type="button" key={s} onClick={() => ask(s)} disabled={ocupado} style={{ textAlign: 'left', padding: '8px 12px', border: `1px solid ${colors.border}`, borderRadius: 6, fontSize: 12, background: colors.bg, opacity: ocupado ? 0.6 : 1 }}>
                   {s}
                 </button>
               ))}
             </div>
           </>
         )}
+        {conversaId && ultimaResposta && (
+          <div
+            data-testid="fio-da-conversa"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 11.5, color: colors.primary }}
+          >
+            <IconeIA size={12} />
+            <span>
+              Conversa em andamento sobre <b>{ultimaResposta.ente_nome ?? ultimaResposta.ente}</b>
+              {ultimaResposta.periodo ? ` · ${ultimaResposta.periodo}` : ''}: pode perguntar
+              “e por que isso aconteceu?” sem repetir o ente ou o período.
+            </span>
+          </div>
+        )}
         <form onSubmit={(e) => { e.preventDefault(); ask(input); }} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Pergunte sobre seus indicadores ou a norma…"
-            disabled={pending}
+            placeholder={conversaId ? "Continue a conversa — ex.: “e por que isso aconteceu?”" : "Pergunte sobre seus indicadores ou a norma…"}
+            disabled={ocupado}
             style={{ flex: 1, fontSize: 13, padding: '11px 14px', border: `1px solid ${colors.border}`, borderRadius: 6, background: colors.bg, color: colors.ink }}
           />
           {/* O ícone não nomeia o botão para quem usa leitor de tela. */}
-          <button type="submit" aria-label="Enviar pergunta" disabled={pending || !input.trim()} style={{ width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', background: colors.primary, borderRadius: 6, flexShrink: 0, opacity: pending || !input.trim() ? 0.5 : 1 }}>
+          <button type="submit" aria-label="Enviar pergunta" disabled={ocupado || !input.trim()} style={{ width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', background: colors.primary, borderRadius: 6, flexShrink: 0, opacity: ocupado || !input.trim() ? 0.5 : 1 }}>
             <Icon size={18} stroke={colors.bg} sw={1.6}><path d="M2 8h10M8 4l4 4-4 4" /></Icon>
           </button>
         </form>

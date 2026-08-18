@@ -10,6 +10,7 @@ import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { PageHeader } from '../components/PageHeader';
 import { MetricHeader } from '../components/MetricHeader';
+import { ExplicacaoTela } from '../components/ExplicacaoIndicador';
 import { SectionLabel } from '../components/SectionLabel';
 import { Async, Skeleton } from '../components/AsyncState';
 import { FonteChip } from '../components/FonteChip';
@@ -18,7 +19,12 @@ import { MemoriaDialog, LinhaMemoria } from '../components/MemoriaDialog';
 import { SerieChart } from '../components/SerieChart';
 import { ExportButton } from '../components/ExportButton';
 import { PrintButton } from '../components/PrintButton';
-import { useApp, useResource, type Resource } from '../context/AppContext';
+import {
+  useApp,
+  useResource,
+  type Resource,
+} from '../context/AppContext';
+import { useContextoTelaAssistente } from '../utils/contextoAssistente';
 import {
   fetchMe,
   fetchResultado,
@@ -51,6 +57,16 @@ export function ResultadoPage() {
   const ultimoPeriodo = periodosRreo.length ? periodosRreo[periodosRreo.length - 1] : null;
   const pular = { pular: !periodo };
   const det = useResource(() => fetchResultado(ente.cod_ibge, periodo), [ente.cod_ibge, periodo], pular);
+  const contextoDet = det.data?.cod_ibge === ente.cod_ibge && det.data.periodo === periodo
+    ? det.data
+    : null;
+  useContextoTelaAssistente({
+    pagina: '/resultado',
+    ente: contextoDet?.cod_ibge ?? ente.cod_ibge,
+    periodo: contextoDet?.periodo ?? (periodo || null),
+    competencia: contextoDet?.periodo ?? (periodo || null),
+    asOf: contextoDet?.as_of ?? null,
+  });
   // Sub-cards "pinados" no as_of que o cabeçalho já resolveu (§6.5, padrão de Dívida):
   // só disparam depois que `det` chega, e usam exatamente a mesma versão — uma
   // retificação no meio do carregamento não pode misturar versões na mesma tela.
@@ -96,6 +112,15 @@ export function ResultadoPage() {
             <>
               <MetricHeader
                 label={`Resultado primário (com RPPS) · ${d.periodo}`}
+                explicar={(
+                  <ExplicacaoTela
+                    pagina="resultado"
+                    rotulo="Resultado primário em reais"
+                    periodo={d.periodo}
+                    asOf={d.as_of}
+                    pergunta="Como é apurado o resultado primário em reais exibido nesta tela, de quais fontes vêm receita e despesa primárias e qual é a cobertura do período?"
+                  />
+                )}
                 value={M(d.valores.resultado_primario)}
                 valueColor={cor(primario)}
                 context={

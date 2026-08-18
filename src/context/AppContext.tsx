@@ -27,6 +27,17 @@ export interface EnteSel {
   nome: string;
 }
 
+/** Recorte exato que o atalho "Pergunte sobre esta tela" deve transportar. */
+export interface ContextoTelaAssistente {
+  pagina: string;
+  ente: string;
+  /** Período aceito pelo Assistente (RREO); em telas RGF já vem convertido. */
+  periodo: string | null;
+  /** Competência que a tela efetivamente mostra (RREO, RGF ou exercício anual). */
+  competencia: string | null;
+  asOf: string | null;
+}
+
 interface ContextoPersistido {
   ente: EnteSel;
   periodo: string | null;
@@ -64,6 +75,8 @@ interface AppState {
    * permissão contado como ausência de dado manda o usuário procurar no lugar errado.
    */
   contextoIndisponivel: string | null;
+  contextoTelaAssistente: ContextoTelaAssistente | null;
+  registrarContextoTelaAssistente: (contexto: ContextoTelaAssistente | null) => void;
 }
 
 const AppCtx = createContext<AppState | null>(null);
@@ -108,6 +121,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [periodosRgf, setPeriodosRgf] = useState<string[]>([]);
   const [carregandoContexto, setCarregandoContexto] = useState(true);
   const [contextoIndisponivel, setContextoIndisponivel] = useState<string | null>(null);
+  const [contextoTelaAssistente, setContextoTelaAssistente] =
+    useState<ContextoTelaAssistente | null>(null);
   const [orgId, setOrgId] = useState<string | null>(persistido?.orgId ?? null);
 
   const setToken = useCallback((t: string | null) => {
@@ -121,10 +136,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Trocar de ente invalida o período: o novo ente pode não ter o período atual.
     setPeriodoState('');
     setPeriodoRgfState('');
+    setContextoTelaAssistente(null);
     setRecentes((atuais) =>
       [e, ...atuais.filter((r) => r.cod_ibge !== e.cod_ibge)].slice(0, MAX_RECENTES),
     );
   }, []);
+  const registrarContextoTelaAssistente = useCallback(
+    (contexto: ContextoTelaAssistente | null) => setContextoTelaAssistente(contexto),
+    [],
+  );
 
   const nomeDoEnte = ente.nome || ente.cod_ibge;
 
@@ -220,6 +240,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     recentes,
     carregandoContexto,
     contextoIndisponivel,
+    contextoTelaAssistente,
+    registrarContextoTelaAssistente,
   };
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

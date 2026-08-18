@@ -130,6 +130,7 @@ export function AlertasPage() {
                        `alerts/rules.py`. Por isso o botão fica ao lado do rótulo da
                        ordenação, e não em cima dela. */
                     <ExplicacaoIA
+                      contextKey={`explicar_alertas\u0000${ente.cod_ibge}`}
                       rotulo="Por que este é o primeiro?"
                       titulo={`Fila de alertas · ${ente.nome}`}
                       descricao="Explicar por que o primeiro alerta da fila é o primeiro e qual a providência legal"

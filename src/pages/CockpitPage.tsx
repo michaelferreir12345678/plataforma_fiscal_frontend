@@ -16,6 +16,7 @@ import { Card } from '../components/Card';
 import { Async, ContextoIndisponivel } from '../components/AsyncState';
 import { ExportButton } from '../components/ExportButton';
 import { PageHeader } from '../components/PageHeader';
+import { ExplicacaoIndicador } from '../components/ExplicacaoIndicador';
 import { PrintButton } from '../components/PrintButton';
 import { SeloQualidade } from '../components/SeloQualidade';
 import { TendenciaChart, type PontoTendencia } from '../components/TendenciaChart';
@@ -348,7 +349,18 @@ function CardCritico({ k, asOf }: { k: CriticoItem; asOf?: string | null }) {
 
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 600, alignSelf: 'flex-start' }}>{k.rotulo}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 600 }}>{k.rotulo}</span>
+        {/* Sprint IA-7: no indicador específico. O cockpit mostra vários lado a lado —
+            um botão único no topo da tela explicaria "a tela", não o número. */}
+        <ExplicacaoIndicador
+          indicador={k.indicador}
+          rotulo={k.rotulo}
+          periodo={k.source_ref?.periodo}
+          asOf={asOf}
+          rotuloGatilho="Explicar"
+        />
+      </div>
       {valor === null || valor === undefined ? (
         <Vazio>Indicador não apurado neste período.</Vazio>
       ) : temLimite && !porHabitante ? (

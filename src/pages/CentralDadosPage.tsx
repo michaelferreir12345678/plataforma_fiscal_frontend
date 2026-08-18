@@ -13,6 +13,7 @@ import { Card } from '../components/Card';
 import { Async } from '../components/AsyncState';
 import { AccessibleTabs, tabId, tabPanelId } from '../components/AccessibleTabs';
 import { PageHeader } from '../components/PageHeader';
+import { ResolucaoQualidade } from '../components/ResolucaoQualidade';
 import { useApp, useResource } from '../context/AppContext';
 import { Explicacao } from '../components/ExplicacaoIA';
 import {
@@ -1111,6 +1112,9 @@ function QualidadeTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Sprint Q1: a resolução vem ANTES da lista de vereditos. Diante de uma falha, a
+          pergunta do gestor não é "quais são?" — é "e agora, o que eu faço?". */}
+      <ResolucaoQualidade ente={enteUrl} />
       <Async res={res}>
         {(q) => {
           // `periodo` não é filtro do backend (o check de atualidade não tem um período

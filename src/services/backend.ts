@@ -3973,3 +3973,69 @@ export const alterarSenha = (senha_atual: string, senha_nova: string) =>
     senha_atual,
     senha_nova,
   });
+
+// --------------------------------------------------------------------------- //
+// Sprint Q1 — resolução das verificações em falha
+// --------------------------------------------------------------------------- //
+/** De quem é o número que não fechou — é o que decide a ação cabível. */
+export type ClasseCausa = 'plataforma' | 'fonte' | 'misto' | 'cobertura';
+
+export type AcaoQualidade =
+  | 'rematerializar'
+  | 'verificar_na_fonte'
+  | 'reingerir'
+  | 'aceitar_como_fato';
+
+export interface TratativaResumo {
+  status: 'aberta' | 'diagnosticada' | 'acao_aplicada' | 'resolvida' | 'aceita_como_fato';
+  classe: ClasseCausa | null;
+  /** Motivo do aceite. O selo continua aparecendo com este texto. */
+  justificativa: string | null;
+  /** Ações aplicadas e o veredito que cada uma produziu. */
+  tentativas: Array<Record<string, unknown>>;
+  atualizado_em: string | null;
+}
+
+export interface OcorrenciaQualidade {
+  check_codigo: string;
+  cod_ibge: string | null;
+  periodo: string | null;
+  fonte: string;
+  status_check: string;
+  esquerda: FiscalDecimal | null;
+  direita: FiscalDecimal | null;
+  diferenca: FiscalDecimal | null;
+  tolerancia: FiscalDecimal | null;
+  classe: ClasseCausa;
+  lado_esquerdo: string;
+  lado_direito: string;
+  /** Por que a classe é essa — é o que sustenta a ação oferecida. */
+  porque: string;
+  diagnostico: Record<string, unknown>;
+  /** Só as ações que existem para esta classe. Lista vazia é resposta, não omissão. */
+  acoes: AcaoQualidade[];
+  tratativa: TratativaResumo | null;
+}
+
+export interface OcorrenciasResponse {
+  data: OcorrenciaQualidade[];
+  total: number;
+  por_classe: Record<string, number>;
+}
+
+export const fetchOcorrenciasQualidade = (
+  params: { ente?: string; incluirEncerradas?: boolean } = {},
+) =>
+  apiGet<OcorrenciasResponse>('/admin/qualidade/ocorrencias', {
+    ente: params.ente,
+    // A query aceita string/number: booleano vira o literal que o FastAPI parseia.
+    incluir_encerradas: params.incluirEncerradas ? 'true' : undefined,
+  });
+
+export const aplicarAcaoQualidade = (body: {
+  check_codigo: string;
+  cod_ibge: string;
+  periodo?: string | null;
+  acao: AcaoQualidade;
+  justificativa?: string | null;
+}) => apiPost<OcorrenciaQualidade>('/admin/qualidade/ocorrencias/acao', body);

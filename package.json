@@ -6,7 +6,8 @@
   "description": "Prumo — Plataforma de Inteligência Fiscal (frontend React + Vite + TypeScript)",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/verificar-bundle.mjs",
+    "verify:bundle": "node scripts/verificar-bundle.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "lint": "eslint .",

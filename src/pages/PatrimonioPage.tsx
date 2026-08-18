@@ -12,7 +12,7 @@
  * foto não diz) e exportação.
  */
 import { SeloCobertura } from '../components/SeloCobertura';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Breadcrumb } from '../components/Breadcrumb';
@@ -285,6 +285,17 @@ function Explorador({
 }) {
   const [node, setNode] = useState<string | undefined>();
   const [mes, setMes] = useState<string | undefined>();
+
+  // A MSC é mensal e o exercício é trocável — então o mês escolhido **não pode**
+  // sobreviver à troca. Sem isto, escolher 2026-M03 e ir para 2024 mandava "2026-M03" ao
+  // backend, que não acha o mês naquele contexto e cai no de referência: nenhuma pastilha
+  // acesa e a tabela mostrando um mês que ninguém pediu.
+  const chaveMeses = mesesMsc.join('|');
+  useEffect(() => {
+    setMes(undefined);
+    setNode(undefined);
+  }, [chaveMeses]);
+
   const periodo = mes ?? (temMsc ? mesesMsc[mesesMsc.length - 1] : String(ano));
 
   const arv = useResource(
@@ -311,6 +322,8 @@ function Explorador({
             key={p}
             type="button"
             onClick={() => setMes(p)}
+            aria-pressed={periodo === p}
+            aria-label={`Mês ${p.slice(5)} de ${p.slice(0, 4)}`}
             style={monthPill(periodo === p)}
           >
             {p.slice(5)}
@@ -351,6 +364,14 @@ function Explorador({
               onDrill={(child) => child.has_children && setNode(child.codigo)}
             />
             <div style={{ padding: '8px 16px', fontSize: 11, color: colors.faint }}>
+              {/* O mês exibido vem do envelope, não do que a tela pediu: é o que impede uma
+                  substituição do backend de passar despercebida. Se o mês pedido não
+                  existir naquele exercício, aqui aparece o que de fato respondeu. */}
+              {tree.period && (
+                <>
+                  mês <strong style={{ color: colors.ink }}>{tree.period}</strong> ·{' '}
+                </>
+              )}
               fonte {tree.source_ref?.relatorio} {tree.source_ref?.anexo} · v{tree.source_ref?.versao_entrega}
               {tree.as_of && <> · as_of {tree.as_of}</>}
             </div>

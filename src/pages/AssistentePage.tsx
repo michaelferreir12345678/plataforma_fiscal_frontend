@@ -8,6 +8,7 @@
 import { rotuloFaixa } from '../utils/rotulos';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ProgressoIA } from '../components/ProgressoIA';
 import { colors, font } from '../theme';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
@@ -512,12 +513,10 @@ export function AssistentePage() {
           />
         ))}
 
-        {pending && (
-          <div role="status" aria-live="polite" aria-busy="true" className="fade-in" style={{ display: 'flex', gap: 12, alignItems: 'center', color: colors.muted, fontSize: 12, paddingLeft: 42 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.primary, animation: 'pulse-soft 1.2s ease-in-out infinite' }} />
-            Consultando indicadores e a norma…
-          </div>
-        )}
+        {/* Uma frase parada por 40 s (o p95 medido) parece travamento. O componente
+            percorre as etapas reais do pipeline e mostra o tempo decorrido — ver a
+            docstring dele sobre o que ali é medido e o que é estimado. */}
+        {pending && <ProgressoIA rotuloInicial="Consultando indicadores e a norma" />}
 
         {error && (
           <div className="fade-in" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '12px 14px', background: colors.redBg, border: `1px solid ${colors.redSoft}`, borderRadius: 6, maxWidth: 780 }}>

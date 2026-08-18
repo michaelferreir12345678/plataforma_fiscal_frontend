@@ -52,9 +52,14 @@ export function ExplicacaoIA({
   variante = 'discreto',
 }: ExplicacaoIAProps) {
   const [aberto, setAberto] = useState(false);
+  // O gatilho é a âncora do painel: a explicação aparece **onde o gestor clicou**, não no
+  // alto da janela. Numa tela longa, abrir no topo tirava da vista o próprio número que
+  // motivou a pergunta.
+  const gatilhoRef = useRef<HTMLButtonElement>(null);
   return (
     <>
       <button
+        ref={gatilhoRef}
         type="button"
         onClick={() => setAberto(true)}
         aria-label={`${rotulo}. ${descricao}`}
@@ -65,7 +70,18 @@ export function ExplicacaoIA({
         {rotulo}
       </button>
       {aberto && (
-        <Dialog title={titulo} onClose={() => setAberto(false)} width={820} modal={false}>
+        <Dialog
+          title={titulo}
+          onClose={() => setAberto(false)}
+          width={720}
+          modal={false}
+          anchorRef={gatilhoRef}
+          arrastavel
+          // Resposta didática é longa por desenho (IA-7). Com teto na área de texto, o
+          // cabeçalho e o botão Fechar ficam sempre visíveis e só a prosa rola — em vez de
+          // um painel de altura de tela inteira que obriga a rolar para poder fechar.
+          maxAlturaConteudo="min(58vh, 520px)"
+        >
           <ConteudoExplicacao carregar={carregar} contextKey={contextKey} />
         </Dialog>
       )}

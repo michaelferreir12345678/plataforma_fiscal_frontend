@@ -3653,6 +3653,11 @@ export interface IngestJobCreateResult {
   estimativa_itens: number;
   limiar: number;
   job: IngestJob | null;
+  /** Municípios que a expansão por UF deixou de fora por não estarem no escopo. Voltar
+   *  esse número impede a exclusão de ser silenciosa. */
+  municipios_fora_do_escopo: number;
+  /** Quantos entes entram na carga depois da expansão. */
+  entes_incluidos: number;
 }
 export interface IngestJobCreateInput {
   fonte: string;
@@ -3662,6 +3667,9 @@ export interface IngestJobCreateInput {
   periodos?: string[];
   versao?: string | null;
   parametros?: Record<string, unknown>;
+  /** Expande cada ente estadual da lista para os municípios daquela UF que estão no
+   *  escopo. A expansão é feita no backend, que conhece a lista e confere a carteira. */
+  incluir_municipios?: boolean;
   confirmar?: boolean;
 }
 export interface RetificacaoItem {

@@ -373,6 +373,7 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
   const [fonte, setFonte] = useState(fontes[0]?.fonte ?? '');
   const [tipo, setTipo] = useState<'backfill' | 'run' | 'replay'>('backfill');
   const [entesTexto, setEntesTexto] = useState('');
+  const [incluirMunicipios, setIncluirMunicipios] = useState(false);
   // Ano é escolha, não texto livre: digitar '202' disparava uma carga inteira para um
   // exercício inexistente.
   const [anoEscolhido, setAnoEscolhido] = useState(ANO_CORRENTE);
@@ -394,6 +395,10 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
   }, [confirmacao]);
 
   const entes = useMemo(() => entesTexto.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean), [entesTexto]);
+  // Código de UF tem 2 dígitos (23 = Ceará); município tem 7. A opção só faz sentido
+  // havendo estado na lista — uma caixa permanentemente inaplicável ensina a ignorar as
+  // caixas da tela.
+  const estadosNaLista = useMemo(() => entes.filter((e) => /^\d{2}$/.test(e)), [entes]);
   // 'run' carrega o exercício escolhido; 'backfill' retroage dele até o piso da série.
   const anos = useMemo(
     () =>
@@ -442,6 +447,7 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
     entes: fonteNacional ? [] : [...entes],
     anos: tipo === 'replay' ? undefined : [...anos],
     periodos: tipo === 'replay' ? [...periodos] : undefined,
+    incluir_municipios: incluirMunicipios && estadosNaLista.length > 0,
   });
 
   const enviar = async (confirmar: boolean, payloadConfirmado?: IngestJobCreateInput) => {
@@ -458,10 +464,16 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
         setConfirmacao({ resposta: res, payload });
       } else {
         setConfirmacao(null);
+        // Quem pediu "todos os municípios" precisa saber se recebeu um subconjunto. A
+        // exclusão por escopo é legítima, mas silenciá-la faria o gestor supor uma carga
+        // completa que não aconteceu.
+        const fora = res.municipios_fora_do_escopo
+          ? ` ${res.municipios_fora_do_escopo} município(s) da UF ficaram de fora por não estarem na sua carteira.`
+          : '';
         setMsg({
           texto: res.job
-            ? `Job enfileirado (${res.job.itens_total} unidade(s)).`
-            : 'Solicitação aceita pelo servidor.',
+            ? `Job enfileirado (${res.job.itens_total} unidade(s)).${fora}`
+            : `Solicitação aceita pelo servidor.${fora}`,
           erro: false,
         });
         onCriado();
@@ -530,6 +542,31 @@ function JobForm({ fontes, onCriado }: { fontes: FonteCatalogo[]; onCriado: () =
           disabled={bloqueado || fonteNacional}
         />
       </div>
+      {estadosNaLista.length > 0 && !fonteNacional && (
+        <label
+          style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12,
+            color: colors.ink, lineHeight: 1.5,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={incluirMunicipios}
+            onChange={(e) => setIncluirMunicipios(e.target.checked)}
+            disabled={bloqueado}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            Baixar também de <strong>todos os municípios</strong>{' '}
+            {estadosNaLista.length === 1 ? 'deste estado' : 'destes estados'}
+            <span style={{ display: 'block', color: colors.muted, fontSize: 11 }}>
+              Hoje a carga traz só os números do próprio ente. Marcando, entram os
+              municípios da UF que estiverem na sua carteira — os demais não entram, e a
+              tela informa quantos ficaram de fora.
+            </span>
+          </span>
+        </label>
+      )}
       {tipo === 'replay' ? (
         <div>
           <label htmlFor="nova-execucao-periodos" style={label}>Períodos (ex.: 2024-B6)</label>

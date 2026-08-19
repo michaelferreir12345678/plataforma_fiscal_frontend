@@ -61,6 +61,36 @@ const SEM_ACAO: Record<ClasseCausa, string> = {
     'reprocessar.',
 };
 
+/** O que aconteceu numa tentativa, no vocabulário da ação que a produziu.
+ *
+ * Cada ação grava campos diferentes: `rematerializar` deixa `status_apos`,
+ * `verificar_na_fonte` deixa `resultado`/`motivo`, `reingerir` deixa `job_id`. Ler só os
+ * dois primeiros mostrava "—" para metade das ações — e um histórico que afirma ter
+ * havido tentativa mas nega o resultado é o que faz o gestor clicar de novo.
+ */
+function resumoDaTentativa(t: Record<string, unknown>): string {
+  const acao = String(t.acao ?? '');
+  if (acao === 'verificar_na_fonte') {
+    const r = String(t.resultado ?? '');
+    if (r === 'fonte_tem') return `a fonte publicou ${t.linhas_na_fonte} linha(s) para ${t.periodo_conferido} — falta nossa`;
+    if (r === 'fonte_nao_tem') return `a fonte não tem ${t.periodo_conferido} — o ente não publicou`;
+    if (r === 'indeterminado') return 'a consulta à fonte não completou — tente de novo';
+    return String(t.motivo ?? 'consulta feita');
+  }
+  if (acao === 'reingerir') {
+    const id = String(t.job_id ?? '');
+    return id
+      ? `carga enfileirada para ${t.periodo_solicitado} (job ${id.slice(0, 8)}) — assíncrona`
+      : String(t.motivo ?? 'enfileirada');
+  }
+  if (acao === 'rematerializar') {
+    const st = String(t.status_apos ?? '');
+    return st === 'ok' ? 'a verificação voltou a passar' : `a verificação continuou em ${st || 'falha'}`;
+  }
+  if (acao === 'aceitar_como_fato') return String(t.justificativa ?? 'aceita como fato');
+  return String(t.motivo ?? t.status_apos ?? '');
+}
+
 function fmt(v: unknown): string {
   if (v === null || v === undefined) return '—';
   const n = Number(v);
@@ -206,14 +236,15 @@ function Ocorrencia({
       </p>
 
       {o.tratativa && o.tratativa.tentativas.length > 0 && (
-        <details style={{ marginTop: 8 }}>
+        <details style={{ marginTop: 8 }} open>
           <summary style={{ fontSize: 11, color: colors.muted, cursor: 'pointer' }}>
             {o.tratativa.tentativas.length} tentativa(s) já aplicada(s)
           </summary>
           <ul style={{ margin: '6px 0 0 16px', fontSize: 11, color: colors.muted }}>
             {o.tratativa.tentativas.map((t, i) => (
               <li key={i}>
-                {String(t.acao)} — {String(t.status_apos ?? t.justificativa ?? '')}
+                <strong style={{ fontWeight: 600 }}>{String(t.acao)}</strong> —{' '}
+                {resumoDaTentativa(t)}
               </li>
             ))}
           </ul>

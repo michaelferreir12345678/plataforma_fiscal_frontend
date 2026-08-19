@@ -139,6 +139,8 @@ describe('Central de Dados — confirmação e polling', () => {
     const criar = vi.spyOn(backend, 'criarIngestJob').mockResolvedValue({
       precisa_confirmacao: false,
       estimativa_itens: 6,
+      municipios_fora_do_escopo: 0,
+      entes_incluidos: 1,
       limiar: 50,
       job: job('na_fila', 0, {
         entes: [],
@@ -166,8 +168,62 @@ describe('Central de Dados — confirmação e polling', () => {
       entes: [],
       anos: [2021],
       periodos: undefined,
+      incluir_municipios: false,
       confirmar: false,
     }));
+  });
+
+  it('só oferece a expansão por UF havendo estado na lista, e manda a intenção ao backend', async () => {
+    vi.mocked(backend.fetchFontes).mockResolvedValue([FONTE_LOCAL]);
+    const criar = vi.spyOn(backend, 'criarIngestJob').mockResolvedValue({
+      precisa_confirmacao: false,
+      estimativa_itens: 1,
+      municipios_fora_do_escopo: 0,
+      entes_incluidos: 185,
+      limiar: 5000,
+      job: job('na_fila', 0, { itens_total: 185 }),
+    });
+
+    renderCentralDados();
+    const campoEntes = await screen.findByLabelText(/^Entes \(/);
+
+    // Com um município na caixa, a opção não faz sentido — e não aparece. Uma caixa
+    // permanentemente inaplicável ensina o usuário a ignorar as caixas da tela.
+    await userEvent.type(campoEntes, '2304400');
+    expect(screen.queryByRole('checkbox', { name: /todos os municípios/i })).toBeNull();
+
+    // Trocando para o código do Ceará (2 dígitos), a opção passa a existir.
+    await userEvent.clear(campoEntes);
+    await userEvent.type(campoEntes, '23');
+    const caixa = await screen.findByRole('checkbox', { name: /todos os municípios/i });
+    await userEvent.click(caixa);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Disparar job' }));
+    await vi.waitFor(() => expect(criar).toHaveBeenCalledWith(
+      expect.objectContaining({ entes: ['23'], incluir_municipios: true }),
+    ));
+  });
+
+  it('diz quantos municípios ficaram de fora do escopo — não silencia a exclusão', async () => {
+    vi.mocked(backend.fetchFontes).mockResolvedValue([FONTE_LOCAL]);
+    vi.spyOn(backend, 'criarIngestJob').mockResolvedValue({
+      precisa_confirmacao: false,
+      estimativa_itens: 51,
+      municipios_fora_do_escopo: 134,
+      entes_incluidos: 51,
+      limiar: 5000,
+      job: job('na_fila', 0, { itens_total: 51 }),
+    });
+
+    renderCentralDados();
+    const campoEntes = await screen.findByLabelText(/^Entes \(/);
+    await userEvent.type(campoEntes, '23');
+    await userEvent.click(await screen.findByRole('checkbox', { name: /todos os municípios/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Disparar job' }));
+
+    // Pedir "todos" e receber 51 de 185 é legítimo (a carteira é parcial); esconder isso
+    // não é. O número que ficou de fora precisa chegar à tela.
+    expect(await screen.findByText(/134 município\(s\) da UF ficaram de fora/)).toBeInTheDocument();
   });
 
   it('calcula 60 unidades localmente e confirma pela estimativa autoritativa do servidor', async () => {
@@ -183,13 +239,17 @@ describe('Central de Dados — confirmação e polling', () => {
       .mockResolvedValueOnce({
         precisa_confirmacao: true,
         estimativa_itens: 73,
-        limiar: 50,
+        municipios_fora_do_escopo: 0,
+      entes_incluidos: 1,
+      limiar: 50,
         job: null,
       })
       .mockResolvedValueOnce({
         precisa_confirmacao: false,
         estimativa_itens: 73,
-        limiar: 50,
+        municipios_fora_do_escopo: 0,
+      entes_incluidos: 1,
+      limiar: 50,
         job: criado,
       });
 

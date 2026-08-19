@@ -2538,6 +2538,9 @@ export interface CockpitResumo {
   n_alertas: number;
   n_alertas_criticos: number;
   mudancas_relevantes: MudancaRelevante[];
+  /** Por que não há mudanças a listar — `null` quando há. "Sem base" e "nada mudou"
+   *  são leituras opostas, e o texto fixo da tela afirmava sempre a primeira. */
+  mudancas_observacao: string | null;
   source_ref: SourceRef;
 }
 export interface CriticoItem {

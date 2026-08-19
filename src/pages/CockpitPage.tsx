@@ -235,7 +235,12 @@ export function CockpitPage() {
                   </div>
                   {c.resumo.mudancas_relevantes.length === 0 ? (
                     <div style={{ fontSize: 12, color: colors.muted }}>
-                      Sem base de comparação com o período anterior — nada a reportar como mudança.
+                      {/* O motivo vem do backend: "não havia com o que comparar" e
+                          "comparou e nada mudou" são leituras OPOSTAS, e o texto fixo
+                          afirmava sempre a primeira — reportando como falta o que muitas
+                          vezes era estabilidade. */}
+                      {c.resumo.mudancas_observacao ??
+                        'Sem mudança relevante a reportar desde a apuração anterior.'}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

@@ -228,7 +228,10 @@ function Ocorrencia({
 
       {o.acoes.length === 0 ? (
         <p style={{ margin: '10px 0 0', fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
-          {SEM_ACAO[o.classe]}
+          {/* A conclusão do escalonamento vence o texto genérico da classe: ela diz algo
+              que o backend descobriu (reprocessar não resolveu ⇒ é defeito de cálculo),
+              e é mais útil que "já tratada". */}
+          {(o.diagnostico?.conclusao as string | undefined) ?? SEM_ACAO[o.classe]}
         </p>
       ) : (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>

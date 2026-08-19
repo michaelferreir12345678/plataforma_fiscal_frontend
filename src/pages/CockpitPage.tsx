@@ -436,7 +436,10 @@ function CardTendencia({ t, asOf }: { t: TendenciaItem; asOf?: string | null }) 
   const ultimo = t.projecao[t.projecao.length - 1];
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ fontSize: 11.5, fontWeight: 600 }}>{t.rotulo}</div>
+      {/* Sem título próprio aqui: o `AccessibleChart` já o renderiza como <figcaption>,
+          que é o nome acessível da figura (Sprint B3). Ter os dois mostrava o rótulo
+          duas vezes no mesmo card; tirar o figcaption resolveria a duplicata e quebraria
+          o leitor de tela — trocaria um incômodo por um defeito. */}
       <TendenciaChart
         titulo={t.rotulo}
         pontos={pontos}

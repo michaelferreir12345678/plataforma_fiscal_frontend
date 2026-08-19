@@ -1120,8 +1120,14 @@ function QualidadeTab() {
           // `periodo` não é filtro do backend (o check de atualidade não tem um período
           // conferido) — filtra no cliente, e o resumo some do dado bruto (ele) para os
           // números do topo não contarem períodos que a tabela abaixo não mostra.
-          const itens = periodoUrl ? q.itens.filter((i) => i.periodo === periodoUrl) : q.itens;
-          const resumo = periodoUrl
+          // O filtro por período **não pode zerar a lista**. As verificações de atualidade
+          // são gravadas com o período da última entrega — que por definição não é o da
+          // tela defasada. Filtrar sem essa ressalva fazia o gestor clicar em "ver a conta
+          // que não fechou" e chegar numa página vazia, o que é pior que não ter o link.
+          const filtrados = periodoUrl ? q.itens.filter((i) => i.periodo === periodoUrl) : q.itens;
+          const filtroVazio = Boolean(periodoUrl) && filtrados.length === 0 && q.itens.length > 0;
+          const itens = filtroVazio ? q.itens : filtrados;
+          const resumo = periodoUrl && !filtroVazio
             ? {
                 falha: itens.filter((i) => i.status === 'falha').length,
                 aviso: itens.filter((i) => i.status === 'aviso').length,
@@ -1133,7 +1139,18 @@ function QualidadeTab() {
             {periodoUrl && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: colors.muted }}>
                 <span>
-                  filtrado por período <strong style={{ fontFamily: font.mono }}>{periodoUrl}</strong>
+                  {filtroVazio ? (
+                    <>
+                      nenhuma verificação registrada em{' '}
+                      <strong style={{ fontFamily: font.mono }}>{periodoUrl}</strong> — mostrando
+                      todos os períodos. As verificações de atualidade são gravadas no período
+                      da última entrega, que não é o da tela quando há defasagem.
+                    </>
+                  ) : (
+                    <>
+                      filtrado por período <strong style={{ fontFamily: font.mono }}>{periodoUrl}</strong>
+                    </>
+                  )}
                   {enteUrl && <> · ente <strong style={{ fontFamily: font.mono }}>{enteUrl}</strong></>}
                 </span>
                 <Link to="/central-dados?painel=qualidade" style={{ color: colors.primary }}>
